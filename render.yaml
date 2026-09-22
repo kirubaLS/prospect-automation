@@ -51,7 +51,7 @@ services:
         fromDatabase:
           name: prospect-automation-db
           property: password
-      - key: ANTHROPIC_API_KEY
+      - key: GROQ_API_KEY
         sync: false
       - key: PHANTOMBUSTER_API_KEY
         sync: false
