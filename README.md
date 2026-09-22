@@ -25,6 +25,20 @@ ICP rubric, results land in Google Sheets.
 4. In n8n: import both `n8n/01-kickoff.json` and `n8n/02-ingest-webhook.json`, set Google Sheets/PhantomBuster credentials, replace the `YOUR_GOOGLE_SHEET_ID` placeholders, activate both workflows.
 5. Copy the Production URL from `02-ingest-webhook.json`'s Webhook node into PhantomBuster's agent → Advanced Notification Settings.
 
+## Memory: the real limit of Render's free tier
+
+Render's free web service gives 512 MB RAM. n8n's own Node process plus its
+separate task-runner subprocess (needed to execute the Code nodes both
+workflows use) can exceed that under load, crashing with `JavaScript heap
+out of memory`. `NODE_OPTIONS=--max-old-space-size=400` in `render.yaml`
+caps V8's heap so it garbage-collects more aggressively instead of trying to
+grow past what's available — this helps, but doesn't add memory Render
+doesn't give you. If it still OOMs under real workflow load (not just idle),
+512 MB is a hard ceiling free-tier Render can't lift; at that point the
+options are Render's paid tier (starts ~$7/mo, more RAM) or moving to a host
+with more free RAM (e.g. Oracle Cloud's Always Free ARM VM, which requires
+card verification but is never charged on the free shape).
+
 ## Groq free tier — what governs your throughput
 
 `llama-3.3-70b-versatile` (the model used for scoring): **30 requests/min, 1,000 requests/day, 100,000 tokens/day** on the free tier. The `Pace (Groq free tier: 30 req/min)` Wait node in `02-ingest-webhook.json` adds a 2.5s delay before each scoring call to stay under the per-minute cap regardless of batch size. The 1,000/day cap is the harder ceiling — at the current pacing setup (~30 companies/day × up to 25 candidates each), you're close to it; lower `numberOfResultsPerLaunch` in `01-kickoff.json` or your daily company count if you consistently hit it. If you need higher volume than quality, `llama-3.1-8b-instant` allows up to 14,400 requests/day but is a weaker model for the nuanced Tier 1/2/3 judgment calls this rubric needs.

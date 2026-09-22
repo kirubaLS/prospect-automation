@@ -31,6 +31,8 @@ services:
         sync: false
       - key: N8N_ENCRYPTION_KEY
         sync: false
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=400"
       - key: DB_TYPE
         value: postgresdb
       - key: DB_POSTGRESDB_HOST
