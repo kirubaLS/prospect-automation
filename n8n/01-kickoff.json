@@ -1,0 +1,99 @@
+{
+  "name": "LeadStrategus - Kickoff (PhantomBuster Launch)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 2 }] }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1200, 0]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Companies", "mode": "list" },
+        "options": {
+          "filter": { "lookupColumn": "Status", "lookupValue": "Pending" }
+        }
+      },
+      "id": "read-companies",
+      "name": "Read Pending Companies",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-960, 0]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "split-in-batches",
+      "name": "One Company At A Time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-720, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.phantombuster.com/api/v2/agents/launch",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Phantombuster-Key", "value": "={{ $env.PHANTOMBUSTER_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  id: $env.PB_ACCOUNT_EMPLOYEES_AGENT_ID,\n  argument: {\n    companyUrl: $json[\"LinkedIn URL\"],\n    search: \"CIO OR CTO OR \\\"Head of IT\\\" OR \\\"IT Director\\\" OR \\\"Digital Transformation\\\" OR \\\"Operations Head\\\" OR COO\",\n    numberOfResultsPerLaunch: 25\n  }\n}) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "launch-phantom",
+      "name": "Launch Sales Nav Employees Phantom",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-500, 0],
+      "notes": "argument field names (companyUrl, search, numberOfResultsPerLaunch) must be verified against this specific agent's 'API' tab in the PhantomBuster console — exact field names vary per phantom build."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Companies", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["Company Name"],
+          "value": {
+            "Company Name": "={{ $('One Company At A Time').item.json['Company Name'] }}",
+            "Status": "Processing",
+            "ContainerId": "={{ $json.containerId }}",
+            "LaunchedAt": "={{ new Date().toISOString() }}"
+          }
+        }
+      },
+      "id": "mark-processing",
+      "name": "Mark Company Processing",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-280, 0]
+    },
+    {
+      "parameters": { "amount": 90, "unit": "seconds" },
+      "id": "pace-between-launches",
+      "name": "Pace Between Launches",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-60, 0]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [[{ "node": "Read Pending Companies", "type": "main", "index": 0 }]] },
+    "Read Pending Companies": { "main": [[{ "node": "One Company At A Time", "type": "main", "index": 0 }]] },
+    "One Company At A Time": { "main": [[{ "node": "Launch Sales Nav Employees Phantom", "type": "main", "index": 0 }], []] },
+    "Launch Sales Nav Employees Phantom": { "main": [[{ "node": "Mark Company Processing", "type": "main", "index": 0 }]] },
+    "Mark Company Processing": { "main": [[{ "node": "Pace Between Launches", "type": "main", "index": 0 }]] },
+    "Pace Between Launches": { "main": [[{ "node": "One Company At A Time", "type": "main", "index": 0 }]] }
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "name": "LeadStrategus - Ingest (PhantomBuster Webhook)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phantombuster-result",
+        "responseMode": "onReceived",
+        "responseData": "{\"ok\":true}",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "PhantomBuster Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1200, 0],
+      "webhookId": "phantombuster-result",
+      "notes": "responseMode=onReceived acks PhantomBuster immediately (its webhook timeout is 11s) so downstream processing never risks a timeout retry/duplicate delivery."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "leftValue": "={{ $json.body.exitCode }}", "rightValue": 0, "operator": { "type": "number", "operation": "notEquals" } }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-failed",
+      "name": "IF Phantom Run Failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-960, 0]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Companies", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["ContainerId"],
+          "value": {
+            "ContainerId": "={{ $json.body.containerId }}",
+            "Status": "Failed",
+            "Error": "={{ $json.body.exitMessage }}"
+          }
+        }
+      },
+      "id": "log-failure",
+      "name": "Log Failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-740, -120]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.body.resultObject && JSON.parse($json.body.resultObject).jsonUrl }}",
+        "options": { "timeout": 20000 }
+      },
+      "id": "fetch-results-json",
+      "name": "Fetch Result JSON",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-740, 120],
+      "notes": "resultObject's jsonUrl points to the phantom's full output file in PhantomBuster's cloud storage — confirm the exact key name (jsonUrl vs csvUrl) against a real webhook payload from this agent."
+    },
+    {
+      "parameters": { "fieldToSplitOut": "={{ $json }}", "options": {} },
+      "id": "split-candidates",
+      "name": "Split Out Candidates",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [-520, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"claude-sonnet-5\",\n  max_tokens: 500,\n  messages: [{\n    role: \"user\",\n    content: `You are a LeadStrategus prospect qualification agent for client Sharp SSDI.\\n\\nSharp SSDI sells ERP, Document Management Systems, Digital Transformation and workflow automation.\\n\\nTier 1 (90-100): CIO, CTO, Head of IT, IT Director - direct ownership of tech decisions.\\nTier 2 (60-85): COO, Head of Operations, Digital Transformation Head - own operational improvement initiatives.\\nTier 3 (30-55): CFO, Finance Head - relevant for ERP approval workflows and compliance.\\nAvoid / low score (<30): Software Engineers, Developers, IT Support, SysAdmins, Junior Managers.\\n\\nCandidate:\\nName: ${$json.fullName || $json.name}\\nTitle: ${$json.job || $json.title}\\nProfile: ${$json.profileUrl}\\nCompany: ${$json.company}\\n\\nReturn ONLY valid JSON: {\\\"score\\\": number, \\\"seniority\\\": \\\"C-Suite|VP|Director|Manager|Other\\\", \\\"priority\\\": \\\"Tier 1|Tier 2|Tier 3|Skip\\\", \\\"reason\\\": string}`\n  }]\n}) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "claude-score",
+      "name": "Claude - Qualify Candidate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-300, 120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeText = $json.content[0].text;\nlet parsed;\ntry {\n  parsed = JSON.parse(claudeText);\n} catch (e) {\n  parsed = { score: 0, seniority: 'Other', priority: 'Skip', reason: 'Could not parse LLM response' };\n}\nconst candidate = $('Split Out Candidates').item.json;\nreturn [{\n  json: {\n    Company: candidate.company,\n    Name: candidate.fullName || candidate.name,\n    Designation: candidate.job || candidate.title,\n    Seniority: parsed.seniority,\n    LinkedInURL: candidate.profileUrl,\n    Score: parsed.score,\n    Priority: parsed.priority,\n    Reason: parsed.reason,\n    Activity: candidate.lastActivity || 'Unknown',\n    Status: parsed.score >= 70 ? 'Auto-Approved' : 'Needs Review'\n  }\n}];"
+      },
+      "id": "parse-result",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-80, 120]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Prospects", "mode": "list" },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["LinkedInURL"]
+        }
+      },
+      "id": "write-sheet",
+      "name": "Write to Prospects Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [140, 120]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Companies", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["ContainerId"],
+          "value": {
+            "ContainerId": "={{ $('PhantomBuster Webhook').item.json.body.containerId }}",
+            "Status": "Done"
+          }
+        }
+      },
+      "id": "mark-done",
+      "name": "Mark Company Done",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [360, 120]
+    }
+  ],
+  "connections": {
+    "PhantomBuster Webhook": { "main": [[{ "node": "IF Phantom Run Failed", "type": "main", "index": 0 }]] },
+    "IF Phantom Run Failed": {
+      "main": [
+        [{ "node": "Log Failure", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Result JSON", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Result JSON": { "main": [[{ "node": "Split Out Candidates", "type": "main", "index": 0 }]] },
+    "Split Out Candidates": { "main": [[{ "node": "Claude - Qualify Candidate", "type": "main", "index": 0 }]] },
+    "Claude - Qualify Candidate": { "main": [[{ "node": "Parse Claude Response", "type": "main", "index": 0 }]] },
+    "Parse Claude Response": { "main": [[{ "node": "Write to Prospects Sheet", "type": "main", "index": 0 }]] },
+    "Write to Prospects Sheet": { "main": [[{ "node": "Mark Company Done", "type": "main", "index": 0 }]] }
+  }
+}

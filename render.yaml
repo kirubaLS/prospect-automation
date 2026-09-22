@@ -1,0 +1,64 @@
+services:
+  - type: web
+    name: prospect-automation-n8n
+    runtime: docker
+    image:
+      url: docker.io/n8nio/n8n:latest
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: N8N_HOST
+        fromService:
+          type: web
+          name: prospect-automation-n8n
+          property: host
+      - key: N8N_PROTOCOL
+        value: https
+      - key: N8N_PORT
+        value: "10000"
+      - key: WEBHOOK_URL
+        fromService:
+          type: web
+          name: prospect-automation-n8n
+          property: hostport
+      - key: GENERIC_TIMEZONE
+        value: Asia/Kolkata
+      - key: N8N_BASIC_AUTH_ACTIVE
+        value: "true"
+      - key: N8N_BASIC_AUTH_USER
+        sync: false
+      - key: N8N_BASIC_AUTH_PASSWORD
+        sync: false
+      - key: DB_TYPE
+        value: postgresdb
+      - key: DB_POSTGRESDB_HOST
+        fromDatabase:
+          name: prospect-automation-db
+          property: host
+      - key: DB_POSTGRESDB_PORT
+        fromDatabase:
+          name: prospect-automation-db
+          property: port
+      - key: DB_POSTGRESDB_DATABASE
+        fromDatabase:
+          name: prospect-automation-db
+          property: database
+      - key: DB_POSTGRESDB_USER
+        fromDatabase:
+          name: prospect-automation-db
+          property: user
+      - key: DB_POSTGRESDB_PASSWORD
+        fromDatabase:
+          name: prospect-automation-db
+          property: password
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: PHANTOMBUSTER_API_KEY
+        sync: false
+      - key: PB_ACCOUNT_EMPLOYEES_AGENT_ID
+        sync: false
+
+databases:
+  - name: prospect-automation-db
+    plan: free
+    postgresMajorVersion: "16"
