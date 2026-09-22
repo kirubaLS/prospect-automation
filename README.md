@@ -17,6 +17,7 @@ ICP rubric, results land in Google Sheets.
 1. **Render** → New → Blueprint → connect this repo → Deploy Blueprint. This provisions the n8n web service and its Postgres database together.
 2. In the Render dashboard, set the `sync: false` env vars manually (never commit these to this repo):
    - `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD`
+   - `N8N_ENCRYPTION_KEY` — **required**, generate once with `openssl rand -hex 32` and set it before n8n's first successful boot. Render's free web service has no persistent disk, so n8n's own auto-generated key gets thrown away on every restart while the Postgres database (which *is* persistent) keeps data encrypted with whatever key was active when it was written. Without a fixed key, every restart mismatches the two and n8n crash-loops with `Deployment key 'signing.hmac' cannot be read with this instance encryption key`. Set this once, never change it afterward — changing it later makes all previously stored credentials/workflow secrets unreadable.
    - `GROQ_API_KEY` — free, no card, from [console.groq.com/keys](https://console.groq.com/keys)
    - `PHANTOMBUSTER_API_KEY`
    - `PB_ACCOUNT_EMPLOYEES_AGENT_ID`

@@ -29,6 +29,8 @@ services:
         sync: false
       - key: N8N_BASIC_AUTH_PASSWORD
         sync: false
+      - key: N8N_ENCRYPTION_KEY
+        sync: false
       - key: DB_TYPE
         value: postgresdb
       - key: DB_POSTGRESDB_HOST
@@ -61,4 +63,4 @@ services:
 databases:
   - name: prospect-automation-db
     plan: free
-    postgresMajorVersion: "16"
+    postgresMajorVersion: "17"
