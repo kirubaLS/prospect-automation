@@ -1,7 +1,7 @@
 services:
   - type: web
     name: prospect-automation-n8n
-    runtime: docker
+    runtime: image
     image:
       url: docker.io/n8nio/n8n:latest
     plan: free
