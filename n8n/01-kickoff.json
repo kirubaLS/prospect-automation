@@ -25,7 +25,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  id: \"YOUR_PHANTOMBUSTER_AGENT_ID\",\n  argument: {\n    spreadsheetUrl: \"YOUR_GOOGLE_SHEET_SHARE_URL\",\n    columnName: \"LinkedIn URL\",\n    search: \"CIO OR CTO OR \\\"Head of IT\\\" OR \\\"IT Director\\\" OR \\\"Digital Transformation\\\" OR \\\"Operations Head\\\" OR COO\",\n    numberOfResultsPerLaunch: 25\n  }\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  id: \"3754425019891793\"\n}) }}",
         "options": { "timeout": 30000 }
       },
       "id": "launch-phantom",
@@ -33,7 +33,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [-460, 0],
-      "notes": "PhantomBuster's Account Employees Export phantom processes a whole spreadsheet of company URLs in ONE run — it isn't launched per-company. Set the 'Header Auth' credential (Name: X-Phantombuster-Key, Value: your API key) after import. Replace YOUR_PHANTOMBUSTER_AGENT_ID with your agent's ID. Replace YOUR_GOOGLE_SHEET_SHARE_URL with your Companies sheet's shareable link (Share > Anyone with the link > Viewer — PhantomBuster reads it unauthenticated, this must be public-by-link, separate from n8n's own OAuth access to the same sheet). columnName tells it which column holds the URLs since ours isn't column A. Verify these exact argument field names (spreadsheetUrl, columnName, search, numberOfResultsPerLaunch) against this specific agent's own 'API' tab in the PhantomBuster console before relying on them — field names vary per phantom build.\n\nNote: this processes every row in the sheet each run, not just ones marked Pending — the phantom has no concept of that Status column. Manage which companies are in the sheet manually, or remove processed ones, rather than relying on the Status filter that the old per-company design used."
+      "notes": "PhantomBuster's own API-snippet generator sends no 'argument' object — the agent runs using whatever settings are already saved on its own setup page in the PhantomBuster console (spreadsheet URL, column name, keyword filter, etc.), not values passed per-launch. Set the 'Header Auth' credential (Name: X-Phantombuster-Key, Value: your API key) after import. The id here is this account's actual agent ID — confirm it still matches your agent if you ever recreate it.\n\nBefore relying on this: open the agent in PhantomBuster, fill in 'Spreadsheet URL of LinkedIn companies URLs' with your Companies sheet's shareable link (Share > Anyone with the link > Viewer), set 'Name of column containing companies URLs' to 'LinkedIn URL', set any keyword filter you want, and click Save on that page — that configuration is what actually runs, this node just triggers it.\n\nNote: this processes every row in the sheet each run, not just ones marked Pending — the phantom has no concept of that Status column. Manage which companies are in the sheet manually, or remove processed ones, rather than relying on a Status filter."
     }
   ],
   "connections": {

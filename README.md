@@ -19,15 +19,17 @@ ICP rubric, results land in Google Sheets.
    - `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD`
    - `N8N_ENCRYPTION_KEY` — **required**, generate once with `openssl rand -hex 32` and set it before n8n's first successful boot. Render's free web service has no persistent disk, so n8n's own auto-generated key gets thrown away on every restart while the Postgres database (which *is* persistent) keeps data encrypted with whatever key was active when it was written. Without a fixed key, every restart mismatches the two and n8n crash-loops with `Deployment key 'signing.hmac' cannot be read with this instance encryption key`. Set this once, never change it afterward — changing it later makes all previously stored credentials/workflow secrets unreadable.
 3. Set up a free keep-alive ping (cron-job.org or UptimeRobot) hitting your `*.onrender.com` URL every ~10 minutes, since Render's free tier sleeps after 15 minutes idle otherwise.
-4. In n8n: import both `n8n/01-kickoff.json` and `n8n/02-ingest-webhook.json`, replace the placeholders, activate both workflows:
-   - `YOUR_GOOGLE_SHEET_ID` (in `02-ingest-webhook.json`'s Google Sheets nodes) — your spreadsheet's ID from its URL.
-   - `YOUR_PHANTOMBUSTER_AGENT_ID` (in `01-kickoff.json`) — your agent's ID.
-   - `YOUR_GOOGLE_SHEET_SHARE_URL` (in `01-kickoff.json`) — the Companies sheet's **shareable link**. This must be set to "Anyone with the link" → Viewer in Google Sheets' own Share dialog — PhantomBuster reads it unauthenticated over the internet, completely separate from n8n's OAuth-based access to the same sheet.
-5. Set up n8n **Credentials** (not env vars) for the two API calls — this instance blocks `$env.X` expressions in nodes, so secrets go through n8n's own Credentials store instead:
+4. **In PhantomBuster itself first** — open your agent's own setup page and fill in (then Save):
+   - **Spreadsheet URL of LinkedIn companies URLs** — your Companies sheet's shareable link (Share → Anyone with the link → Viewer, in Google Sheets — PhantomBuster reads it unauthenticated, separate from n8n's OAuth access to the same sheet).
+   - **Name of column containing companies URLs** — `LinkedIn URL`.
+   - Any keyword/title filter you want applied.
+   PhantomBuster's launch API call doesn't take these as per-launch arguments for this agent — it just triggers the agent to run with whatever's saved here. `01-kickoff.json`'s Launch node sends nothing but `{"id": "<your agent id>"}`.
+5. In n8n: import both `n8n/01-kickoff.json` and `n8n/02-ingest-webhook.json`, replace `YOUR_GOOGLE_SHEET_ID` (in `02-ingest-webhook.json`'s Google Sheets nodes) with your spreadsheet's ID, activate both workflows.
+6. Set up n8n **Credentials** (not env vars) for the two API calls — this instance blocks `$env.X` expressions in nodes, so secrets go through n8n's own Credentials store instead:
    - Google Sheets nodes: create a "Google Sheets OAuth2 API" credential, select it on every Google Sheets node.
    - `01-kickoff.json`'s "Launch Sales Nav Employees Phantom" node: create a **"Header Auth"** credential — Name: `X-Phantombuster-Key`, Value: your PhantomBuster API key — select it on that node's Authentication dropdown.
    - `02-ingest-webhook.json`'s "Groq - Qualify Candidate" node: create another **"Header Auth"** credential — Name: `Authorization`, Value: `Bearer YOUR_GROQ_KEY` (include the literal word "Bearer" and a space) — select it on that node.
-6. Copy the Production URL from `02-ingest-webhook.json`'s Webhook node into PhantomBuster's agent → Advanced Notification Settings.
+7. Copy the Production URL from `02-ingest-webhook.json`'s Webhook node into PhantomBuster's agent → Advanced Notification Settings.
 
 ## Memory: the real limit of Render's free tier
 
@@ -65,7 +67,6 @@ Human review loop (spec §9) maps to the `Status` column (`Auto-Approved` /
 
 ## Known gaps to close before this is fully load-bearing
 
-- Verify the phantom's exact `argument` field names (`spreadsheetUrl`, `columnName`, `search`, `numberOfResultsPerLaunch`) against its own API tab in the PhantomBuster console — these are best-effort based on PhantomBuster's usual conventions, not confirmed against this exact agent's API schema.
 - Confirm the `resultObject.jsonUrl` key in a real webhook payload before trusting `Fetch Result JSON` in `02-ingest-webhook.json`.
 - Multi-client support isn't built yet — rules are hardcoded to Sharp SSDI.
 - **No more per-company `Pending`/`Processing`/`Done` tracking in the `Companies` sheet.** Since the phantom processes the whole sheet in one run rather than one company at a time, `01-kickoff.json` no longer reads or filters on the `Status` column, and `02-ingest-webhook.json`'s "Log Failure"/"Mark Company Done" nodes (which match by `ContainerId`) are now best-effort bookkeeping rather than reliable per-company state — one phantom run covers multiple companies under a single `ContainerId`. Manage which companies are in the sheet manually (add/remove rows) rather than relying on that Status column to control what gets scraped.
