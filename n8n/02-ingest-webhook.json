@@ -116,8 +116,11 @@
       "name": "Groq - Qualify Candidate",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
       "position": [-300, 120],
-      "notes": "Set the 'Header Auth' credential on this node after import: Name = Authorization, Value = Bearer YOUR_GROQ_KEY (include the word 'Bearer' and a space before the key — Groq needs the full string as the header value). OpenAI-compatible chat completions endpoint. response_format json_object asks the model to force valid JSON output — supported on openai/gpt-oss-120b.\n\nField names match the Account Employees Export phantom's confirmed output schema: fullName, title, titleDescription, companyName, companyUrl, location, companyLocation, duration, profileUrl, profileImageUrl, sharedConnectionsCount. No company size/industry/activity fields exist in this output — the prompt no longer pretends otherwise (spec §7's company-context scoring factor and the spec's 'LinkedIn activity indicators' output field are both genuinely unavailable from this data source, not just unconfirmed)."
+      "notes": "Set the 'Header Auth' credential on this node after import: Name = Authorization, Value = Bearer YOUR_GROQ_KEY (include the word 'Bearer' and a space before the key — Groq needs the full string as the header value). OpenAI-compatible chat completions endpoint. response_format json_object asks the model to force valid JSON output — supported on openai/gpt-oss-120b.\n\nField names match the Account Employees Export phantom's confirmed output schema: fullName, title, titleDescription, companyName, companyUrl, location, companyLocation, duration, profileUrl, profileImageUrl, sharedConnectionsCount. No company size/industry/activity fields exist in this output — the prompt no longer pretends otherwise (spec §7's company-context scoring factor and the spec's 'LinkedIn activity indicators' output field are both genuinely unavailable from this data source, not just unconfirmed).\n\nretryOnFail (3 tries, 8s apart) handles transient 429s from Groq's free-tier TPM cap self-healing instead of failing the whole execution — the 5s pacing Wait node upstream keeps normal traffic under budget, this retry covers the case where prior test runs or bursts already ate into that minute's budget."
     },
     {
       "parameters": {
