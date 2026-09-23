@@ -33,6 +33,8 @@ services:
         sync: false
       - key: NODE_OPTIONS
         value: "--max-old-space-size=400"
+      - key: N8N_BLOCK_ENV_ACCESS_IN_NODE
+        value: "false"
       - key: DB_TYPE
         value: postgresdb
       - key: DB_POSTGRESDB_HOST
