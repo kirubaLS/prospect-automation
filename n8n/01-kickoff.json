@@ -91,7 +91,7 @@
   "connections": {
     "Schedule Trigger": { "main": [[{ "node": "Read Pending Companies", "type": "main", "index": 0 }]] },
     "Read Pending Companies": { "main": [[{ "node": "One Company At A Time", "type": "main", "index": 0 }]] },
-    "One Company At A Time": { "main": [[{ "node": "Launch Sales Nav Employees Phantom", "type": "main", "index": 0 }], []] },
+    "One Company At A Time": { "main": [[], [{ "node": "Launch Sales Nav Employees Phantom", "type": "main", "index": 0 }]] },
     "Launch Sales Nav Employees Phantom": { "main": [[{ "node": "Mark Company Processing", "type": "main", "index": 0 }]] },
     "Mark Company Processing": { "main": [[{ "node": "Pace Between Launches", "type": "main", "index": 0 }]] },
     "Pace Between Launches": { "main": [[{ "node": "One Company At A Time", "type": "main", "index": 0 }]] }
