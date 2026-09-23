@@ -134,14 +134,14 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst byCompany = {};\nfor (const item of items) {\n  const company = item.json.Company || 'Unknown';\n  if (!byCompany[company]) byCompany[company] = [];\n  byCompany[company].push(item);\n}\n\nconst result = [];\nfor (const company of Object.keys(byCompany)) {\n  const top2 = byCompany[company]\n    .sort((a, b) => (b.json.Score || 0) - (a.json.Score || 0))\n    .slice(0, 2);\n  result.push(...top2);\n}\nreturn result;"
+        "jsCode": "const items = $input.all();\nconst byCompany = {};\nfor (const item of items) {\n  const company = item.json.Company || 'Unknown';\n  if (!byCompany[company]) byCompany[company] = [];\n  byCompany[company].push(item);\n}\n\nconst result = [];\nfor (const company of Object.keys(byCompany)) {\n  const top4 = byCompany[company]\n    .sort((a, b) => (b.json.Score || 0) - (a.json.Score || 0))\n    .slice(0, 4);\n  result.push(...top4);\n}\nreturn result;"
       },
       "id": "top-two-per-company",
-      "name": "Top 2 Per Company",
+      "name": "Top 4 Per Company",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [30, 120],
-      "notes": "Groups all scored candidates from this run by Company, sorts each group by Score descending, keeps only the top 2. Runs once with all items (not per-item like the nodes upstream), so it correctly compares candidates against each other within the same company rather than writing every scored candidate regardless of rank."
+      "notes": "Groups all scored candidates from this run by Company, sorts each group by Score descending, keeps only the top 4. Runs once with all items (not per-item like the nodes upstream), so it correctly compares candidates against each other within the same company rather than writing every scored candidate regardless of rank."
     },
     {
       "parameters": {
@@ -166,9 +166,9 @@
         "sheetName": { "__rl": true, "value": "Companies", "mode": "list" },
         "columns": {
           "mappingMode": "defineBelow",
-          "matchingColumns": ["ContainerId"],
+          "matchingColumns": ["Company Name"],
           "value": {
-            "ContainerId": "={{ $('PhantomBuster Webhook').item.json.body.containerId }}",
+            "Company Name": "={{ $json.Company }}",
             "Status": "Done"
           }
         }
@@ -177,7 +177,8 @@
       "name": "Mark Company Done",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [360, 120]
+      "position": [360, 120],
+      "notes": "Matches by Company Name (not ContainerId — that was a run-level ID never actually written to the Companies sheet under the current single-launch-per-run design, so it silently matched nothing). Fires once per top-4 candidate written for that company (up to 4x), idempotently setting Status=Done each time — harmless repetition, not a bug. This is what gives you real per-company completion tracking: filter the Companies sheet on Status to see which companies actually got prospects written vs which are still Pending, independent of whether PhantomBuster itself finished scraping them (check PhantomBuster's own Watcher Mode setting for that side of resumability — it skips companies already scraped in a prior run, so an interrupted multi-company run won't restart from zero)."
     }
   ],
   "connections": {
@@ -192,8 +193,8 @@
     "Split Out Candidates": { "main": [[{ "node": "Pace (light safety margin)", "type": "main", "index": 0 }]] },
     "Pace (light safety margin)": { "main": [[{ "node": "OpenAI - Qualify Candidate", "type": "main", "index": 0 }]] },
     "OpenAI - Qualify Candidate": { "main": [[{ "node": "Parse OpenAI Response", "type": "main", "index": 0 }]] },
-    "Parse OpenAI Response": { "main": [[{ "node": "Top 2 Per Company", "type": "main", "index": 0 }]] },
-    "Top 2 Per Company": { "main": [[{ "node": "Write to Prospects Sheet", "type": "main", "index": 0 }]] },
+    "Parse OpenAI Response": { "main": [[{ "node": "Top 4 Per Company", "type": "main", "index": 0 }]] },
+    "Top 4 Per Company": { "main": [[{ "node": "Write to Prospects Sheet", "type": "main", "index": 0 }]] },
     "Write to Prospects Sheet": { "main": [[{ "node": "Mark Company Done", "type": "main", "index": 0 }]] }
   }
 }
