@@ -9,7 +9,7 @@ ICP rubric, results land in Google Sheets.
 ## What's here
 
 - `render.yaml` — Blueprint for deploying n8n + a free Postgres database on Render (free tier, no credit card). Postgres gives n8n persistent storage so workflows/credentials survive Render's free-tier restarts.
-- `n8n/01-kickoff.json` — reads pending companies from Google Sheets, launches PhantomBuster's Sales Navigator Account Employees Export agent per company, paces launches.
+- `n8n/01-kickoff.json` — launches PhantomBuster's Sales Navigator Account Employees Export agent **once per schedule tick**, pointing it directly at the Companies Google Sheet as its input list (this phantom processes a whole spreadsheet of company URLs in one run — it isn't launched per-company).
 - `n8n/02-ingest-webhook.json` — receives PhantomBuster's completion webhook, fetches the scraped candidates, scores each with Groq against the Sharp SSDI Tier 1/2/3 rubric, writes results to the Prospects sheet.
 
 ## Deploy
@@ -19,7 +19,10 @@ ICP rubric, results land in Google Sheets.
    - `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD`
    - `N8N_ENCRYPTION_KEY` — **required**, generate once with `openssl rand -hex 32` and set it before n8n's first successful boot. Render's free web service has no persistent disk, so n8n's own auto-generated key gets thrown away on every restart while the Postgres database (which *is* persistent) keeps data encrypted with whatever key was active when it was written. Without a fixed key, every restart mismatches the two and n8n crash-loops with `Deployment key 'signing.hmac' cannot be read with this instance encryption key`. Set this once, never change it afterward — changing it later makes all previously stored credentials/workflow secrets unreadable.
 3. Set up a free keep-alive ping (cron-job.org or UptimeRobot) hitting your `*.onrender.com` URL every ~10 minutes, since Render's free tier sleeps after 15 minutes idle otherwise.
-4. In n8n: import both `n8n/01-kickoff.json` and `n8n/02-ingest-webhook.json`, replace the `YOUR_GOOGLE_SHEET_ID` and `YOUR_PHANTOMBUSTER_AGENT_ID` placeholders, activate both workflows.
+4. In n8n: import both `n8n/01-kickoff.json` and `n8n/02-ingest-webhook.json`, replace the placeholders, activate both workflows:
+   - `YOUR_GOOGLE_SHEET_ID` (in `02-ingest-webhook.json`'s Google Sheets nodes) — your spreadsheet's ID from its URL.
+   - `YOUR_PHANTOMBUSTER_AGENT_ID` (in `01-kickoff.json`) — your agent's ID.
+   - `YOUR_GOOGLE_SHEET_SHARE_URL` (in `01-kickoff.json`) — the Companies sheet's **shareable link**. This must be set to "Anyone with the link" → Viewer in Google Sheets' own Share dialog — PhantomBuster reads it unauthenticated over the internet, completely separate from n8n's OAuth-based access to the same sheet.
 5. Set up n8n **Credentials** (not env vars) for the two API calls — this instance blocks `$env.X` expressions in nodes, so secrets go through n8n's own Credentials store instead:
    - Google Sheets nodes: create a "Google Sheets OAuth2 API" credential, select it on every Google Sheets node.
    - `01-kickoff.json`'s "Launch Sales Nav Employees Phantom" node: create a **"Header Auth"** credential — Name: `X-Phantombuster-Key`, Value: your PhantomBuster API key — select it on that node's Authentication dropdown.
@@ -62,10 +65,10 @@ Human review loop (spec §9) maps to the `Status` column (`Auto-Approved` /
 
 ## Known gaps to close before this is fully load-bearing
 
-- Verify the phantom's exact `argument` field names against its own API tab in the PhantomBuster console.
+- Verify the phantom's exact `argument` field names (`spreadsheetUrl`, `columnName`, `search`, `numberOfResultsPerLaunch`) against its own API tab in the PhantomBuster console — these are best-effort based on PhantomBuster's usual conventions, not confirmed against this exact agent's API schema.
 - Confirm the `resultObject.jsonUrl` key in a real webhook payload before trusting `Fetch Result JSON` in `02-ingest-webhook.json`.
 - Multi-client support isn't built yet — rules are hardcoded to Sharp SSDI.
-- `01-kickoff.json` has `YOUR_PHANTOMBUSTER_AGENT_ID` hardcoded directly in the Launch node's JSON body (not a secret, just an ID) — replace it with your real agent ID after import.
+- **No more per-company `Pending`/`Processing`/`Done` tracking in the `Companies` sheet.** Since the phantom processes the whole sheet in one run rather than one company at a time, `01-kickoff.json` no longer reads or filters on the `Status` column, and `02-ingest-webhook.json`'s "Log Failure"/"Mark Company Done" nodes (which match by `ContainerId`) are now best-effort bookkeeping rather than reliable per-company state — one phantom run covers multiple companies under a single `ContainerId`. Manage which companies are in the sheet manually (add/remove rows) rather than relying on that Status column to control what gets scraped.
 
 ## Security
 

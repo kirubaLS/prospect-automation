@@ -9,30 +9,7 @@
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-1200, 0]
-    },
-    {
-      "parameters": {
-        "operation": "read",
-        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
-        "sheetName": { "__rl": true, "value": "Companies", "mode": "list" },
-        "options": {
-          "filter": { "lookupColumn": "Status", "lookupValue": "Pending" }
-        }
-      },
-      "id": "read-companies",
-      "name": "Read Pending Companies",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [-960, 0]
-    },
-    {
-      "parameters": { "batchSize": 1, "options": {} },
-      "id": "split-in-batches",
-      "name": "One Company At A Time",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [-720, 0]
+      "position": [-700, 0]
     },
     {
       "parameters": {
@@ -48,53 +25,18 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  id: \"YOUR_PHANTOMBUSTER_AGENT_ID\",\n  argument: {\n    companyUrl: $json[\"LinkedIn URL\"],\n    search: \"CIO OR CTO OR \\\"Head of IT\\\" OR \\\"IT Director\\\" OR \\\"Digital Transformation\\\" OR \\\"Operations Head\\\" OR COO\",\n    numberOfResultsPerLaunch: 25\n  }\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  id: \"YOUR_PHANTOMBUSTER_AGENT_ID\",\n  argument: {\n    spreadsheetUrl: \"YOUR_GOOGLE_SHEET_SHARE_URL\",\n    columnName: \"LinkedIn URL\",\n    search: \"CIO OR CTO OR \\\"Head of IT\\\" OR \\\"IT Director\\\" OR \\\"Digital Transformation\\\" OR \\\"Operations Head\\\" OR COO\",\n    numberOfResultsPerLaunch: 25\n  }\n}) }}",
         "options": { "timeout": 30000 }
       },
       "id": "launch-phantom",
       "name": "Launch Sales Nav Employees Phantom",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-500, 0],
-      "notes": "Set the 'Header Auth' credential (Name: X-Phantombuster-Key, Value: your API key) on this node after import. Also replace YOUR_PHANTOMBUSTER_AGENT_ID in the JSON body with your actual agent ID. Argument field names (companyUrl, search, numberOfResultsPerLaunch) must be verified against this specific agent's 'API' tab in the PhantomBuster console — exact field names vary per phantom build."
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
-        "sheetName": { "__rl": true, "value": "Companies", "mode": "list" },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "matchingColumns": ["Company Name"],
-          "value": {
-            "Company Name": "={{ $('One Company At A Time').item.json['Company Name'] }}",
-            "Status": "Processing",
-            "ContainerId": "={{ $json.containerId }}",
-            "LaunchedAt": "={{ new Date().toISOString() }}"
-          }
-        }
-      },
-      "id": "mark-processing",
-      "name": "Mark Company Processing",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [-280, 0]
-    },
-    {
-      "parameters": { "amount": 90, "unit": "seconds" },
-      "id": "pace-between-launches",
-      "name": "Pace Between Launches",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [-60, 0]
+      "position": [-460, 0],
+      "notes": "PhantomBuster's Account Employees Export phantom processes a whole spreadsheet of company URLs in ONE run — it isn't launched per-company. Set the 'Header Auth' credential (Name: X-Phantombuster-Key, Value: your API key) after import. Replace YOUR_PHANTOMBUSTER_AGENT_ID with your agent's ID. Replace YOUR_GOOGLE_SHEET_SHARE_URL with your Companies sheet's shareable link (Share > Anyone with the link > Viewer — PhantomBuster reads it unauthenticated, this must be public-by-link, separate from n8n's own OAuth access to the same sheet). columnName tells it which column holds the URLs since ours isn't column A. Verify these exact argument field names (spreadsheetUrl, columnName, search, numberOfResultsPerLaunch) against this specific agent's own 'API' tab in the PhantomBuster console before relying on them — field names vary per phantom build.\n\nNote: this processes every row in the sheet each run, not just ones marked Pending — the phantom has no concept of that Status column. Manage which companies are in the sheet manually, or remove processed ones, rather than relying on the Status filter that the old per-company design used."
     }
   ],
   "connections": {
-    "Schedule Trigger": { "main": [[{ "node": "Read Pending Companies", "type": "main", "index": 0 }]] },
-    "Read Pending Companies": { "main": [[{ "node": "One Company At A Time", "type": "main", "index": 0 }]] },
-    "One Company At A Time": { "main": [[], [{ "node": "Launch Sales Nav Employees Phantom", "type": "main", "index": 0 }]] },
-    "Launch Sales Nav Employees Phantom": { "main": [[{ "node": "Mark Company Processing", "type": "main", "index": 0 }]] },
-    "Mark Company Processing": { "main": [[{ "node": "Pace Between Launches", "type": "main", "index": 0 }]] },
-    "Pace Between Launches": { "main": [[{ "node": "One Company At A Time", "type": "main", "index": 0 }]] }
+    "Schedule Trigger": { "main": [[{ "node": "Launch Sales Nav Employees Phantom", "type": "main", "index": 0 }]] }
   }
 }
