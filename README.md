@@ -3,7 +3,7 @@
 LeadStrategus AI Prospect Research Agent implementation. Automates the
 company → decision-maker → qualified-prospect pipeline: PhantomBuster runs
 the Sales Navigator scraping (your own logged-in seat), n8n orchestrates,
-Groq (free tier, `llama-3.3-70b-versatile`) scores candidates against the
+Groq (free tier, `openai/gpt-oss-120b`) scores candidates against the
 ICP rubric, results land in Google Sheets.
 
 ## What's here
@@ -47,7 +47,7 @@ card verification but is never charged on the free shape).
 
 ## Groq free tier — what governs your throughput
 
-`llama-3.3-70b-versatile` (the model used for scoring): **30 requests/min, 1,000 requests/day, 100,000 tokens/day** on the free tier. The `Pace (Groq free tier: 30 req/min)` Wait node in `02-ingest-webhook.json` adds a 2.5s delay before each scoring call to stay under the per-minute cap regardless of batch size. The 1,000/day cap is the harder ceiling — at the current pacing setup (~30 companies/day × up to 25 candidates each), you're close to it; lower `numberOfResultsPerLaunch` in `01-kickoff.json` or your daily company count if you consistently hit it. If you need higher volume than quality, `llama-3.1-8b-instant` allows up to 14,400 requests/day but is a weaker model for the nuanced Tier 1/2/3 judgment calls this rubric needs.
+**`llama-3.3-70b-versatile` was deprecated on Groq's free tier in August 2026** — this now runs on `openai/gpt-oss-120b`, Groq's own recommended replacement. Its free-tier limits are tighter and *different in shape*: **30 requests/min, 1,000 requests/day, only 8,000 tokens/minute (TPM), 200,000 tokens/day**. TPM is the binding constraint here, not RPM — this prompt runs ~450-500 tokens per call (prompt + response), so 30 req/min would blow past 8,000 TPM well before hitting the request-count cap. The `Pace (Groq free tier: 8000 TPM)` Wait node uses a 5s delay (~12 calls/min) to stay safely under that. The 1,000/day request cap and 200,000/day token cap are both lower than before too — at ~30 companies/day × up to 25 candidates each, you can hit the request cap; lower `numberOfResultsPerLaunch` in `01-kickoff.json` or your daily company count if you do. `qwen/qwen3.6-27b` is Groq's other suggested alternative but has the identical 8,000 TPM ceiling, so it isn't a way around this limit.
 
 ## Input / Output — mapped from the original spec
 
