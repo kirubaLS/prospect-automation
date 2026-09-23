@@ -10,7 +10,7 @@ the ICP rubric, results land in Google Sheets.
 
 - `render.yaml` — Blueprint for deploying n8n + a free Postgres database on Render (free tier, no credit card). Postgres gives n8n persistent storage so workflows/credentials survive Render's free-tier restarts.
 - `n8n/01-kickoff.json` — launches PhantomBuster's Sales Navigator Account Employees Export agent **once per schedule tick**, pointing it directly at the Companies Google Sheet as its input list (this phantom processes a whole spreadsheet of company URLs in one run — it isn't launched per-company).
-- `n8n/02-ingest-webhook.json` — receives PhantomBuster's completion webhook, fetches the scraped candidates, scores each with OpenAI against the Sharp SSDI Tier 1/2/3 rubric, writes results to the Prospects sheet.
+- `n8n/02-ingest-webhook.json` — receives PhantomBuster's completion webhook, fetches the scraped candidates, scores each with OpenAI against the Sharp SSDI Tier 1/2/3 rubric, keeps only the **top 2 highest-scoring candidates per company**, writes results to the Prospects sheet.
 
 ## Cost note: this is no longer a fully free pipeline
 
