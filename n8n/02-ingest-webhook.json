@@ -57,7 +57,15 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $json.body.resultObject && JSON.parse($json.body.resultObject).jsonUrl }}",
+        "url": "https://api.phantombuster.com/api/v2/containers/fetch-result-object",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "id", "value": "={{ $json.body.containerId }}" }
+          ]
+        },
         "options": { "timeout": 20000 }
       },
       "id": "fetch-results-json",
@@ -65,15 +73,18 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [-740, 120],
-      "notes": "resultObject's jsonUrl points to the phantom's full output file in PhantomBuster's cloud storage — confirm the exact key name (jsonUrl vs csvUrl) against a real webhook payload from this agent."
+      "notes": "The webhook's inline body.resultObject was null on this agent even on a successful run — PhantomBuster doesn't embed output for every phantom type. This calls /containers/fetch-result-object with the containerId from the webhook instead, which is the documented way to pull a specific run's result on demand. Set the same 'Header Auth' credential used on the kickoff workflow's Launch node (X-Phantombuster-Key) here too."
     },
     {
-      "parameters": { "fieldToSplitOut": "={{ $json }}", "options": {} },
+      "parameters": {
+        "jsCode": "// Response shape from fetch-result-object isn't confirmed yet for this agent — handle the likely variants defensively.\nconst res = $json;\nlet candidates = res;\n\nif (res && res.resultObject !== undefined) {\n  candidates = res.resultObject;\n}\nif (typeof candidates === 'string') {\n  try { candidates = JSON.parse(candidates); } catch (e) { candidates = []; }\n}\nif (candidates && !Array.isArray(candidates)) {\n  candidates = candidates.data || candidates.rows || candidates.results || [];\n}\nif (!Array.isArray(candidates)) candidates = [];\n\nreturn candidates.map((c) => ({ json: c }));"
+      },
       "id": "split-candidates",
       "name": "Split Out Candidates",
-      "type": "n8n-nodes-base.splitOut",
-      "typeVersion": 1,
-      "position": [-520, 120]
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-520, 120],
+      "notes": "Once you see a real successful run here, check this node's output — if it's empty despite the phantom finding profiles, the raw structure from Fetch Result JSON needs inspecting (click that node's output) and this parsing logic adjusted to match."
     },
     {
       "parameters": { "amount": 2.5, "unit": "seconds" },

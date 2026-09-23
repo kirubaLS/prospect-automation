@@ -67,7 +67,7 @@ Human review loop (spec §9) maps to the `Status` column (`Auto-Approved` /
 
 ## Known gaps to close before this is fully load-bearing
 
-- Confirm the `resultObject.jsonUrl` key in a real webhook payload before trusting `Fetch Result JSON` in `02-ingest-webhook.json`.
+- `resultObject` came back `null` in the webhook payload even on a successful run for this agent, so `02-ingest-webhook.json` now calls `/containers/fetch-result-object` separately instead. That endpoint's exact response shape for this specific agent isn't confirmed yet — "Split Out Candidates" (now a Code node) tries several likely shapes defensively, but check its output on a real run and adjust if it comes back empty.
 - Multi-client support isn't built yet — rules are hardcoded to Sharp SSDI.
 - **No more per-company `Pending`/`Processing`/`Done` tracking in the `Companies` sheet.** Since the phantom processes the whole sheet in one run rather than one company at a time, `01-kickoff.json` no longer reads or filters on the `Status` column, and `02-ingest-webhook.json`'s "Log Failure"/"Mark Company Done" nodes (which match by `ContainerId`) are now best-effort bookkeeping rather than reliable per-company state — one phantom run covers multiple companies under a single `ContainerId`. Manage which companies are in the sheet manually (add/remove rows) rather than relying on that Status column to control what gets scraped.
 
