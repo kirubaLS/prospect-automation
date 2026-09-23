@@ -57,12 +57,6 @@ services:
         fromDatabase:
           name: prospect-automation-db
           property: password
-      - key: GROQ_API_KEY
-        sync: false
-      - key: PHANTOMBUSTER_API_KEY
-        sync: false
-      - key: PB_ACCOUNT_EMPLOYEES_AGENT_ID
-        sync: false
 
 databases:
   - name: prospect-automation-db

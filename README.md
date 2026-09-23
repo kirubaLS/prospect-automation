@@ -18,12 +18,13 @@ ICP rubric, results land in Google Sheets.
 2. In the Render dashboard, set the `sync: false` env vars manually (never commit these to this repo):
    - `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD`
    - `N8N_ENCRYPTION_KEY` — **required**, generate once with `openssl rand -hex 32` and set it before n8n's first successful boot. Render's free web service has no persistent disk, so n8n's own auto-generated key gets thrown away on every restart while the Postgres database (which *is* persistent) keeps data encrypted with whatever key was active when it was written. Without a fixed key, every restart mismatches the two and n8n crash-loops with `Deployment key 'signing.hmac' cannot be read with this instance encryption key`. Set this once, never change it afterward — changing it later makes all previously stored credentials/workflow secrets unreadable.
-   - `GROQ_API_KEY` — free, no card, from [console.groq.com/keys](https://console.groq.com/keys)
-   - `PHANTOMBUSTER_API_KEY`
-   - `PB_ACCOUNT_EMPLOYEES_AGENT_ID`
 3. Set up a free keep-alive ping (cron-job.org or UptimeRobot) hitting your `*.onrender.com` URL every ~10 minutes, since Render's free tier sleeps after 15 minutes idle otherwise.
-4. In n8n: import both `n8n/01-kickoff.json` and `n8n/02-ingest-webhook.json`, set Google Sheets/PhantomBuster credentials, replace the `YOUR_GOOGLE_SHEET_ID` placeholders, activate both workflows.
-5. Copy the Production URL from `02-ingest-webhook.json`'s Webhook node into PhantomBuster's agent → Advanced Notification Settings.
+4. In n8n: import both `n8n/01-kickoff.json` and `n8n/02-ingest-webhook.json`, replace the `YOUR_GOOGLE_SHEET_ID` and `YOUR_PHANTOMBUSTER_AGENT_ID` placeholders, activate both workflows.
+5. Set up n8n **Credentials** (not env vars) for the two API calls — this instance blocks `$env.X` expressions in nodes, so secrets go through n8n's own Credentials store instead:
+   - Google Sheets nodes: create a "Google Sheets OAuth2 API" credential, select it on every Google Sheets node.
+   - `01-kickoff.json`'s "Launch Sales Nav Employees Phantom" node: create a **"Header Auth"** credential — Name: `X-Phantombuster-Key`, Value: your PhantomBuster API key — select it on that node's Authentication dropdown.
+   - `02-ingest-webhook.json`'s "Groq - Qualify Candidate" node: create another **"Header Auth"** credential — Name: `Authorization`, Value: `Bearer YOUR_GROQ_KEY` (include the literal word "Bearer" and a space) — select it on that node.
+6. Copy the Production URL from `02-ingest-webhook.json`'s Webhook node into PhantomBuster's agent → Advanced Notification Settings.
 
 ## Memory: the real limit of Render's free tier
 
@@ -64,6 +65,7 @@ Human review loop (spec §9) maps to the `Status` column (`Auto-Approved` /
 - Verify the phantom's exact `argument` field names against its own API tab in the PhantomBuster console.
 - Confirm the `resultObject.jsonUrl` key in a real webhook payload before trusting `Fetch Result JSON` in `02-ingest-webhook.json`.
 - Multi-client support isn't built yet — rules are hardcoded to Sharp SSDI.
+- `01-kickoff.json` has `YOUR_PHANTOMBUSTER_AGENT_ID` hardcoded directly in the Launch node's JSON body (not a secret, just an ID) — replace it with your real agent ID after import.
 
 ## Security
 

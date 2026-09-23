@@ -88,10 +88,11 @@
       "parameters": {
         "method": "POST",
         "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.GROQ_API_KEY }}" },
             { "name": "content-type", "value": "application/json" }
           ]
         },
@@ -105,7 +106,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [-300, 120],
-      "notes": "OpenAI-compatible chat completions endpoint. response_format json_object asks the model to force valid JSON output — supported on llama-3.3-70b-versatile."
+      "notes": "Set the 'Header Auth' credential on this node after import: Name = Authorization, Value = Bearer YOUR_GROQ_KEY (include the word 'Bearer' and a space before the key — Groq needs the full string as the header value). OpenAI-compatible chat completions endpoint. response_format json_object asks the model to force valid JSON output — supported on llama-3.3-70b-versatile."
     },
     {
       "parameters": {

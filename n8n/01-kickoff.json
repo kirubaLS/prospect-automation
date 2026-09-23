@@ -38,16 +38,17 @@
       "parameters": {
         "method": "POST",
         "url": "https://api.phantombuster.com/api/v2/agents/launch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "X-Phantombuster-Key", "value": "={{ $env.PHANTOMBUSTER_API_KEY }}" },
             { "name": "Content-Type", "value": "application/json" }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  id: $env.PB_ACCOUNT_EMPLOYEES_AGENT_ID,\n  argument: {\n    companyUrl: $json[\"LinkedIn URL\"],\n    search: \"CIO OR CTO OR \\\"Head of IT\\\" OR \\\"IT Director\\\" OR \\\"Digital Transformation\\\" OR \\\"Operations Head\\\" OR COO\",\n    numberOfResultsPerLaunch: 25\n  }\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  id: \"YOUR_PHANTOMBUSTER_AGENT_ID\",\n  argument: {\n    companyUrl: $json[\"LinkedIn URL\"],\n    search: \"CIO OR CTO OR \\\"Head of IT\\\" OR \\\"IT Director\\\" OR \\\"Digital Transformation\\\" OR \\\"Operations Head\\\" OR COO\",\n    numberOfResultsPerLaunch: 25\n  }\n}) }}",
         "options": { "timeout": 30000 }
       },
       "id": "launch-phantom",
@@ -55,7 +56,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [-500, 0],
-      "notes": "argument field names (companyUrl, search, numberOfResultsPerLaunch) must be verified against this specific agent's 'API' tab in the PhantomBuster console — exact field names vary per phantom build."
+      "notes": "Set the 'Header Auth' credential (Name: X-Phantombuster-Key, Value: your API key) on this node after import. Also replace YOUR_PHANTOMBUSTER_AGENT_ID in the JSON body with your actual agent ID. Argument field names (companyUrl, search, numberOfResultsPerLaunch) must be verified against this specific agent's 'API' tab in the PhantomBuster console — exact field names vary per phantom build."
     },
     {
       "parameters": {
