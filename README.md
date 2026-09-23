@@ -60,7 +60,7 @@ card verification but is never charged on the free shape).
 | Output: Seniority | `Prospects` sheet: `Seniority` |
 | Output: Relevance score | `Prospects` sheet: `Score` |
 | Output: Reason for selection | `Prospects` sheet: `Reason` |
-| Output: LinkedIn activity indicators | `Prospects` sheet: `Activity` — **confirmed unavailable**, not best-effort: the Account Employees Export phantom's output schema (profileUrl, fullName, firstName, lastName, title, titleDescription, companyName, companyId, companyUrl, location, companyLocation, duration, profileImageUrl, sharedConnectionsCount) has no activity/posting data at all. This column always writes `Unknown`. Closing this gap means either a separate profile-visit step (real detection risk, see earlier discussion) or dropping this output field from client-facing reporting. |
+| Output: LinkedIn activity indicators | `Prospects` sheet: `Activity` — always writes `Unknown`. Not in scope: spec §10 lists "LinkedIn activity detection / Recent posts analysis" under **Future Enhancements**, not Phase 1-4. Intentionally deferred, not a bug to fix now. |
 
 Human review loop (spec §9) maps to the `Status` column (`Auto-Approved` /
 `Needs Review`, threshold score ≥ 70).
@@ -69,8 +69,12 @@ Human review loop (spec §9) maps to the `Status` column (`Auto-Approved` /
 
 - `resultObject` came back `null` in the webhook payload even on a successful run for this agent, so `02-ingest-webhook.json` now calls `/containers/fetch-result-object` separately instead. That endpoint's exact response shape for this specific agent isn't confirmed yet — "Split Out Candidates" (now a Code node) tries several likely shapes defensively, but check its output on a real run and adjust if it comes back empty.
 - Multi-client support isn't built yet — rules are hardcoded to Sharp SSDI.
-- **Company context (spec §7) and activity indicators (spec §1) are confirmed unavailable** from this phantom's output — not a data-passing bug, the fields (company size, industry, activity/posts) simply don't exist in what it returns. The Groq prompt now says so explicitly rather than silently falling back to "Unknown" as if the data might sometimes be there.
 - **No more per-company `Pending`/`Processing`/`Done` tracking in the `Companies` sheet.** Since the phantom processes the whole sheet in one run rather than one company at a time, `01-kickoff.json` no longer reads or filters on the `Status` column, and `02-ingest-webhook.json`'s "Log Failure"/"Mark Company Done" nodes (which match by `ContainerId`) are now best-effort bookkeeping rather than reliable per-company state — one phantom run covers multiple companies under a single `ContainerId`. Manage which companies are in the sheet manually (add/remove rows) rather than relying on that Status column to control what gets scraped.
+
+## Deliberately out of scope for this phase
+
+- **Company context (size, industry, tech maturity)** — spec §7 lists it as a scoring factor to consider, but companies enter this pipeline pre-vetted by the researcher (spec §2 step 1), so this phase's qualification work is about title relevance among already-selected companies, not re-scoring the companies themselves. The Account Employees Export phantom's output has no company-size/industry fields anyway, and adding a separate LinkedIn Company Scraper phantom to fetch them isn't worth the added scraping volume/risk for a secondary factor.
+- **Activity indicators (posts, engagement)** — spec §10 explicitly places "LinkedIn activity detection / Recent posts analysis" under Future Enhancements, not the Phase 1-4 build. `Activity` always writes `Unknown` by design, not as a bug.
 
 ## Security
 
