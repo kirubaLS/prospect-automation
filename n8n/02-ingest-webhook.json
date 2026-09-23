@@ -87,18 +87,18 @@
       "notes": "Once you see a real successful run here, check this node's output — if it's empty despite the phantom finding profiles, the raw structure from Fetch Result JSON needs inspecting (click that node's output) and this parsing logic adjusted to match."
     },
     {
-      "parameters": { "amount": 5, "unit": "seconds" },
+      "parameters": { "amount": 1, "unit": "seconds" },
       "id": "pace-groq-calls",
-      "name": "Pace (Groq free tier: 8000 TPM)",
+      "name": "Pace (light safety margin)",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [-410, 120],
-      "notes": "openai/gpt-oss-120b free tier caps at 8,000 tokens/minute (TPM) — the tighter limit than the 30 req/min RPM cap for this prompt's size (~450-500 tokens per call including the response). At 8000 TPM that's roughly 16-17 calls/minute safely, so a 5s delay (12/min) leaves margin for token-count variance. llama-3.3-70b-versatile (the model this was originally built for) was deprecated on Groq's free tier Aug 2026; gpt-oss-120b is Groq's own recommended replacement, but its TPM budget is lower (8000 vs 12000), which is why the delay increased from 2.5s to 5s."
+      "notes": "OpenAI's paid-tier rate limits are far more generous than Groq's free tier (new accounts start around 500 RPM / 200,000 TPM for gpt-4o-mini, scaling up with usage history) — a 1s delay is just a light courtesy pace, not a hard requirement like the old Groq pacing was."
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "url": "https://api.openai.com/v1/chat/completions",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -109,25 +109,25 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  model: \"openai/gpt-oss-120b\",\n  temperature: 0,\n  response_format: { type: \"json_object\" },\n  messages: [{\n    role: \"user\",\n    content: `You are a LeadStrategus prospect qualification agent for client Sharp SSDI.\\n\\nObjective: find people who influence ERP decisions, Document Management Systems, Digital Transformation, workflow automation, and IT modernization at their company.\\n\\nPersona tiers (use for the 'priority' field):\\nTier 1 — CIO, CTO, Head of IT, IT Director: direct ownership of technology decisions.\\nTier 2 — COO, Head of Operations, Digital Transformation Head: own operational improvement initiatives.\\nTier 3 — CFO, Finance Head: relevant for ERP approval workflows and compliance.\\nAvoid — Software Engineers, Developers, IT Support Engineers, System Administrators, Junior Managers: do not prioritize.\\n\\nTitle-relevance score anchors (use these as reference points for the 'score' field, 1-100):\\nCIO: 95+\\nIT Head / Head of IT / CTO / IT Director: 90+\\nIT Manager: 70-80\\nCOO / Head of Operations / Digital Transformation Head: 60-85\\nCFO / Finance Head: 30-55\\nEngineer / Developer / IT Support / SysAdmin / Junior Manager: below 40\\n\\nNo company-level data (size, industry, tech maturity) is available for this candidate — score based on title and title description alone, and do not guess at company context.\\n\\nCandidate:\\nName: ${$json.fullName}\\nTitle: ${$json.title}\\nTitle description: ${$json.titleDescription || 'None provided'}\\nProfile: ${$json.profileUrl}\\nCompany: ${$json.companyName}\\nLocation: ${$json.location || 'Unknown'}\\n\\nReturn ONLY valid JSON with these exact keys: {\\\"score\\\": number, \\\"seniority\\\": \\\"C-Suite|VP|Director|Manager|Other\\\", \\\"priority\\\": \\\"Tier 1|Tier 2|Tier 3|Skip\\\", \\\"reason\\\": string}`\n  }]\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"gpt-4o-mini\",\n  temperature: 0,\n  response_format: { type: \"json_object\" },\n  messages: [{\n    role: \"user\",\n    content: `You are a LeadStrategus prospect qualification agent for client Sharp SSDI.\\n\\nObjective: find people who influence ERP decisions, Document Management Systems, Digital Transformation, workflow automation, and IT modernization at their company.\\n\\nPersona tiers (use for the 'priority' field):\\nTier 1 — CIO, CTO, Head of IT, IT Director: direct ownership of technology decisions.\\nTier 2 — COO, Head of Operations, Digital Transformation Head: own operational improvement initiatives.\\nTier 3 — CFO, Finance Head: relevant for ERP approval workflows and compliance.\\nAvoid — Software Engineers, Developers, IT Support Engineers, System Administrators, Junior Managers: do not prioritize.\\n\\nTitle-relevance score anchors (use these as reference points for the 'score' field, 1-100):\\nCIO: 95+\\nIT Head / Head of IT / CTO / IT Director: 90+\\nIT Manager: 70-80\\nCOO / Head of Operations / Digital Transformation Head: 60-85\\nCFO / Finance Head: 30-55\\nEngineer / Developer / IT Support / SysAdmin / Junior Manager: below 40\\n\\nNo company-level data (size, industry, tech maturity) is available for this candidate — score based on title and title description alone, and do not guess at company context.\\n\\nCandidate:\\nName: ${$json.fullName}\\nTitle: ${$json.title}\\nTitle description: ${$json.titleDescription || 'None provided'}\\nProfile: ${$json.profileUrl}\\nCompany: ${$json.companyName}\\nLocation: ${$json.location || 'Unknown'}\\n\\nReturn ONLY valid JSON with these exact keys: {\\\"score\\\": number, \\\"seniority\\\": \\\"C-Suite|VP|Director|Manager|Other\\\", \\\"priority\\\": \\\"Tier 1|Tier 2|Tier 3|Skip\\\", \\\"reason\\\": string}`\n  }]\n}) }}",
         "options": { "timeout": 30000 }
       },
       "id": "groq-score",
-      "name": "Groq - Qualify Candidate",
+      "name": "OpenAI - Qualify Candidate",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 8000,
+      "waitBetweenTries": 5000,
       "position": [-300, 120],
-      "notes": "Set the 'Header Auth' credential on this node after import: Name = Authorization, Value = Bearer YOUR_GROQ_KEY (include the word 'Bearer' and a space before the key — Groq needs the full string as the header value). OpenAI-compatible chat completions endpoint. response_format json_object asks the model to force valid JSON output — supported on openai/gpt-oss-120b.\n\nField names match the Account Employees Export phantom's confirmed output schema: fullName, title, titleDescription, companyName, companyUrl, location, companyLocation, duration, profileUrl, profileImageUrl, sharedConnectionsCount. No company size/industry/activity fields exist in this output — the prompt no longer pretends otherwise (spec §7's company-context scoring factor and the spec's 'LinkedIn activity indicators' output field are both genuinely unavailable from this data source, not just unconfirmed).\n\nretryOnFail (3 tries, 8s apart) handles transient 429s from Groq's free-tier TPM cap self-healing instead of failing the whole execution — the 5s pacing Wait node upstream keeps normal traffic under budget, this retry covers the case where prior test runs or bursts already ate into that minute's budget."
+      "notes": "Set the 'Header Auth' credential on this node after import: Name = Authorization, Value = Bearer YOUR_OPENAI_KEY (include the word 'Bearer' and a space before the key). gpt-4o-mini: $0.15/$0.60 per 1M tokens (input/output) — at ~450-500 tokens/call this is roughly $0.0001-0.0002 per candidate. Requires a funded OpenAI Platform (api.openai.com) account with billing set up — a ChatGPT Plus/Pro subscription does NOT include API access or credits, they're billed completely separately.\n\nField names match the Account Employees Export phantom's confirmed output schema: fullName, title, titleDescription, companyName, companyUrl, location, companyLocation, duration, profileUrl, profileImageUrl, sharedConnectionsCount. No company size/industry/activity fields exist in this output (spec §7's company-context factor and the spec's 'LinkedIn activity indicators' output field are both genuinely unavailable from this data source)."
     },
     {
       "parameters": {
-        "jsCode": "const groqText = $json.choices[0].message.content;\nlet parsed;\ntry {\n  parsed = JSON.parse(groqText);\n} catch (e) {\n  parsed = { score: 0, seniority: 'Other', priority: 'Skip', reason: 'Could not parse LLM response' };\n}\nconst candidate = $('Split Out Candidates').item.json;\nreturn [{\n  json: {\n    Company: candidate.companyName,\n    Name: candidate.fullName,\n    Designation: candidate.title,\n    Seniority: parsed.seniority,\n    LinkedInURL: candidate.profileUrl,\n    Score: parsed.score,\n    Priority: parsed.priority,\n    Reason: parsed.reason,\n    Activity: 'Unknown',\n    Status: parsed.score >= 70 ? 'Auto-Approved' : 'Needs Review'\n  }\n}];"
+        "jsCode": "const responseText = $json.choices[0].message.content;\nlet parsed;\ntry {\n  parsed = JSON.parse(responseText);\n} catch (e) {\n  parsed = { score: 0, seniority: 'Other', priority: 'Skip', reason: 'Could not parse LLM response' };\n}\nconst candidate = $('Split Out Candidates').item.json;\nreturn [{\n  json: {\n    Company: candidate.companyName,\n    Name: candidate.fullName,\n    Designation: candidate.title,\n    Seniority: parsed.seniority,\n    LinkedInURL: candidate.profileUrl,\n    Score: parsed.score,\n    Priority: parsed.priority,\n    Reason: parsed.reason,\n    Activity: 'Unknown',\n    Status: parsed.score >= 70 ? 'Auto-Approved' : 'Needs Review'\n  }\n}];"
       },
       "id": "parse-result",
-      "name": "Parse Groq Response",
+      "name": "Parse OpenAI Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [-80, 120]
@@ -178,10 +178,10 @@
       ]
     },
     "Fetch Result JSON": { "main": [[{ "node": "Split Out Candidates", "type": "main", "index": 0 }]] },
-    "Split Out Candidates": { "main": [[{ "node": "Pace (Groq free tier: 8000 TPM)", "type": "main", "index": 0 }]] },
-    "Pace (Groq free tier: 8000 TPM)": { "main": [[{ "node": "Groq - Qualify Candidate", "type": "main", "index": 0 }]] },
-    "Groq - Qualify Candidate": { "main": [[{ "node": "Parse Groq Response", "type": "main", "index": 0 }]] },
-    "Parse Groq Response": { "main": [[{ "node": "Write to Prospects Sheet", "type": "main", "index": 0 }]] },
+    "Split Out Candidates": { "main": [[{ "node": "Pace (light safety margin)", "type": "main", "index": 0 }]] },
+    "Pace (light safety margin)": { "main": [[{ "node": "OpenAI - Qualify Candidate", "type": "main", "index": 0 }]] },
+    "OpenAI - Qualify Candidate": { "main": [[{ "node": "Parse OpenAI Response", "type": "main", "index": 0 }]] },
+    "Parse OpenAI Response": { "main": [[{ "node": "Write to Prospects Sheet", "type": "main", "index": 0 }]] },
     "Write to Prospects Sheet": { "main": [[{ "node": "Mark Company Done", "type": "main", "index": 0 }]] }
   }
 }

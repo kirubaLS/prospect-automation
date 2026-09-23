@@ -1,16 +1,28 @@
-# Prospect Automation — n8n on Render + PhantomBuster + Groq
+# Prospect Automation — n8n on Render + PhantomBuster + OpenAI
 
 LeadStrategus AI Prospect Research Agent implementation. Automates the
 company → decision-maker → qualified-prospect pipeline: PhantomBuster runs
 the Sales Navigator scraping (your own logged-in seat), n8n orchestrates,
-Groq (free tier, `openai/gpt-oss-120b`) scores candidates against the
-ICP rubric, results land in Google Sheets.
+OpenAI (`gpt-4o-mini`, paid — see cost note below) scores candidates against
+the ICP rubric, results land in Google Sheets.
 
 ## What's here
 
 - `render.yaml` — Blueprint for deploying n8n + a free Postgres database on Render (free tier, no credit card). Postgres gives n8n persistent storage so workflows/credentials survive Render's free-tier restarts.
 - `n8n/01-kickoff.json` — launches PhantomBuster's Sales Navigator Account Employees Export agent **once per schedule tick**, pointing it directly at the Companies Google Sheet as its input list (this phantom processes a whole spreadsheet of company URLs in one run — it isn't launched per-company).
-- `n8n/02-ingest-webhook.json` — receives PhantomBuster's completion webhook, fetches the scraped candidates, scores each with Groq against the Sharp SSDI Tier 1/2/3 rubric, writes results to the Prospects sheet.
+- `n8n/02-ingest-webhook.json` — receives PhantomBuster's completion webhook, fetches the scraped candidates, scores each with OpenAI against the Sharp SSDI Tier 1/2/3 rubric, writes results to the Prospects sheet.
+
+## Cost note: this is no longer a fully free pipeline
+
+Render, PhantomBuster (your existing plan) and Google Sheets stay as before,
+but the qualification-scoring step now uses OpenAI's paid API, not a free
+tier — OpenAI removed free trial credits for new accounts. **A ChatGPT
+Plus/Pro subscription does not include API access or credits** — they're
+billed completely separately; you need a funded account at
+platform.openai.com with a payment method on file. At `gpt-4o-mini` pricing
+($0.15/$0.60 per 1M input/output tokens) this is roughly **$0.0001-0.0002
+per candidate scored** — trivial in absolute terms, but a real ongoing cost,
+unlike Groq's free tier this replaces.
 
 ## Deploy
 
@@ -28,7 +40,7 @@ ICP rubric, results land in Google Sheets.
 6. Set up n8n **Credentials** (not env vars) for the two API calls — this instance blocks `$env.X` expressions in nodes, so secrets go through n8n's own Credentials store instead:
    - Google Sheets nodes: create a "Google Sheets OAuth2 API" credential, select it on every Google Sheets node.
    - `01-kickoff.json`'s "Launch Sales Nav Employees Phantom" node: create a **"Header Auth"** credential — Name: `X-Phantombuster-Key`, Value: your PhantomBuster API key — select it on that node's Authentication dropdown.
-   - `02-ingest-webhook.json`'s "Groq - Qualify Candidate" node: create another **"Header Auth"** credential — Name: `Authorization`, Value: `Bearer YOUR_GROQ_KEY` (include the literal word "Bearer" and a space) — select it on that node.
+   - `02-ingest-webhook.json`'s "OpenAI - Qualify Candidate" node: create another **"Header Auth"** credential — Name: `Authorization`, Value: `Bearer YOUR_OPENAI_KEY` (include the literal word "Bearer" and a space) — select it on that node. The key comes from platform.openai.com, not from a ChatGPT subscription.
 7. Copy the Production URL from `02-ingest-webhook.json`'s Webhook node into PhantomBuster's agent → Advanced Notification Settings.
 
 ## Memory: the real limit of Render's free tier
@@ -45,16 +57,25 @@ options are Render's paid tier (starts ~$7/mo, more RAM) or moving to a host
 with more free RAM (e.g. Oracle Cloud's Always Free ARM VM, which requires
 card verification but is never charged on the free shape).
 
-## Groq free tier — what governs your throughput
+## Why OpenAI instead of Groq
 
-**`llama-3.3-70b-versatile` was deprecated on Groq's free tier in August 2026** — this now runs on `openai/gpt-oss-120b`, Groq's own recommended replacement. Its free-tier limits are tighter and *different in shape*: **30 requests/min, 1,000 requests/day, only 8,000 tokens/minute (TPM), 200,000 tokens/day**. TPM is the binding constraint here, not RPM — this prompt runs ~450-500 tokens per call (prompt + response), so 30 req/min would blow past 8,000 TPM well before hitting the request-count cap. The `Pace (Groq free tier: 8000 TPM)` Wait node uses a 5s delay (~12 calls/min) to stay safely under that. The 1,000/day request cap and 200,000/day token cap are both lower than before too — at ~30 companies/day × up to 25 candidates each, you can hit the request cap; lower `numberOfResultsPerLaunch` in `01-kickoff.json` or your daily company count if you do. `qwen/qwen3.6-27b` is Groq's other suggested alternative but has the identical 8,000 TPM ceiling, so it isn't a way around this limit.
+This started on Groq's free tier, but hit a hard wall: `llama-3.3-70b-versatile`
+was deprecated (Aug 2026), and its replacement `openai/gpt-oss-120b` only
+gets 8,000 tokens/minute on the free tier — too tight for reliable
+production use at this prompt's size, and every stable alternative on
+Groq's free tier (`gpt-oss-20b`, `qwen/qwen3.6-27b`) shares the same 8,000
+TPM ceiling. `gemma2-9b-it` was considered as a higher-TPM option but has
+since been decommissioned. Moving to OpenAI's paid API removes the rate-limit
+chase entirely — new accounts start around 500 RPM / 200,000 TPM for
+`gpt-4o-mini`, far more headroom than Groq's free tier ever offered, at the
+cost of no longer being free (see the cost note above).
 
 ## Input / Output — mapped from the original spec
 
 | Spec field | Where it lives |
 |---|---|
 | Input: Company name / LinkedIn URL | `Companies` sheet: `Company Name`, `LinkedIn URL` |
-| Input: Client-specific prospecting rules | Phantom's `search` argument + the Tier 1/2/3 rubric in the Groq prompt (currently hardcoded to Sharp SSDI) |
+| Input: Client-specific prospecting rules | Phantom's `search` argument + the Tier 1/2/3 rubric in the OpenAI prompt (currently hardcoded to Sharp SSDI) |
 | Output: Decision makers / Designation | `Prospects` sheet: `Name`, `Designation` |
 | Output: LinkedIn profile URL | `Prospects` sheet: `LinkedInURL` |
 | Output: Seniority | `Prospects` sheet: `Seniority` |
