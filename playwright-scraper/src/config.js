@@ -6,12 +6,17 @@ function requireEnv(name) {
   return value;
 }
 
-// Render's free tier has no persistent disk to keep a service-account.json
-// file across deploys/restarts, so the key can also be supplied as a raw
-// JSON string env var (GOOGLE_SERVICE_ACCOUNT_KEY_JSON) instead of a file
-// path (GOOGLE_SERVICE_ACCOUNT_KEY_PATH, still supported for local dev).
-if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH && !process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON) {
-  throw new Error('Set either GOOGLE_SERVICE_ACCOUNT_KEY_PATH or GOOGLE_SERVICE_ACCOUNT_KEY_JSON (see .env.example)');
+// Where companies come from and prospects go: 'file' (CSV/XLSX upload or
+// local file, the default) or 'sheets' (Google Sheets). Google credentials
+// and SPREADSHEET_ID are only required for 'sheets'. For Render's free tier
+// (no persistent disk) the key can be supplied as a raw JSON string env var
+// (GOOGLE_SERVICE_ACCOUNT_KEY_JSON) instead of a file path.
+const storageBackend = (process.env.STORAGE_BACKEND || 'file').toLowerCase();
+if (!['file', 'sheets'].includes(storageBackend)) {
+  throw new Error(`STORAGE_BACKEND must be "file" or "sheets", got "${storageBackend}"`);
+}
+if (storageBackend === 'sheets' && !process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH && !process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON) {
+  throw new Error('STORAGE_BACKEND=sheets needs GOOGLE_SERVICE_ACCOUNT_KEY_PATH or GOOGLE_SERVICE_ACCOUNT_KEY_JSON (see .env.example)');
 }
 
 module.exports = {
@@ -19,9 +24,13 @@ module.exports = {
   userAgent:
     process.env.LINKEDIN_USER_AGENT ||
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  storageBackend,
+  // file backend: where uploaded companies/prospects state is kept
+  dataDir: process.env.DATA_DIR || require('path').join(__dirname, '..', 'data'),
+  // sheets backend
   googleServiceAccountKeyPath: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || null,
   googleServiceAccountKeyJson: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON || null,
-  spreadsheetId: requireEnv('SPREADSHEET_ID'),
+  spreadsheetId: storageBackend === 'sheets' ? requireEnv('SPREADSHEET_ID') : process.env.SPREADSHEET_ID || null,
   companiesSheetName: process.env.COMPANIES_SHEET_NAME || 'Companies',
   prospectsSheetName: process.env.PROSPECTS_SHEET_NAME || 'Prospects',
   maxProspectsPerCompany: parseInt(process.env.MAX_PROSPECTS_PER_COMPANY || '25', 10),

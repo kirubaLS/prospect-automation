@@ -1,10 +1,11 @@
 # LeadStrategus Sales Navigator Scraper (standalone Playwright)
 
-Reads companies from a Google Sheet and, for each one, mirrors the manual
-Sales Navigator workflow: open the company's account page
-(`/sales/company/<id>`), click its built-in **"Decision makers"** quick
-search (under "Common searches"), scrape the resulting prospect list, and
-write it to a Prospects sheet. Runs on its own — independent of the
+Takes a list of companies (a CSV/XLSX file, or a Google Sheet) and, for each
+one, mirrors the manual Sales Navigator workflow: open the company's account
+page (`/sales/company/<id>`), open its built-in **"Decision makers"** quick
+search (under "Common searches"), scrape the resulting prospect list, qualify
+each person with the Sharp SSDI rubric via OpenAI, and write the top ones out
+as a CSV/XLSX (or to a Prospects sheet). Runs on its own — independent of the
 n8n/PhantomBuster pipeline in `../n8n/`.
 
 How each company is handled:
@@ -20,16 +21,15 @@ How each company is handled:
    page's own link). The link's href is followed when present; otherwise the
    identical URL is built directly.
 3. **Scrape the results** — each row's name, title, company, location,
-   tenure, and "About" snippet.
+   tenure, and full "About" text.
 4. **Qualify with OpenAI** (if `OPENAI_API_KEY` is set) using the same Sharp
    SSDI Tier 1/2/3 prompt as the n8n pipeline, keep the top
-   `TOP_N_PER_COMPANY` (default 4) by score, and write them to the Prospects
-   sheet with the same columns the n8n flow uses (`Company, Name,
-   Designation, Seniority, LinkedInURL, Score, Priority, Reason, Activity,
-   Status`, plus `Location`). Columns are matched by header name, so the
-   sheet's column order doesn't matter, and a profile URL already in the
-   sheet is never written twice. Without an OpenAI key, every decision maker
-   is written unscored as `Needs Review`.
+   `TOP_N_PER_COMPANY` (default 4) by score. Without an OpenAI key, every
+   decision maker is kept, unscored, as `Needs Review`.
+5. **Write the prospects** with the same columns the n8n flow uses:
+   `Company, Name, Designation, Seniority, LinkedInURL, Score, Priority,
+   Reason, Activity, Status, Location, Tenure`. A profile URL already present
+   is never written twice.
 
 ## Read this before running it
 
@@ -47,9 +47,30 @@ The result-row selectors were built from a real Sales Navigator "Decision
 makers" page's DOM and are exercised by `npm test`, which runs
 `scrapeSearchResults()` in a real Chromium against a fixture trimmed from
 that page (`test/fixtures/search-results.html`), including LinkedIn's lazy
-row rendering. That covers the parsing; it does not cover login, the account
-page, or LinkedIn changing its markup later — so still do one watched local
-run before trusting it unattended (see "First run / selector tuning").
+row rendering; the file import/export path is tested too. That does not
+cover login, the account page, or LinkedIn changing its markup later — so
+still do one watched local run before trusting it unattended (see "First
+run").
+
+## Input file
+
+A `.csv`, `.xlsx` or `.xls` with a header row. Needed columns (header names
+are matched loosely — `company`, `Company Name`, `LinkedIn`, `LinkedIn URL`,
+`url` all work):
+
+| Column | Notes |
+|---|---|
+| `Company Name` | Display name. Derived from the URL if missing. |
+| `LinkedIn URL` | The company **page** URL, e.g. `https://www.linkedin.com/company/kosmodermahealthcare/`. Not a person's profile, not a Sales Navigator lead link. |
+| `Status` | Optional. Rows already marked `Done` are skipped. |
+
+Only the first sheet of a workbook is read. Re-uploading a file merges by
+LinkedIn URL: new companies are added as pending, existing ones keep their
+status, so you can keep one master list and re-upload it as it grows.
+
+Statuses after a run: `Done` (prospects written), `No Matches` (Sales
+Navigator lists no decision makers — not retried), `Error` (retried on later
+runs, up to 3 attempts, then left with the reason in the `Error` column).
 
 ## Setup
 
@@ -59,107 +80,118 @@ run before trusting it unattended (see "First run / selector tuning").
      Storage) → Cookies → `https://www.linkedin.com` → `li_at` value. This
      expires periodically (LinkedIn rotates it) — if the script errors with
      "session cookie is invalid or expired", grab a fresh one the same way.
-   - `GOOGLE_SERVICE_ACCOUNT_KEY_PATH` — a Google Cloud service account JSON
-     key with the Sheets API enabled. Share your target Google Sheet
-     (Editor access) with that service account's email address
-     (`xxx@xxx.iam.gserviceaccount.com`) or writes will fail with a
-     permission error.
-   - `SPREADSHEET_ID` — from your sheet's URL:
-     `docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit`.
-3. Companies sheet needs at least `Company Name` and `Status` columns
-   (matches the columns already used by the n8n pipeline). Rows with
-   `Status = Done` are skipped.
+   - `OPENAI_API_KEY` — from platform.openai.com (a ChatGPT subscription does
+     not include this). Optional; without it nothing is scored.
+   - Leave `STORAGE_BACKEND=file`. (Set `sheets` plus the `GOOGLE_*` /
+     `SPREADSHEET_ID` values only if you want the Google Sheets flow.)
 
-## First run / selector tuning
+## Running locally (CLI)
+
+```
+npm start -- --input companies.xlsx                       # writes prospects.xlsx next to it
+npm start -- --input companies.csv --output out/prospects.csv
+npm start                                                 # continues an earlier import
+npm start -- --input companies.xlsx --limit 2             # just two companies this run
+npm start -- --input companies.xlsx --replace             # discard the previous list first
+```
+
+Progress is kept in `data/state.json` (`DATA_DIR`), so a run interrupted
+halfway resumes from the next pending company. Every run rewrites the output
+file with **all** prospects collected so far, not just this run's.
+
+### First run
 
 1. Set `HEADLESS=false` and `DEBUG_SCRAPER=true` in `.env`.
-2. `npm start` with just one or two companies in the sheet.
-3. Watch the browser window as it searches. If `scrapeSearchResults` logs
-   `found 0 matching prospects` but you can see results on screen, the
-   selectors in `src/linkedin.js` need adjusting:
-   - Open the saved `debug-<company>.png` screenshot, or right-click a
-     result card in the live browser → Inspect.
-   - Update the `cardSelector` and the `data-anonymize="..."` locators near
-     the top of `scrapeSearchResults()` to match what you actually see.
-4. Once it reliably finds real prospects for your test companies, set
-   `HEADLESS=true` and `DEBUG_SCRAPER=false` for normal runs.
+2. `npm start -- --input companies.xlsx --limit 1` with a company you know
+   has decision makers (Kosmoderma is a good one).
+3. Watch the browser: it should land on the account page, then on a people
+   search showing "Current company" and "Seniority level" filter pills. If
+   it logs `found 0 matching prospects` while results are visible on screen,
+   LinkedIn's markup has changed — send the saved `debug-<company>.png` and
+   the page's HTML (right-click a result → Inspect → copy outer HTML of the
+   `<li class="artdeco-list__item">`) so the selectors in
+   `src/linkedin.js` can be updated.
+4. Once it works, set `HEADLESS=true` and `DEBUG_SCRAPER=false`.
 
-**Do the selector tuning above locally before deploying to Render** — Render
-has no display, so `HEADLESS=false` isn't usable there. Get it working
-reliably on your machine first; the deployed version just repeats the same
-logic on a schedule.
+**Do this locally before deploying to Render** — Render has no display, so
+`HEADLESS=false` isn't usable there.
 
 ## Running on a schedule
 
-Two ways to run this repeatedly, pick one:
-
-### Option A — local cron (simplest, needs a machine that's always on)
-
-This is a plain Node script — schedule it with your OS's own scheduler
-rather than building scheduling into the script itself:
+### Option A — local cron (needs a machine that's always on)
 
 - Linux/macOS: `crontab -e`, e.g. `0 */4 * * * cd /path/to/playwright-scraper && npm start >> run.log 2>&1`
 - Windows: Task Scheduler running `npm start` in this directory.
+
+Drop new companies into the same input file and re-run; already-Done ones
+are skipped.
 
 ### Option B — Render (free tier)
 
 Render's **free tier only supports Web Services** (Background Workers and
 Cron Jobs need a paid plan), and a free Web Service **sleeps after 15
 minutes idle**, waking only on an incoming HTTP request. So this deploys as
-an HTTP server (`src/server.js`) with a `/run` endpoint, woken periodically
-by an external pinger — the same pattern this project's n8n deployment
-already uses to keep itself alive.
+an HTTP server (`src/server.js`): a small page at `/` to upload the companies
+file and download results, plus a `/run` endpoint woken periodically by an
+external pinger — the same pattern this project's n8n deployment already
+uses to keep itself alive.
 
-**Read this before choosing Render:** Chromium is memory-heavy, and
-Render's free plan gives **512MB RAM total** — the n8n deployment in this
-same repo already hit `JavaScript heap out of memory` at that limit running
-Node alone, before adding a browser into the mix. `NODE_OPTIONS`,
-`--disable-dev-shm-usage`, and processing one company at a time (never
-parallel) are already set up to reduce the footprint, but there's a real
-chance this still OOMs under real-world load on the free tier. If it does,
-Render's paid tier (~$7/mo, more RAM) or a host with more free RAM (e.g.
-Oracle Cloud's Always Free ARM VM) are the fallback options — same trade-off
-noted in the n8n README.
+**Two things to know before choosing Render:**
+
+- **Memory.** Chromium is memory-heavy, and Render's free plan gives 512MB
+  RAM total — the n8n deployment in this repo already hit `JavaScript heap
+  out of memory` at that limit with no browser involved. `NODE_OPTIONS`,
+  `--disable-dev-shm-usage` and one-company-per-run are set up to keep the
+  footprint down, but this may still OOM under real load. If it does, the
+  paid tier (~$7/mo, more RAM) is the fallback.
+- **No persistent disk.** Uploaded companies and collected prospects live in
+  the running container (`DATA_DIR`). They survive between pings, but a
+  redeploy, crash or restart starts empty — **download results regularly**
+  (`/download`), and keep your master companies file so re-uploading is a
+  one-click recovery. If durability matters more than avoiding Google setup,
+  use `STORAGE_BACKEND=sheets` instead.
 
 Setup:
 
-1. **Render** → New → Blueprint → connect this repo → point it at
-   `playwright-scraper/render.yaml` → Deploy Blueprint. This builds from
-   `playwright-scraper/Dockerfile`, which uses Playwright's official base
-   image (Chromium + OS deps preinstalled) so there's nothing extra to
-   configure at the OS level.
-2. In the Render dashboard, set the `sync: false` env vars manually (never
-   commit these):
+1. **Render** → New + → **Web Service** → connect this repo. Set **Root
+   Directory** to `playwright-scraper`, runtime **Docker**, instance type
+   **Free**. The Dockerfile uses Playwright's official base image (Chromium +
+   OS deps preinstalled). Advanced → Health Check Path `/healthz`.
+2. Environment variables — secrets:
    - `LINKEDIN_LI_AT_COOKIE`
-   - `GOOGLE_SERVICE_ACCOUNT_KEY_JSON` — paste the entire service account
-     key file's JSON content as one line (Render has no persistent disk for
-     a key file, so this replaces `GOOGLE_SERVICE_ACCOUNT_KEY_PATH`).
-   - `SPREADSHEET_ID`
-   - `RUN_TOKEN` — any random string you generate (e.g.
-     `openssl rand -hex 16`). This is the shared secret that authorizes
-     `/run` and `/status` — without it those endpoints are open to anyone
-     with your Render URL.
-3. **(Optional but recommended)** Add a `RunLog` tab to your spreadsheet with
-   header row `StartedAt, FinishedAt, CompaniesProcessed, TotalProspects,
-   FatalError, ErrorCompanies`. Render's free tier keeps no logs/disk across
-   restarts, so this tab is your persistent run history — one row gets
-   appended per `/run` call. Leave `RUN_LOG_SHEET_NAME` blank to skip this.
-4. Set up a free external pinger (cron-job.org or UptimeRobot) to hit
-   `https://<your-service>.onrender.com/run?token=<RUN_TOKEN>` — **every
-   15-20 minutes**, not every few hours. Each `/run` call only processes
-   `COMPANIES_PER_RUN` companies (default **1**) to keep memory/duration
-   bounded on the free tier, so a short interval is what actually works
-   through your Companies sheet at a reasonable pace. A call that arrives
-   before `MIN_RUN_INTERVAL_MS` (default 5 min) has passed since the last
-   run finished gets rejected with `429` rather than overlapping sessions —
-   safe to over-ping, it just no-ops until the cooldown clears.
-   Check progress via
-   `https://<your-service>.onrender.com/status?token=<RUN_TOKEN>`, which
-   also survives the pinger's own request timing out (the scrape itself
-   keeps running in the background either way).
-5. `GET /healthz` (no token needed) is what Render's own health check polls
-   to confirm the service booted — set as `healthCheckPath` in
-   `render.yaml` already, and never blocked by an in-progress scrape.
+   - `OPENAI_API_KEY`
+   - `RUN_TOKEN` — any random string (e.g. `openssl rand -hex 16`). This
+     protects every endpoint except `/healthz`; without it your URL is open
+     to anyone.
+
+   Settings (all optional, these are the recommended values):
+   `NODE_OPTIONS=--max-old-space-size=400`, `STORAGE_BACKEND=file`,
+   `DATA_DIR=/app/data`, `COMPANIES_PER_RUN=1`, `MAX_PROSPECTS_PER_COMPANY=15`,
+   `TOP_N_PER_COMPANY=4`, `AUTO_APPROVE_SCORE=70`, `MIN_RUN_INTERVAL_MS=300000`.
+   Do not set `PORT` — Render sets it.
+3. Deploy. The first build pulls a ~1.5 GB image; expect 5–10 minutes.
+   You're live when the log shows `Scraper server listening`.
+4. Open `https://<your-service>.onrender.com/?token=<RUN_TOKEN>` — upload
+   your companies file, click **Run now** for the first company, watch the
+   Render log, then **Prospects .xlsx** to download.
+5. Set up a free external pinger (cron-job.org or UptimeRobot) to hit
+   `https://<your-service>.onrender.com/run?token=<RUN_TOKEN>` **every
+   15 minutes**. Each call processes `COMPANIES_PER_RUN` companies (default
+   1); when nothing is pending it returns `nothing_pending` and does nothing.
+   A call arriving within `MIN_RUN_INTERVAL_MS` of the previous run gets a
+   `429 cooldown` — that's the overlap guard, not an error.
+
+Endpoints (all need `?token=` except `/healthz`):
+
+| Route | What it does |
+|---|---|
+| `GET /` | Control page: upload, run, status, download, reset |
+| `POST /upload?filename=x.xlsx[&replace=1]` | Body = the raw file. Merges into the list (or replaces it) |
+| `GET /run` | Starts a run in the background (`202 started`) |
+| `GET /status` | Counts (pending/done/error/prospects), last run summary |
+| `GET /download?format=xlsx\|csv[&what=companies]` | Prospects (default) or the companies list with statuses |
+| `POST /reset` | Clears everything |
+| `GET /healthz` | Render's health check, no token |
 
 ### Production behavior worth knowing
 
@@ -178,14 +210,16 @@ Setup:
   back-to-back triggers even if your pinger is misconfigured to fire too
   often — protects both your Render memory and LinkedIn's rate limits.
 
-## Output
+## Google Sheets backend (optional)
 
-Each matching prospect is appended to the `Prospects` sheet as one row:
-`Company, Name, Title, ProfileUrl, Location, Status`. Each processed company
-in the `Companies` sheet gets its `Status` column updated to `Done`,
-`No Matches`, or `Error` (with a message in the `Error` column if present),
-so re-runs only pick up companies not yet processed — same resumability
-model as the n8n pipeline.
+Set `STORAGE_BACKEND=sheets`, `SPREADSHEET_ID`, and either
+`GOOGLE_SERVICE_ACCOUNT_KEY_PATH` (local) or `GOOGLE_SERVICE_ACCOUNT_KEY_JSON`
+(Render — paste the key file's JSON as one line). Share the sheet (Editor)
+with the service account's email. The `Companies` tab needs `Company Name`,
+`LinkedIn URL`, `Status`, `Error` headers; prospects go to `Prospects` by
+header name; an optional `RunLog` tab (`StartedAt, FinishedAt,
+CompaniesProcessed, TotalProspects, FatalError, ErrorCompanies`) gets one row
+per run. Uploads/downloads at `/` are not available in this mode.
 
 ## What this doesn't do (yet)
 

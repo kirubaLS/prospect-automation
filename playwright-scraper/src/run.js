@@ -1,5 +1,5 @@
 const config = require('./config');
-const sheets = require('./sheets');
+const sheets = require('./store');
 const li = require('./linkedin');
 const logger = require('./logger');
 const { qualifyAndSelect } = require('./qualify');

@@ -11,14 +11,13 @@ services:
         value: "--max-old-space-size=400"
       - key: LINKEDIN_LI_AT_COOKIE
         sync: false
-      - key: GOOGLE_SERVICE_ACCOUNT_KEY_JSON
-        sync: false
-      - key: SPREADSHEET_ID
-        sync: false
-      - key: COMPANIES_SHEET_NAME
-        value: Companies
-      - key: PROSPECTS_SHEET_NAME
-        value: Prospects
+      # file = upload CSV/XLSX at /, download results at /download (default).
+      # For Google Sheets instead set sheets + GOOGLE_SERVICE_ACCOUNT_KEY_JSON,
+      # SPREADSHEET_ID, COMPANIES_SHEET_NAME, PROSPECTS_SHEET_NAME, RUN_LOG_SHEET_NAME.
+      - key: STORAGE_BACKEND
+        value: file
+      - key: DATA_DIR
+        value: /app/data
       - key: MAX_PROSPECTS_PER_COMPANY
         value: "15"
       - key: MIN_DELAY_MS
@@ -35,8 +34,6 @@ services:
         value: "30000"
       - key: MAX_RETRIES_PER_COMPANY
         value: "1"
-      - key: RUN_LOG_SHEET_NAME
-        value: RunLog
       - key: COMPANIES_PER_RUN
         value: "1"
       - key: MIN_RUN_INTERVAL_MS

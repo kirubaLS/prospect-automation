@@ -61,9 +61,11 @@ async function getPendingCompanies() {
     range: `${config.companiesSheetName}!A:Z`
   });
   const companies = rowsToObjects(res.data.values);
-  return companies.filter(
-    (c) => (c.Status || '').trim().toLowerCase() !== 'done' && (c['Company Name'] || '').trim() !== ''
-  );
+  // "Done" and "No Matches" are terminal; "Error" rows are retried each run.
+  return companies.filter((c) => {
+    const s = (c.Status || '').trim().toLowerCase();
+    return s !== 'done' && s !== 'no matches' && (c['Company Name'] || '').trim() !== '';
+  });
 }
 
 // Same column set the n8n pipeline writes, so both can share one Prospects tab.

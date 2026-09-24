@@ -2,17 +2,18 @@
   "name": "leadstrategus-salesnav-scraper",
   "version": "1.0.0",
   "private": true,
-  "description": "Standalone Playwright automation: reads companies from a Google Sheet, searches LinkedIn Sales Navigator filtered by title/seniority per company, and writes matching prospects back to the sheet.",
+  "description": "Standalone Playwright automation: reads companies from a CSV/XLSX (or Google Sheet), opens each one's Sales Navigator decision makers, qualifies them with OpenAI, and writes prospects to CSV/XLSX (or the sheet).",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "server": "node src/server.js",
-    "test": "node test/scrape-results.test.js",
+    "test": "node test/files.test.js && node test/scrape-results.test.js",
     "install-browsers": "playwright install chromium"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "googleapis": "^140.0.1",
-    "playwright": "1.47.2"
+    "playwright": "1.47.2",
+    "xlsx": "^0.18.5"
   }
 }
