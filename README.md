@@ -11,6 +11,7 @@ the ICP rubric, results land in Google Sheets.
 - `render.yaml` — Blueprint for deploying n8n + a free Postgres database on Render (free tier, no credit card). Postgres gives n8n persistent storage so workflows/credentials survive Render's free-tier restarts.
 - `n8n/01-kickoff.json` — launches PhantomBuster's Sales Navigator Account Employees Export agent **once per schedule tick**, pointing it directly at the Companies Google Sheet as its input list (this phantom processes a whole spreadsheet of company URLs in one run — it isn't launched per-company).
 - `n8n/02-ingest-webhook.json` — receives PhantomBuster's completion webhook, pulls the agent's *full accumulated* candidate list (not just this run's new finds — see "Orphaned companies" below), filters it to companies still not marked `Done`, scores each with OpenAI against the Sharp SSDI Tier 1/2/3 rubric, keeps only the **top 4 highest-scoring candidates per company**, writes results to the Prospects sheet, and marks each company `Done`.
+- `playwright-scraper/` — a separate, standalone alternative to the n8n+PhantomBuster pipeline above: a Node.js/Playwright script that drives your own Sales Navigator session directly (no PhantomBuster), applying a title/seniority filter per company and writing matches to the sheet itself. See `playwright-scraper/README.md` for setup and important risk notes before using it.
 
 ## Cost note: this is no longer a fully free pipeline
 
