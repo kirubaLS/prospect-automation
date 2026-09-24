@@ -78,7 +78,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ `https://phantombuster.s3.amazonaws.com/${$json.orgS3Folder}/${$json.s3Folder}/result.json` }}",
+        "url": "={{ (() => { const arg = JSON.parse($json.argument || '{}'); const csvName = arg.csvName || 'result'; return `https://phantombuster.s3.amazonaws.com/${$json.orgS3Folder}/${$json.s3Folder}/${csvName}.json`; })() }}",
         "options": { "timeout": 30000 }
       },
       "id": "fetch-full-result",
@@ -86,7 +86,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [-680, 120],
-      "notes": "No PhantomBuster auth needed — this is a direct S3 object URL. Confirm result.json is the right filename against a real run (PhantomBuster support docs mention result.csv as the alternative); if this 404s, try result.csv instead and adjust the Code node after Read All Companies to parse CSV instead of JSON."
+      "notes": "No PhantomBuster auth needed — this is a direct S3 object URL. Reads the actual configured output filename from the agent's own settings (argument.csvName from Fetch Agent Info) instead of assuming the default 'result' — confirmed via a real run that this agent's csvName had been customized to 'result5', so a hardcoded result.json was silently pulling a stale, abandoned file from before that rename. Falls back to 'result' if csvName isn't set. If this still 404s, the file extension itself may need to be .csv instead of .json — check what PhantomBuster's Behavior settings show for this agent's Results File format."
     },
     {
       "parameters": {
