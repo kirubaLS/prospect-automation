@@ -5,10 +5,13 @@ let cachedClient = null;
 
 async function getSheetsClient() {
   if (cachedClient) return cachedClient;
-  const auth = new google.auth.GoogleAuth({
-    keyFile: config.googleServiceAccountKeyPath,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets']
-  });
+  const authOptions = { scopes: ['https://www.googleapis.com/auth/spreadsheets'] };
+  if (config.googleServiceAccountKeyJson) {
+    authOptions.credentials = JSON.parse(config.googleServiceAccountKeyJson);
+  } else {
+    authOptions.keyFile = config.googleServiceAccountKeyPath;
+  }
+  const auth = new google.auth.GoogleAuth(authOptions);
   const client = await auth.getClient();
   cachedClient = google.sheets({ version: 'v4', auth: client });
   return cachedClient;

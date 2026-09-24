@@ -60,13 +60,72 @@ your first real run** — see "First run / selector tuning" below.
 4. Once it reliably finds real prospects for your test companies, set
    `HEADLESS=true` and `DEBUG_SCRAPER=false` for normal runs.
 
+**Do the selector tuning above locally before deploying to Render** — Render
+has no display, so `HEADLESS=false` isn't usable there. Get it working
+reliably on your machine first; the deployed version just repeats the same
+logic on a schedule.
+
 ## Running on a schedule
+
+Two ways to run this repeatedly, pick one:
+
+### Option A — local cron (simplest, needs a machine that's always on)
 
 This is a plain Node script — schedule it with your OS's own scheduler
 rather than building scheduling into the script itself:
 
 - Linux/macOS: `crontab -e`, e.g. `0 */4 * * * cd /path/to/playwright-scraper && npm start >> run.log 2>&1`
 - Windows: Task Scheduler running `npm start` in this directory.
+
+### Option B — Render (free tier)
+
+Render's **free tier only supports Web Services** (Background Workers and
+Cron Jobs need a paid plan), and a free Web Service **sleeps after 15
+minutes idle**, waking only on an incoming HTTP request. So this deploys as
+an HTTP server (`src/server.js`) with a `/run` endpoint, woken periodically
+by an external pinger — the same pattern this project's n8n deployment
+already uses to keep itself alive.
+
+**Read this before choosing Render:** Chromium is memory-heavy, and
+Render's free plan gives **512MB RAM total** — the n8n deployment in this
+same repo already hit `JavaScript heap out of memory` at that limit running
+Node alone, before adding a browser into the mix. `NODE_OPTIONS`,
+`--disable-dev-shm-usage`, and processing one company at a time (never
+parallel) are already set up to reduce the footprint, but there's a real
+chance this still OOMs under real-world load on the free tier. If it does,
+Render's paid tier (~$7/mo, more RAM) or a host with more free RAM (e.g.
+Oracle Cloud's Always Free ARM VM) are the fallback options — same trade-off
+noted in the n8n README.
+
+Setup:
+
+1. **Render** → New → Blueprint → connect this repo → point it at
+   `playwright-scraper/render.yaml` → Deploy Blueprint. This builds from
+   `playwright-scraper/Dockerfile`, which uses Playwright's official base
+   image (Chromium + OS deps preinstalled) so there's nothing extra to
+   configure at the OS level.
+2. In the Render dashboard, set the `sync: false` env vars manually (never
+   commit these):
+   - `LINKEDIN_LI_AT_COOKIE`
+   - `GOOGLE_SERVICE_ACCOUNT_KEY_JSON` — paste the entire service account
+     key file's JSON content as one line (Render has no persistent disk for
+     a key file, so this replaces `GOOGLE_SERVICE_ACCOUNT_KEY_PATH`).
+   - `SPREADSHEET_ID`
+   - `RUN_TOKEN` — any random string you generate (e.g.
+     `openssl rand -hex 16`). This is the shared secret that authorizes
+     `/run` and `/status` — without it those endpoints are open to anyone
+     with your Render URL.
+3. Set up a free external pinger (cron-job.org or UptimeRobot) to hit
+   `https://<your-service>.onrender.com/run?token=<RUN_TOKEN>` on whatever
+   interval you want scrapes to run — e.g. every 4 hours. Each ping starts
+   one full pass over pending companies and returns immediately (`202
+   Accepted`); check progress via
+   `https://<your-service>.onrender.com/status?token=<RUN_TOKEN>`, which
+   also survives the pinger's own request timing out (the scrape itself
+   keeps running in the background either way).
+4. `GET /healthz` (no token needed) is what Render's own health check polls
+   to confirm the service booted — set as `healthCheckPath` in
+   `render.yaml` already.
 
 ## Output
 

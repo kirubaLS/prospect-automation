@@ -7,7 +7,13 @@ function randomDelay() {
 }
 
 async function launchSession() {
-  const browser = await chromium.launch({ headless: config.headless });
+  const browser = await chromium.launch({
+    headless: config.headless,
+    // --disable-dev-shm-usage avoids Chromium crashing in containers with a
+    // small /dev/shm (default on most PaaS free tiers, including Render).
+    // --no-sandbox is required to run Chromium as root in most containers.
+    args: ['--disable-dev-shm-usage', '--no-sandbox', '--disable-gpu']
+  });
   const context = await browser.newContext({ userAgent: config.userAgent });
   await context.addCookies([
     {
