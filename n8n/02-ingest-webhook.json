@@ -104,14 +104,14 @@
     },
     {
       "parameters": {
-        "jsCode": "let candidates = $json;\nif (candidates && !Array.isArray(candidates)) {\n  candidates = candidates.data || candidates.rows || candidates.results || [];\n}\nif (!Array.isArray(candidates)) candidates = [];\nreturn [{ json: { candidates } }];"
+        "jsCode": "const raw = $json;\nlet candidates = raw;\nif (candidates && !Array.isArray(candidates)) {\n  candidates = raw.candidates || raw.data || raw.rows || raw.results || [];\n}\nif (!Array.isArray(candidates)) candidates = [];\nreturn [{ json: { candidates } }];"
       },
       "id": "normalize-json-result",
       "name": "Normalize JSON Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [-580, 60],
-      "notes": "Success path from 'Fetch Result (Try JSON)'. Unwraps whatever shape PhantomBuster's JSON export uses (bare array, or {data:[...]}/{rows:[...]}/{results:[...]}) into a single {candidates: [...]} item so both the JSON and CSV paths converge on the same shape."
+      "notes": "Success path from 'Fetch Result (Try JSON)'. Unwraps whatever shape PhantomBuster's JSON export uses (bare array, or {candidates:[...]}/{data:[...]}/{rows:[...]}/{results:[...]}) into a single {candidates: [...]} item so both the JSON and CSV paths converge on the same shape. Confirmed via a real run that this agent's JSON export wraps the array under a top-level 'candidates' key — the earlier version of this node didn't check for that key and silently produced an empty array even when the S3 file had real data."
     },
     {
       "parameters": {
