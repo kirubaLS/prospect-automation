@@ -32,7 +32,23 @@ module.exports = {
   maxDelayMs: parseInt(process.env.MAX_DELAY_MS || '5000', 10),
   headless: process.env.HEADLESS !== 'false',
   debug: process.env.DEBUG_SCRAPER === 'true',
-  // HTTP server mode (Render deploy) - see src/server.js
+  navigationTimeoutMs: parseInt(process.env.NAVIGATION_TIMEOUT_MS || '30000', 10),
+  maxRetriesPerCompany: parseInt(process.env.MAX_RETRIES_PER_COMPANY || '1', 10),
+  // Optional - appends one summary row per run to this sheet tab if set, so
+  // run history survives Render's free tier having no persistent disk/logs
+  // retention. Unset = skip (no separate sheet required).
+  runLogSheetName: process.env.RUN_LOG_SHEET_NAME || null,
+
+  // --- HTTP server mode (Render deploy) - see src/server.js ---
   port: parseInt(process.env.PORT || '3000', 10),
-  runToken: process.env.RUN_TOKEN || null
+  runToken: process.env.RUN_TOKEN || null,
+  // Bounds memory/duration per /run call on a constrained host: each
+  // invocation processes at most this many companies, not the whole
+  // pending list. Ping /run more often (e.g. every 15-20 min) to work
+  // through a larger backlog instead of raising this.
+  companiesPerRun: parseInt(process.env.COMPANIES_PER_RUN || '1', 10),
+  // Rejects a /run call that arrives before the previous run finished this
+  // long ago - protects against a misconfigured/duplicate external pinger
+  // triggering overlapping or back-to-back LinkedIn sessions.
+  minRunIntervalMs: parseInt(process.env.MIN_RUN_INTERVAL_MS || '300000', 10)
 };

@@ -33,3 +33,13 @@ services:
         value: "false"
       - key: RUN_TOKEN
         sync: false
+      - key: NAVIGATION_TIMEOUT_MS
+        value: "30000"
+      - key: MAX_RETRIES_PER_COMPANY
+        value: "1"
+      - key: RUN_LOG_SHEET_NAME
+        value: RunLog
+      - key: COMPANIES_PER_RUN
+        value: "1"
+      - key: MIN_RUN_INTERVAL_MS
+        value: "300000"

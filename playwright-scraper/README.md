@@ -115,17 +115,44 @@ Setup:
      `openssl rand -hex 16`). This is the shared secret that authorizes
      `/run` and `/status` — without it those endpoints are open to anyone
      with your Render URL.
-3. Set up a free external pinger (cron-job.org or UptimeRobot) to hit
-   `https://<your-service>.onrender.com/run?token=<RUN_TOKEN>` on whatever
-   interval you want scrapes to run — e.g. every 4 hours. Each ping starts
-   one full pass over pending companies and returns immediately (`202
-   Accepted`); check progress via
+3. **(Optional but recommended)** Add a `RunLog` tab to your spreadsheet with
+   header row `StartedAt, FinishedAt, CompaniesProcessed, TotalProspects,
+   FatalError, ErrorCompanies`. Render's free tier keeps no logs/disk across
+   restarts, so this tab is your persistent run history — one row gets
+   appended per `/run` call. Leave `RUN_LOG_SHEET_NAME` blank to skip this.
+4. Set up a free external pinger (cron-job.org or UptimeRobot) to hit
+   `https://<your-service>.onrender.com/run?token=<RUN_TOKEN>` — **every
+   15-20 minutes**, not every few hours. Each `/run` call only processes
+   `COMPANIES_PER_RUN` companies (default **1**) to keep memory/duration
+   bounded on the free tier, so a short interval is what actually works
+   through your Companies sheet at a reasonable pace. A call that arrives
+   before `MIN_RUN_INTERVAL_MS` (default 5 min) has passed since the last
+   run finished gets rejected with `429` rather than overlapping sessions —
+   safe to over-ping, it just no-ops until the cooldown clears.
+   Check progress via
    `https://<your-service>.onrender.com/status?token=<RUN_TOKEN>`, which
    also survives the pinger's own request timing out (the scrape itself
    keeps running in the background either way).
-4. `GET /healthz` (no token needed) is what Render's own health check polls
+5. `GET /healthz` (no token needed) is what Render's own health check polls
    to confirm the service booted — set as `healthCheckPath` in
-   `render.yaml` already.
+   `render.yaml` already, and never blocked by an in-progress scrape.
+
+### Production behavior worth knowing
+
+- **One company per `/run` call by default** (`COMPANIES_PER_RUN=1`) — bounds
+  peak memory and request duration on a 512MB host. Raise it only if you've
+  confirmed headroom (check Render's metrics dashboard after a few runs).
+- **Navigation timeout + retry**: each page load gets `NAVIGATION_TIMEOUT_MS`
+  (default 30s) before it's treated as failed, and transient failures retry
+  once (`MAX_RETRIES_PER_COMPANY`) before marking a company `Error`. A
+  LinkedIn login/checkpoint page is never retried — that means your session
+  cookie expired or got challenged, and retrying can't fix that.
+- **Graceful shutdown**: on Render's redeploy/restart, the server gets
+  `SIGTERM` and waits up to 60s for an in-flight run to finish (closing the
+  browser cleanly) before exiting, instead of getting killed mid-write.
+- **Run-interval cooldown**: `MIN_RUN_INTERVAL_MS` rejects overlapping or
+  back-to-back triggers even if your pinger is misconfigured to fire too
+  often — protects both your Render memory and LinkedIn's rate limits.
 
 ## Output
 

@@ -1,22 +1,25 @@
 const config = require('./config');
 const sheets = require('./sheets');
 const li = require('./linkedin');
+const logger = require('./logger');
 
-async function processCompany(page, company) {
+async function scrapeCompanyOnce(page, company) {
   const companyName = company['Company Name'];
-  console.log(`\n[${companyName}] resolving Sales Navigator company id...`);
+  logger.info(`[${companyName}] resolving Sales Navigator company id...`);
 
   const companyId = await li.findCompanyId(page, companyName);
   if (!companyId) {
-    console.warn(`[${companyName}] could not resolve company id, skipping`);
-    await sheets.updateCompanyStatus(company._rowNumber, 'Error', 'Could not resolve Sales Navigator company id');
-    return { company: companyName, status: 'error', prospects: 0 };
+    logger.warn(`[${companyName}] could not resolve company id, skipping`);
+    return { company: companyName, status: 'error', prospects: 0, error: 'Could not resolve Sales Navigator company id' };
   }
   await li.randomDelay();
 
   const searchUrl = li.buildPeopleSearchUrl(companyId, companyName, config.titleKeywords);
-  console.log(`[${companyName}] searching: ${searchUrl}`);
-  await page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
+  logger.info(`[${companyName}] searching: ${searchUrl}`);
+  await li.gotoWithRetry(page, searchUrl);
+  if (li.looksLikeCheckpoint(page.url())) {
+    throw new Error('Hit a LinkedIn login/checkpoint page mid-run - session cookie likely expired or was challenged');
+  }
   await li.randomDelay();
 
   if (config.debug) {
@@ -25,36 +28,67 @@ async function processCompany(page, company) {
   }
 
   const prospects = await li.scrapeSearchResults(page, config.maxProspectsPerCompany);
-  console.log(`[${companyName}] found ${prospects.length} matching prospects`);
-
-  if (prospects.length === 0) {
-    await sheets.updateCompanyStatus(company._rowNumber, 'No Matches');
-    return { company: companyName, status: 'no_matches', prospects: 0 };
-  }
-
-  await sheets.appendProspects(
-    prospects.map((p) => ({
-      company: companyName,
-      name: p.name,
-      title: p.title,
-      profileUrl: p.profileUrl,
-      location: p.location,
-      status: 'New'
-    }))
-  );
-
-  await sheets.updateCompanyStatus(company._rowNumber, 'Done');
-  return { company: companyName, status: 'done', prospects: prospects.length };
+  logger.info(`[${companyName}] found ${prospects.length} matching prospects`);
+  return { company: companyName, status: prospects.length > 0 ? 'done' : 'no_matches', prospects: prospects.length, prospectRows: prospects };
 }
 
-// Runs one full pass over pending companies and returns a summary. Always
-// closes the browser before returning/throwing, so callers (CLI or an HTTP
-// server) don't need to manage browser lifecycle themselves - important on
-// a memory-constrained host where a leaked browser process is fatal.
-async function runScrape() {
+// A checkpoint/session error means every subsequent company will fail the
+// same way, so it's not worth retrying - only retry genuinely transient
+// failures (timeouts, one-off navigation errors).
+function isRetryable(err) {
+  return !/checkpoint|session cookie/i.test(err.message);
+}
+
+async function processCompany(page, company) {
+  const companyName = company['Company Name'];
+  let lastErr;
+
+  for (let attempt = 1; attempt <= config.maxRetriesPerCompany + 1; attempt++) {
+    try {
+      const result = await scrapeCompanyOnce(page, company);
+      if (result.status === 'error') {
+        await sheets.updateCompanyStatus(company._rowNumber, 'Error', result.error);
+        return result;
+      }
+      if (result.status === 'no_matches') {
+        await sheets.updateCompanyStatus(company._rowNumber, 'No Matches');
+        return result;
+      }
+      await sheets.appendProspects(
+        result.prospectRows.map((p) => ({
+          company: companyName,
+          name: p.name,
+          title: p.title,
+          profileUrl: p.profileUrl,
+          location: p.location,
+          status: 'New'
+        }))
+      );
+      await sheets.updateCompanyStatus(company._rowNumber, 'Done');
+      return { company: companyName, status: 'done', prospects: result.prospects };
+    } catch (err) {
+      lastErr = err;
+      logger.error(`[${companyName}] attempt ${attempt} failed: ${err.message}`);
+      if (!isRetryable(err) || attempt > config.maxRetriesPerCompany) break;
+      await li.randomDelay();
+    }
+  }
+
+  await sheets.updateCompanyStatus(company._rowNumber, 'Error', lastErr.message).catch(() => {});
+  return { company: companyName, status: 'error', prospects: 0, error: lastErr.message };
+}
+
+// Runs one pass over up to `limit` pending companies (all of them if limit is
+// falsy) and returns a summary. Always closes the browser before
+// returning/throwing, so callers (CLI or an HTTP server) don't need to manage
+// browser lifecycle themselves - important on a memory-constrained host where
+// a leaked browser process is fatal.
+async function runScrape({ limit } = {}) {
   const startedAt = new Date();
   const { browser, page } = await li.launchSession();
   const results = [];
+  let fatalError = null;
+
   try {
     const loggedIn = await li.isLoggedIn(page);
     if (!loggedIn) {
@@ -63,30 +97,42 @@ async function runScrape() {
       );
     }
 
-    const companies = await sheets.getPendingCompanies();
-    console.log(`Found ${companies.length} pending companies`);
+    let companies = await sheets.getPendingCompanies();
+    if (limit) companies = companies.slice(0, limit);
+    logger.info(`Processing ${companies.length} companies this run`);
 
     for (const company of companies) {
-      try {
-        results.push(await processCompany(page, company));
-      } catch (err) {
-        console.error(`[${company['Company Name']}] failed: ${err.message}`);
-        await sheets.updateCompanyStatus(company._rowNumber, 'Error', err.message).catch(() => {});
-        results.push({ company: company['Company Name'], status: 'error', prospects: 0, error: err.message });
+      const result = await processCompany(page, company);
+      results.push(result);
+      // A checkpoint/session error is unrecoverable for the rest of this
+      // run too - stop early instead of burning through remaining companies
+      // against a dead session.
+      if (result.error && /checkpoint|session cookie/i.test(result.error)) {
+        fatalError = result.error;
+        break;
       }
       await li.randomDelay();
     }
+  } catch (err) {
+    fatalError = err.message;
+    logger.error('Run aborted:', err.message);
   } finally {
-    await browser.close();
+    await browser.close().catch((err) => logger.error('Error closing browser:', err.message));
   }
 
-  return {
+  const summary = {
     startedAt: startedAt.toISOString(),
     finishedAt: new Date().toISOString(),
     companiesProcessed: results.length,
     totalProspects: results.reduce((sum, r) => sum + (r.prospects || 0), 0),
+    fatalError,
     results
   };
+
+  await sheets.appendRunLog(summary).catch((err) => logger.warn('Could not write run log:', err.message));
+
+  if (fatalError && results.length === 0) throw new Error(fatalError);
+  return summary;
 }
 
 module.exports = { runScrape };

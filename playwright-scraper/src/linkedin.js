@@ -1,9 +1,30 @@
 const { chromium } = require('playwright');
 const config = require('./config');
+const logger = require('./logger');
 
 function randomDelay() {
   const ms = config.minDelayMs + Math.random() * (config.maxDelayMs - config.minDelayMs);
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Wraps page.goto with a couple of retries for transient network/timeout
+// failures - a real page load failing once shouldn't fail the whole company.
+async function gotoWithRetry(page, url, attempts = 2) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await page.goto(url, { waitUntil: 'domcontentloaded' });
+    } catch (err) {
+      lastErr = err;
+      logger.warn(`goto failed (attempt ${i + 1}/${attempts}): ${err.message}`);
+      if (i < attempts - 1) await randomDelay();
+    }
+  }
+  throw lastErr;
+}
+
+function looksLikeCheckpoint(url) {
+  return url.includes('/login') || url.includes('/checkpoint') || url.includes('/authwall');
 }
 
 async function launchSession() {
@@ -26,13 +47,16 @@ async function launchSession() {
     }
   ]);
   const page = await context.newPage();
+  // Fail fast instead of hanging: a stuck navigation on a constrained host
+  // ties up memory/CPU indefinitely without this.
+  page.setDefaultNavigationTimeout(config.navigationTimeoutMs);
+  page.setDefaultTimeout(config.navigationTimeoutMs);
   return { browser, context, page };
 }
 
 async function isLoggedIn(page) {
-  await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
-  const url = page.url();
-  return !url.includes('/login') && !url.includes('/checkpoint');
+  await gotoWithRetry(page, 'https://www.linkedin.com/feed/');
+  return !looksLikeCheckpoint(page.url());
 }
 
 // Resolves a company name to Sales Navigator's internal numeric company id by
@@ -41,7 +65,10 @@ async function isLoggedIn(page) {
 // CURRENT_COMPANY filter for the people search below.
 async function findCompanyId(page, companyName) {
   const searchUrl = `https://www.linkedin.com/sales/search/company?keywords=${encodeURIComponent(companyName)}`;
-  await page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
+  await gotoWithRetry(page, searchUrl);
+  if (looksLikeCheckpoint(page.url())) {
+    throw new Error('Hit a LinkedIn login/checkpoint page mid-run - session cookie likely expired or was challenged');
+  }
   await randomDelay();
 
   const links = page.locator('a[href*="/sales/company/"]');
@@ -103,4 +130,13 @@ async function scrapeSearchResults(page, maxResults) {
   return results.slice(0, maxResults);
 }
 
-module.exports = { launchSession, isLoggedIn, findCompanyId, buildPeopleSearchUrl, scrapeSearchResults, randomDelay };
+module.exports = {
+  launchSession,
+  isLoggedIn,
+  findCompanyId,
+  buildPeopleSearchUrl,
+  scrapeSearchResults,
+  randomDelay,
+  gotoWithRetry,
+  looksLikeCheckpoint
+};

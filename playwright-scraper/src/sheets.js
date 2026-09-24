@@ -104,4 +104,33 @@ async function updateCompanyStatus(rowNumber, status, error = '') {
   }
 }
 
-module.exports = { getPendingCompanies, appendProspects, updateCompanyStatus };
+// Best-effort persistent run history, since Render's free tier keeps no
+// disk/log retention across restarts - the sheet is the durable record.
+// No-ops (doesn't throw) if RUN_LOG_SHEET_NAME isn't configured; the caller
+// still wraps this in its own try/catch since a missing/misnamed tab in
+// Sheets should never fail the actual scrape run.
+async function appendRunLog(summary) {
+  if (!config.runLogSheetName) return;
+  const sheets = await getSheetsClient();
+  const errorCompanies = summary.results.filter((r) => r.status === 'error').map((r) => r.company).join('; ');
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: config.spreadsheetId,
+    range: `${config.runLogSheetName}!A:F`,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: [
+        [
+          summary.startedAt,
+          summary.finishedAt,
+          summary.companiesProcessed,
+          summary.totalProspects,
+          summary.fatalError || '',
+          errorCompanies
+        ]
+      ]
+    }
+  });
+}
+
+module.exports = { getPendingCompanies, appendProspects, updateCompanyStatus, appendRunLog };
