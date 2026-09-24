@@ -66,17 +66,83 @@ async function getPendingCompanies() {
   );
 }
 
+// Same column set the n8n pipeline writes, so both can share one Prospects tab.
+const DEFAULT_PROSPECT_HEADERS = [
+  'Company', 'Name', 'Designation', 'Seniority', 'LinkedInURL', 'Score', 'Priority', 'Reason', 'Activity', 'Status', 'Location'
+];
+
+// Header name -> prospect field. Written by header position so the sheet's
+// column order can change freely; unknown headers are left blank.
+const PROSPECT_FIELD_BY_HEADER = {
+  company: 'company',
+  name: 'name',
+  designation: 'title',
+  title: 'title',
+  seniority: 'seniority',
+  linkedinurl: 'profileUrl',
+  profileurl: 'profileUrl',
+  score: 'score',
+  priority: 'priority',
+  reason: 'reason',
+  activity: 'activity',
+  status: 'status',
+  location: 'location',
+  tenure: 'tenure'
+};
+
+function normalizeHeader(h) {
+  return (h || '').toLowerCase().replace(/[^a-z]/g, '');
+}
+
+// Appends rows to the Prospects sheet, skipping any profile URL already
+// present (mirrors n8n's appendOrUpdate-by-LinkedInURL, without ever
+// overwriting a row a human may have edited). Returns how many were written.
 async function appendProspects(rows) {
-  if (rows.length === 0) return;
+  if (rows.length === 0) return 0;
   const sheets = await getSheetsClient();
-  const values = rows.map((r) => [r.company, r.name, r.title, r.profileUrl, r.location, r.status || 'New']);
+
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId,
+    range: `${config.prospectsSheetName}!A:Z`
+  });
+  let allRows = existing.data.values || [];
+  let headers = allRows[0] || [];
+
+  if (headers.length === 0) {
+    headers = DEFAULT_PROSPECT_HEADERS;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId,
+      range: `${config.prospectsSheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [headers] }
+    });
+    allRows = [headers];
+  }
+
+  const urlCol = headers.findIndex((h) => ['linkedinurl', 'profileurl'].includes(normalizeHeader(h)));
+  const seen = new Set(
+    urlCol >= 0 ? allRows.slice(1).map((r) => (r[urlCol] || '').trim()).filter(Boolean) : []
+  );
+
+  const values = rows
+    .filter((r) => !seen.has(r.profileUrl))
+    .map((r) =>
+      headers.map((h) => {
+        const field = PROSPECT_FIELD_BY_HEADER[normalizeHeader(h)];
+        const v = field ? r[field] : '';
+        return v === undefined || v === null ? '' : v;
+      })
+    );
+  if (values.length === 0) return 0;
+
   await sheets.spreadsheets.values.append({
     spreadsheetId: config.spreadsheetId,
-    range: `${config.prospectsSheetName}!A:F`,
+    range: `${config.prospectsSheetName}!A:${columnLetter(headers.length - 1)}`,
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values }
   });
+  return values.length;
 }
 
 async function updateCompanyStatus(rowNumber, status, error = '') {

@@ -43,3 +43,11 @@ services:
         value: "1"
       - key: MIN_RUN_INTERVAL_MS
         value: "300000"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: TOP_N_PER_COMPANY
+        value: "4"
+      - key: AUTO_APPROVE_SCORE
+        value: "70"

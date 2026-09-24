@@ -18,7 +18,17 @@ How each company is handled:
    Navigator's own seniority preset scoped to that company, so no internal
    filter ids need guessing. If the link isn't on the page (layout variant),
    it falls back to a people search filtered by `TITLE_KEYWORDS`.
-3. **Scrape the results** and append them to the sheet.
+3. **Scrape the results** — each row's name, title, company, location,
+   tenure, and "About" snippet.
+4. **Qualify with OpenAI** (if `OPENAI_API_KEY` is set) using the same Sharp
+   SSDI Tier 1/2/3 prompt as the n8n pipeline, keep the top
+   `TOP_N_PER_COMPANY` (default 4) by score, and write them to the Prospects
+   sheet with the same columns the n8n flow uses (`Company, Name,
+   Designation, Seniority, LinkedInURL, Score, Priority, Reason, Activity,
+   Status`, plus `Location`). Columns are matched by header name, so the
+   sheet's column order doesn't matter, and a profile URL already in the
+   sheet is never written twice. Without an OpenAI key, every decision maker
+   is written unscored as `Needs Review`.
 
 ## Read this before running it
 
@@ -180,10 +190,6 @@ model as the n8n pipeline.
 
 ## What this doesn't do (yet)
 
-- No LLM scoring/tiering step — Sales Navigator's own title/seniority filter
-  is the qualification mechanism here, not a downstream rubric. Add one back
-  in (reusing the OpenAI prompt from `../n8n/02-ingest-webhook.json`) if you
-  want ranked/tiered output instead of a flat prospect list.
 - No CAPTCHA/verification-challenge handling — if LinkedIn interrupts the
   session with a checkpoint, the script will fail with the "session cookie
   invalid" error above; you'll need to resolve the checkpoint manually in a

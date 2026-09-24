@@ -151,12 +151,37 @@ function buildPeopleSearchUrl(companyId, companyName, titleKeywords) {
   return `https://www.linkedin.com/sales/search/people?query=${filters}&keywords=${encodeURIComponent(titleKeywords)}`;
 }
 
-// Selectors below target commonly-documented Sales Navigator search-result
-// markup, but LinkedIn changes this DOM periodically and it can vary by
-// account/plan. Run with DEBUG_SCRAPER=true and HEADLESS=false on a small
-// test company first - if scrapeSearchResults returns 0 despite visible
-// results on screen, open the saved debug-*.png / inspect the live page and
-// update the selectors in this function to match what you actually see.
+// A Sales Navigator lead result row reads, line by line:
+//   "Dr Chytra Anand · 1st · Viewed"
+//   "Founder & Chairperson · Kosmoderma Skin, Hair & Body Clinics"
+//   "Bengaluru, Karnataka, India"
+//   "20 years 9 months in role | 20 years 9 months in company"
+//   "About: ... Show more"
+// This parses that shape from the row's visible text, which is more stable
+// than LinkedIn's generated class names. Title/company are split on " · ".
+function parseResultText(text, name) {
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const nameIdx = lines.findIndex((l) => l.startsWith(name));
+  const after = nameIdx >= 0 ? lines.slice(nameIdx + 1) : lines;
+
+  const titleLine = after[0] || '';
+  const [title, ...companyParts] = titleLine.split(' · ');
+  const company = companyParts.join(' · ').trim();
+
+  const location = after[1] && !/ in role| in company/.test(after[1]) ? after[1] : '';
+  const tenure = after.find((l) => / in role| in company/.test(l)) || '';
+  const aboutLine = after.find((l) => /^About:/.test(l)) || '';
+  const titleDescription = aboutLine.replace(/^About:\s*/, '').replace(/\s*Show more$/, '').trim();
+
+  return { title: title.trim(), company, location, tenure, titleDescription };
+}
+
+// Run with DEBUG_SCRAPER=true and HEADLESS=false on a small test company
+// first - if this returns 0 despite visible results on screen, open the
+// saved debug-*.png / inspect the live page and adjust cardSelector.
 async function scrapeSearchResults(page, maxResults) {
   const results = [];
   const seen = new Set();
@@ -185,24 +210,8 @@ async function scrapeSearchResults(page, maxResults) {
       if (seen.has(profileUrl)) continue;
       seen.add(profileUrl);
 
-      let title = ((await card.locator('[data-anonymize="title"]').first().textContent().catch(() => '')) || '').trim();
-      let location = (
-        (await card.locator('[data-anonymize="location"]').first().textContent().catch(() => '')) || ''
-      ).trim();
-
-      // Fallback if the data-anonymize attributes aren't present: the row's
-      // text lines run name -> title -> (company) -> location.
-      if (!title) {
-        const lines = ((await card.innerText().catch(() => '')) || '')
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean);
-        const nameIdx = lines.findIndex((l) => l === name);
-        title = lines[nameIdx + 1] || '';
-        if (!location) location = lines[nameIdx + 2] || '';
-      }
-
-      results.push({ name, title, location, profileUrl });
+      const parsed = parseResultText((await card.innerText().catch(() => '')) || '', name);
+      results.push({ name, profileUrl, ...parsed });
     }
 
     await page.mouse.wheel(0, 2000);

@@ -2,6 +2,7 @@ const config = require('./config');
 const sheets = require('./sheets');
 const li = require('./linkedin');
 const logger = require('./logger');
+const { qualifyAndSelect } = require('./qualify');
 
 async function scrapeCompanyOnce(page, company) {
   const companyName = company['Company Name'];
@@ -66,18 +67,33 @@ async function processCompany(page, company) {
         await sheets.updateCompanyStatus(company._rowNumber, 'No Matches');
         return result;
       }
-      await sheets.appendProspects(
-        result.prospectRows.map((p) => ({
-          company: companyName,
-          name: p.name,
-          title: p.title,
-          profileUrl: p.profileUrl,
-          location: p.location,
-          status: 'New'
-        }))
-      );
+      const candidates = result.prospectRows.map((p) => ({
+        company: companyName,
+        name: p.name,
+        title: p.title,
+        titleDescription: p.titleDescription,
+        profileUrl: p.profileUrl,
+        location: p.location,
+        tenure: p.tenure,
+        activity: 'Unknown'
+      }));
+
+      let selected;
+      if (config.openAiApiKey) {
+        logger.info(`[${companyName}] qualifying ${candidates.length} decision makers with the Sharp SSDI rubric`);
+        selected = await qualifyAndSelect(candidates);
+        logger.info(
+          `[${companyName}] keeping top ${selected.length}: ` +
+            selected.map((s) => `${s.name} (${s.score}, ${s.priority})`).join('; ')
+        );
+      } else {
+        selected = candidates.map((c) => ({ ...c, status: 'Needs Review' }));
+      }
+
+      const written = await sheets.appendProspects(selected);
+      logger.info(`[${companyName}] wrote ${written} new prospect rows (${selected.length - written} already present)`);
       await sheets.updateCompanyStatus(company._rowNumber, 'Done');
-      return { company: companyName, status: 'done', prospects: result.prospects };
+      return { company: companyName, status: 'done', prospects: selected.length };
     } catch (err) {
       lastErr = err;
       logger.error(`[${companyName}] attempt ${attempt} failed: ${err.message}`);

@@ -39,6 +39,14 @@ module.exports = {
   // retention. Unset = skip (no separate sheet required).
   runLogSheetName: process.env.RUN_LOG_SHEET_NAME || null,
 
+  // --- OpenAI qualification (Sharp SSDI rubric) ---
+  // Optional: with no key set, every scraped decision maker is written
+  // unscored as "Needs Review" instead of being ranked.
+  openAiApiKey: process.env.OPENAI_API_KEY || null,
+  openAiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  topNPerCompany: parseInt(process.env.TOP_N_PER_COMPANY || '4', 10),
+  autoApproveScore: parseInt(process.env.AUTO_APPROVE_SCORE || '70', 10),
+
   // --- HTTP server mode (Render deploy) - see src/server.js ---
   port: parseInt(process.env.PORT || '3000', 10),
   runToken: process.env.RUN_TOKEN || null,
