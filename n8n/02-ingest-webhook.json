@@ -78,15 +78,60 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ (() => { const arg = JSON.parse($json.argument || '{}'); const csvName = arg.csvName || 'result'; return `https://phantombuster.s3.amazonaws.com/${$json.orgS3Folder}/${$json.s3Folder}/${csvName}.json`; })() }}",
-        "options": { "timeout": 30000 }
+        "url": "={{ (() => { const arg = JSON.parse($('Fetch Agent Info').first().json.argument || '{}'); const csvName = arg.csvName || 'result'; const a = $('Fetch Agent Info').first().json; return `https://phantombuster.s3.amazonaws.com/${a.orgS3Folder}/${a.s3Folder}/${csvName}.json`; })() }}",
+        "options": { "timeout": 30000, "response": { "response": { "responseFormat": "json" } } }
       },
       "id": "fetch-full-result",
-      "name": "Fetch Full Accumulated Result",
+      "name": "Fetch Result (Try JSON)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [-680, 120],
-      "notes": "No PhantomBuster auth needed — this is a direct S3 object URL. Reads the actual configured output filename from the agent's own settings (argument.csvName from Fetch Agent Info) instead of assuming the default 'result' — confirmed via a real run that this agent's csvName had been customized to 'result5', so a hardcoded result.json was silently pulling a stale, abandoned file from before that rename. Falls back to 'result' if csvName isn't set. If this still 404s, the file extension itself may need to be .csv instead of .json — check what PhantomBuster's Behavior settings show for this agent's Results File format."
+      "notes": "No PhantomBuster auth needed — direct S3 object URL. Reads the configured output filename from the agent's own settings (argument.csvName from Fetch Agent Info) instead of assuming 'result'. Tries the .json extension first; onError is set to continueErrorOutput so a 403/404 (agent's Results File format is actually CSV) falls through to 'Fetch Result (CSV Fallback)' automatically instead of failing the whole run — no manual guessing of the format needed."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ (() => { const arg = JSON.parse($('Fetch Agent Info').first().json.argument || '{}'); const csvName = arg.csvName || 'result'; const a = $('Fetch Agent Info').first().json; return `https://phantombuster.s3.amazonaws.com/${a.orgS3Folder}/${a.s3Folder}/${csvName}.csv`; })() }}",
+        "options": { "timeout": 30000, "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "fetch-result-csv",
+      "name": "Fetch Result (CSV Fallback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-680, 260],
+      "notes": "Only runs when the JSON attempt errored. Same csvName, .csv extension, fetched as raw text so the next Code node can parse it — PhantomBuster's own S3 output is either JSON or CSV depending on this agent's Behavior > Results File setting, and this path covers CSV without you needing to check which one it is."
+    },
+    {
+      "parameters": {
+        "jsCode": "let candidates = $json;\nif (candidates && !Array.isArray(candidates)) {\n  candidates = candidates.data || candidates.rows || candidates.results || [];\n}\nif (!Array.isArray(candidates)) candidates = [];\nreturn [{ json: { candidates } }];"
+      },
+      "id": "normalize-json-result",
+      "name": "Normalize JSON Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-580, 60],
+      "notes": "Success path from 'Fetch Result (Try JSON)'. Unwraps whatever shape PhantomBuster's JSON export uses (bare array, or {data:[...]}/{rows:[...]}/{results:[...]}) into a single {candidates: [...]} item so both the JSON and CSV paths converge on the same shape."
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.data !== undefined ? $json.data : (typeof $json === 'string' ? $json : JSON.stringify($json));\nconst text = String(raw).trim();\nconst lines = text.split(/\\r?\\n/).filter(l => l.length > 0);\nif (lines.length === 0) return [{ json: { candidates: [] } }];\n\nfunction parseCsvLine(line) {\n  const cells = [];\n  let cur = '';\n  let inQuotes = false;\n  for (let i = 0; i < line.length; i++) {\n    const ch = line[i];\n    if (inQuotes) {\n      if (ch === '\"') {\n        if (line[i + 1] === '\"') { cur += '\"'; i++; }\n        else { inQuotes = false; }\n      } else { cur += ch; }\n    } else {\n      if (ch === '\"') inQuotes = true;\n      else if (ch === ',') { cells.push(cur); cur = ''; }\n      else cur += ch;\n    }\n  }\n  cells.push(cur);\n  return cells;\n}\n\nconst headers = parseCsvLine(lines[0]).map(h => h.trim());\nconst candidates = lines.slice(1).map(line => {\n  const cells = parseCsvLine(line);\n  const obj = {};\n  headers.forEach((h, idx) => { obj[h] = cells[idx] !== undefined ? cells[idx] : ''; });\n  return obj;\n});\n\nreturn [{ json: { candidates } }];"
+      },
+      "id": "parse-csv-result",
+      "name": "Parse CSV Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-580, 260],
+      "notes": "Error/fallback path from 'Fetch Result (CSV Fallback)'. Hand-rolled CSV parse (handles quoted fields and embedded commas) since PhantomBuster's CSV export has no fixed column set to hardcode against — turns it into the same {candidates: [...]} shape 'Normalize JSON Result' produces."
+    },
+    {
+      "parameters": {},
+      "id": "candidates-ready",
+      "name": "Candidates Ready",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [-480, 120],
+      "notes": "Junction point both the JSON and CSV paths converge on — whichever one actually ran, downstream nodes reference this single node name ($('Candidates Ready')) instead of needing to know which format the fetch used."
     },
     {
       "parameters": {
@@ -104,14 +149,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// Input = all rows from \"Read All Companies\" (one item per company).\nconst companies = $input.all().map(i => i.json);\nconst pendingCompanyNames = companies\n  .filter(c => (c.Status || '').trim().toLowerCase() !== 'done')\n  .map(c => (c['Company Name'] || '').trim().toLowerCase());\n\n// Full accumulated candidate list from \"Fetch Full Accumulated Result\".\nlet candidates = $('Fetch Full Accumulated Result').first().json;\nif (candidates && !Array.isArray(candidates)) {\n  candidates = candidates.data || candidates.rows || candidates.results || [];\n}\nif (!Array.isArray(candidates)) candidates = [];\n\nconst filtered = candidates.filter(c => {\n  const name = (c.companyName || '').trim().toLowerCase();\n  return pendingCompanyNames.includes(name);\n});\n\nreturn filtered.map((c) => ({ json: c }));"
+        "jsCode": "// Input = all rows from \"Read All Companies\" (one item per company).\nconst companies = $input.all().map(i => i.json);\nconst pendingCompanyNames = companies\n  .filter(c => (c.Status || '').trim().toLowerCase() !== 'done')\n  .map(c => (c['Company Name'] || '').trim().toLowerCase());\n\n// Full accumulated candidate list from \"Candidates Ready\" (JSON or CSV, already normalized).\nlet candidates = $('Candidates Ready').first().json.candidates;\nif (!Array.isArray(candidates)) candidates = [];\n\nconst filtered = candidates.filter(c => {\n  const name = (c.companyName || '').trim().toLowerCase();\n  return pendingCompanyNames.includes(name);\n});\n\nreturn filtered.map((c) => ({ json: c }));"
       },
       "id": "split-candidates",
       "name": "Filter To Pending Companies",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [-460, 120],
-      "notes": "This is the fix for \"Success / Input already processed\" leaving companies permanently stuck: instead of only looking at this run's new finds, it cross-references the FULL accumulated candidate list against which companies are still not marked Done in the Companies sheet, and processes those — regardless of which run originally scraped them. Check this node's output first if results are empty: confirm the S3 result file actually parsed (previous node) and that your Companies sheet's 'Company Name' values exactly match candidate.companyName from PhantomBuster (case differences are already normalized, but typos/extra spaces in the sheet won't match)."
+      "notes": "This is the fix for \"Success / Input already processed\" leaving companies permanently stuck: instead of only looking at this run's new finds, it cross-references the FULL accumulated candidate list against which companies are still not marked Done in the Companies sheet, and processes those — regardless of which run originally scraped them. Check this node's output first if results are empty: confirm the S3 result file actually parsed ('Candidates Ready') and that your Companies sheet's 'Company Name' values exactly match candidate.companyName from PhantomBuster (case differences are already normalized, but typos/extra spaces in the sheet won't match)."
     },
     {
       "parameters": { "amount": 1, "unit": "seconds" },
@@ -216,8 +261,17 @@
         [{ "node": "Fetch Agent Info", "type": "main", "index": 0 }]
       ]
     },
-    "Fetch Agent Info": { "main": [[{ "node": "Fetch Full Accumulated Result", "type": "main", "index": 0 }]] },
-    "Fetch Full Accumulated Result": { "main": [[{ "node": "Read All Companies", "type": "main", "index": 0 }]] },
+    "Fetch Agent Info": { "main": [[{ "node": "Fetch Result (Try JSON)", "type": "main", "index": 0 }]] },
+    "Fetch Result (Try JSON)": {
+      "main": [
+        [{ "node": "Normalize JSON Result", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Result (CSV Fallback)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Result (CSV Fallback)": { "main": [[{ "node": "Parse CSV Result", "type": "main", "index": 0 }]] },
+    "Normalize JSON Result": { "main": [[{ "node": "Candidates Ready", "type": "main", "index": 0 }]] },
+    "Parse CSV Result": { "main": [[{ "node": "Candidates Ready", "type": "main", "index": 0 }]] },
+    "Candidates Ready": { "main": [[{ "node": "Read All Companies", "type": "main", "index": 0 }]] },
     "Read All Companies": { "main": [[{ "node": "Filter To Pending Companies", "type": "main", "index": 0 }]] },
     "Filter To Pending Companies": { "main": [[{ "node": "Pace (light safety margin)", "type": "main", "index": 0 }]] },
     "Pace (light safety margin)": { "main": [[{ "node": "OpenAI - Qualify Candidate", "type": "main", "index": 0 }]] },
