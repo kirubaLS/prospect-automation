@@ -7,20 +7,32 @@ async function scrapeCompanyOnce(page, company) {
   const companyName = company['Company Name'];
   logger.info(`[${companyName}] resolving Sales Navigator company id...`);
 
-  const companyId = await li.findCompanyId(page, companyName);
+  const companyId = await li.findCompanyId(page, company);
   if (!companyId) {
     logger.warn(`[${companyName}] could not resolve company id, skipping`);
     return { company: companyName, status: 'error', prospects: 0, error: 'Could not resolve Sales Navigator company id' };
   }
+  logger.info(`[${companyName}] company id ${companyId} - opening account page, clicking "Decision makers"`);
   await li.randomDelay();
 
-  const searchUrl = li.buildPeopleSearchUrl(companyId, companyName, config.titleKeywords);
-  logger.info(`[${companyName}] searching: ${searchUrl}`);
-  await li.gotoWithRetry(page, searchUrl);
-  if (li.looksLikeCheckpoint(page.url())) {
-    throw new Error('Hit a LinkedIn login/checkpoint page mid-run - session cookie likely expired or was challenged');
+  const decisionMakerCount = await li.openDecisionMakers(page, companyId);
+  if (decisionMakerCount === 0) {
+    logger.info(`[${companyName}] Sales Navigator shows 0 decision makers`);
+    return { company: companyName, status: 'no_matches', prospects: 0, prospectRows: [] };
   }
-  await li.randomDelay();
+  if (decisionMakerCount === null) {
+    // Account page had no "Decision makers" quick link (layout variant or
+    // tiny company) - fall back to a keyword-filtered people search.
+    const searchUrl = li.buildPeopleSearchUrl(companyId, companyName, config.titleKeywords);
+    logger.warn(`[${companyName}] no "Decision makers" link found, falling back to keyword search: ${searchUrl}`);
+    await li.gotoWithRetry(page, searchUrl);
+    if (li.looksLikeCheckpoint(page.url())) {
+      throw new Error('Hit a LinkedIn login/checkpoint page mid-run - session cookie likely expired or was challenged');
+    }
+    await li.randomDelay();
+  } else {
+    logger.info(`[${companyName}] Sales Navigator lists ${decisionMakerCount} decision makers`);
+  }
 
   if (config.debug) {
     const safeName = companyName.replace(/\W+/g, '_');

@@ -1,9 +1,24 @@
 # LeadStrategus Sales Navigator Scraper (standalone Playwright)
 
-Reads companies from a Google Sheet, for each one opens LinkedIn Sales
-Navigator, applies a title/seniority filter scoped to that company, scrapes
-the matching prospects, and writes them to a Prospects sheet. Runs on its
-own — independent of the n8n/PhantomBuster pipeline in `../n8n/`.
+Reads companies from a Google Sheet and, for each one, mirrors the manual
+Sales Navigator workflow: open the company's account page
+(`/sales/company/<id>`), click its built-in **"Decision makers"** quick
+search (under "Common searches"), scrape the resulting prospect list, and
+write it to a Prospects sheet. Runs on its own — independent of the
+n8n/PhantomBuster pipeline in `../n8n/`.
+
+How each company is handled:
+
+1. **Resolve the company id** from the `LinkedIn URL` column — the regular
+   company page embeds LinkedIn's numeric company id, which is the same id
+   Sales Navigator uses. Falls back to a Sales Navigator account search by
+   `Company Name` if the URL isn't a company page (e.g. a personal profile
+   URL was pasted by mistake).
+2. **Click "Decision makers"** on the account page. This applies Sales
+   Navigator's own seniority preset scoped to that company, so no internal
+   filter ids need guessing. If the link isn't on the page (layout variant),
+   it falls back to a people search filtered by `TITLE_KEYWORDS`.
+3. **Scrape the results** and append them to the sheet.
 
 ## Read this before running it
 

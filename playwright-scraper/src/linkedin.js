@@ -59,25 +59,86 @@ async function isLoggedIn(page) {
   return !looksLikeCheckpoint(page.url());
 }
 
-// Resolves a company name to Sales Navigator's internal numeric company id by
-// running a Sales Navigator company search and reading the id out of the first
-// result's /sales/company/<id> link. This id is required to build a precise
-// CURRENT_COMPANY filter for the people search below.
-async function findCompanyId(page, companyName) {
-  const searchUrl = `https://www.linkedin.com/sales/search/company?keywords=${encodeURIComponent(companyName)}`;
-  await gotoWithRetry(page, searchUrl);
+function assertNotCheckpoint(page) {
   if (looksLikeCheckpoint(page.url())) {
     throw new Error('Hit a LinkedIn login/checkpoint page mid-run - session cookie likely expired or was challenged');
   }
+}
+
+// The numeric id in a Sales Navigator /sales/company/<id> URL is LinkedIn's
+// regular company id, and the regular company page embeds it in its markup
+// (as urn:li:...company:<id>). Reading it from the exact URL in the sheet
+// is more precise than a name search, which can land on a similarly-named
+// company. Returns null if the URL isn't a company page or the id isn't found.
+async function companyIdFromLinkedInUrl(page, linkedInUrl) {
+  if (!linkedInUrl || !/linkedin\.com\/company\//i.test(linkedInUrl)) return null;
+  // A sheet row may already hold a Sales Navigator account URL.
+  const direct = linkedInUrl.match(/\/sales\/company\/(\d+)/);
+  if (direct) return direct[1];
+
+  await gotoWithRetry(page, linkedInUrl.split('?')[0]);
+  assertNotCheckpoint(page);
+  await randomDelay();
+
+  const html = await page.content();
+  const match =
+    html.match(/urn:li:(?:fsd_company|fs_normalized_company|company):(\d+)/) ||
+    html.match(/"companyId"\s*:\s*"?(\d+)/) ||
+    html.match(/\/sales\/company\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+// Fallback: Sales Navigator account search by name, first result's id.
+async function companyIdFromNameSearch(page, companyName) {
+  const searchUrl = `https://www.linkedin.com/sales/search/company?keywords=${encodeURIComponent(companyName)}`;
+  await gotoWithRetry(page, searchUrl);
+  assertNotCheckpoint(page);
   await randomDelay();
 
   const links = page.locator('a[href*="/sales/company/"]');
-  const count = await links.count();
-  if (count === 0) return null;
+  if ((await links.count()) === 0) return null;
 
   const href = await links.first().getAttribute('href');
   const match = href && href.match(/\/sales\/company\/(\d+)/);
   return match ? match[1] : null;
+}
+
+async function findCompanyId(page, company) {
+  const fromUrl = await companyIdFromLinkedInUrl(page, company['LinkedIn URL']).catch((err) => {
+    if (/checkpoint/i.test(err.message)) throw err;
+    logger.warn(`Could not read company id from LinkedIn URL: ${err.message}`);
+    return null;
+  });
+  if (fromUrl) return fromUrl;
+  return companyIdFromNameSearch(page, company['Company Name']);
+}
+
+// Mirrors the manual workflow: open the company's Sales Navigator account
+// page and click its built-in "Decision makers" quick search (under "Common
+// searches"). That preset applies Sales Navigator's own seniority filter,
+// scoped to this company, without us needing to know the internal filter ids.
+// Returns the count shown next to the link (e.g. "Decision makers (4)" -> 4),
+// or null if the link wasn't found on the page.
+async function openDecisionMakers(page, companyId) {
+  await gotoWithRetry(page, `https://www.linkedin.com/sales/company/${companyId}`);
+  assertNotCheckpoint(page);
+  await randomDelay();
+
+  const link = page.getByRole('link', { name: /decision makers/i }).first();
+  if ((await link.count()) === 0) return null;
+
+  const label = ((await link.textContent()) || '').trim();
+  const countMatch = label.match(/\((\d+)\)/);
+  const count = countMatch ? parseInt(countMatch[1], 10) : null;
+  if (count === 0) return 0;
+
+  await Promise.all([
+    page.waitForURL(/\/sales\/search\/people/, { timeout: config.navigationTimeoutMs }),
+    link.click()
+  ]);
+  assertNotCheckpoint(page);
+  await randomDelay();
+  return count;
 }
 
 // Builds a Sales Navigator people-search URL scoped to one company via its
@@ -98,8 +159,11 @@ function buildPeopleSearchUrl(companyId, companyName, titleKeywords) {
 // update the selectors in this function to match what you actually see.
 async function scrapeSearchResults(page, maxResults) {
   const results = [];
+  const seen = new Set();
   let previousCount = -1;
-  const cardSelector = 'li[data-x-search-result], .artdeco-list__item, [data-view-name="search-results-list-item"]';
+  // Every result row links to the lead's /sales/lead/... page, so anchoring
+  // on that is far more stable than LinkedIn's generated class names.
+  const cardSelector = 'li:has(a[href*="/sales/lead/"])';
 
   while (results.length < maxResults) {
     await page.waitForTimeout(1500);
@@ -108,19 +172,37 @@ async function scrapeSearchResults(page, maxResults) {
     if (count === previousCount) break; // no new cards after scrolling - end of results or selector mismatch
     previousCount = count;
 
-    for (let i = results.length; i < count && results.length < maxResults; i++) {
+    for (let i = 0; i < count && results.length < maxResults; i++) {
       const card = cards.nth(i);
       const nameEl = card.locator('a[data-anonymize="person-name"], a[href*="/sales/lead/"]').first();
       const name = ((await nameEl.textContent().catch(() => '')) || '').trim();
       const profileHref = await nameEl.getAttribute('href').catch(() => null);
-      const title = ((await card.locator('[data-anonymize="title"]').first().textContent().catch(() => '')) || '').trim();
-      const location = (
+      if (!name || !profileHref) continue;
+
+      const profileUrl = profileHref.startsWith('http')
+        ? profileHref.split('?')[0]
+        : `https://www.linkedin.com${profileHref.split('?')[0]}`;
+      if (seen.has(profileUrl)) continue;
+      seen.add(profileUrl);
+
+      let title = ((await card.locator('[data-anonymize="title"]').first().textContent().catch(() => '')) || '').trim();
+      let location = (
         (await card.locator('[data-anonymize="location"]').first().textContent().catch(() => '')) || ''
       ).trim();
 
-      if (name && profileHref) {
-        results.push({ name, title, location, profileUrl: profileHref.split('?')[0] });
+      // Fallback if the data-anonymize attributes aren't present: the row's
+      // text lines run name -> title -> (company) -> location.
+      if (!title) {
+        const lines = ((await card.innerText().catch(() => '')) || '')
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean);
+        const nameIdx = lines.findIndex((l) => l === name);
+        title = lines[nameIdx + 1] || '';
+        if (!location) location = lines[nameIdx + 2] || '';
       }
+
+      results.push({ name, title, location, profileUrl });
     }
 
     await page.mouse.wheel(0, 2000);
@@ -134,6 +216,7 @@ module.exports = {
   launchSession,
   isLoggedIn,
   findCompanyId,
+  openDecisionMakers,
   buildPeopleSearchUrl,
   scrapeSearchResults,
   randomDelay,
