@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "server": "node src/server.js",
+    "test": "node test/scrape-results.test.js",
     "install-browsers": "playwright install chromium"
   },
   "dependencies": {

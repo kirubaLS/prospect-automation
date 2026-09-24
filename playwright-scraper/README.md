@@ -43,12 +43,13 @@ vendor who absorbs some of that risk for you). Pacing is built in
 rate — this is not designed to evade LinkedIn's bot detection, just to avoid
 hammering their servers.
 
-**I could not test this against a real authenticated Sales Navigator
-session** — I don't have and shouldn't be given your session cookie. The
-CSS selectors in `src/linkedin.js`'s `scrapeSearchResults()` target
-commonly-documented Sales Navigator markup, but LinkedIn's DOM changes
-periodically and can vary by account/plan. **Expect to tune selectors on
-your first real run** — see "First run / selector tuning" below.
+The result-row selectors were built from a real Sales Navigator "Decision
+makers" page's DOM and are exercised by `npm test`, which runs
+`scrapeSearchResults()` in a real Chromium against a fixture trimmed from
+that page (`test/fixtures/search-results.html`), including LinkedIn's lazy
+row rendering. That covers the parsing; it does not cover login, the account
+page, or LinkedIn changing its markup later — so still do one watched local
+run before trusting it unattended (see "First run / selector tuning").
 
 ## Setup
 
