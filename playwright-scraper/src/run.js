@@ -21,19 +21,11 @@ async function scrapeCompanyOnce(page, company) {
     logger.info(`[${companyName}] Sales Navigator shows 0 decision makers`);
     return { company: companyName, status: 'no_matches', prospects: 0, prospectRows: [] };
   }
-  if (decisionMakerCount === null) {
-    // Account page had no "Decision makers" quick link (layout variant or
-    // tiny company) - fall back to a keyword-filtered people search.
-    const searchUrl = li.buildPeopleSearchUrl(companyId, companyName, config.titleKeywords);
-    logger.warn(`[${companyName}] no "Decision makers" link found, falling back to keyword search: ${searchUrl}`);
-    await li.gotoWithRetry(page, searchUrl);
-    if (li.looksLikeCheckpoint(page.url())) {
-      throw new Error('Hit a LinkedIn login/checkpoint page mid-run - session cookie likely expired or was challenged');
-    }
-    await li.randomDelay();
-  } else {
-    logger.info(`[${companyName}] Sales Navigator lists ${decisionMakerCount} decision makers`);
-  }
+  logger.info(
+    decisionMakerCount === null
+      ? `[${companyName}] opened decision-makers search (count unknown)`
+      : `[${companyName}] Sales Navigator lists ${decisionMakerCount} decision makers`
+  );
 
   if (config.debug) {
     const safeName = companyName.replace(/\W+/g, '_');

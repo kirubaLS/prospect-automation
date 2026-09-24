@@ -24,9 +24,6 @@ module.exports = {
   spreadsheetId: requireEnv('SPREADSHEET_ID'),
   companiesSheetName: process.env.COMPANIES_SHEET_NAME || 'Companies',
   prospectsSheetName: process.env.PROSPECTS_SHEET_NAME || 'Prospects',
-  titleKeywords:
-    process.env.TITLE_KEYWORDS ||
-    'CIO OR "Chief Information Officer" OR "IT Head" OR "Head of IT" OR "IT Director" OR "VP IT" OR COO OR "Head of Procurement" OR "Procurement Director" OR "IT Manager"',
   maxProspectsPerCompany: parseInt(process.env.MAX_PROSPECTS_PER_COMPANY || '25', 10),
   minDelayMs: parseInt(process.env.MIN_DELAY_MS || '2000', 10),
   maxDelayMs: parseInt(process.env.MAX_DELAY_MS || '5000', 10),

@@ -14,10 +14,11 @@ How each company is handled:
    Sales Navigator uses. Falls back to a Sales Navigator account search by
    `Company Name` if the URL isn't a company page (e.g. a personal profile
    URL was pasted by mistake).
-2. **Click "Decision makers"** on the account page. This applies Sales
-   Navigator's own seniority preset scoped to that company, so no internal
-   filter ids need guessing. If the link isn't on the page (layout variant),
-   it falls back to a people search filtered by `TITLE_KEYWORDS`.
+2. **Open "Decision makers"** from the account page — Sales Navigator's own
+   preset, which is Current company = this company + Seniority level
+   Director / Vice President / CXO (filter ids 6, 7, 8, confirmed from the
+   page's own link). The link's href is followed when present; otherwise the
+   identical URL is built directly.
 3. **Scrape the results** — each row's name, title, company, location,
    tenure, and "About" snippet.
 4. **Qualify with OpenAI** (if `OPENAI_API_KEY` is set) using the same Sharp
@@ -64,9 +65,6 @@ your first real run** — see "First run / selector tuning" below.
      permission error.
    - `SPREADSHEET_ID` — from your sheet's URL:
      `docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit`.
-   - `TITLE_KEYWORDS` — defaults to the Sharp SSDI Tier 1/2 titles (CIO, IT
-     Head, COO, Procurement Head, etc.) as an OR-boolean string, matching
-     Sales Navigator's own keyword search syntax. Edit for other clients.
 3. Companies sheet needs at least `Company Name` and `Status` columns
    (matches the columns already used by the n8n pipeline). Rows with
    `Status = Done` are skipped.

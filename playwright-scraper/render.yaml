@@ -19,8 +19,6 @@ services:
         value: Companies
       - key: PROSPECTS_SHEET_NAME
         value: Prospects
-      - key: TITLE_KEYWORDS
-        value: 'CIO OR "Chief Information Officer" OR "IT Head" OR "Head of IT" OR "IT Director" OR "VP IT" OR COO OR "Head of Procurement" OR "Procurement Director" OR "IT Manager"'
       - key: MAX_PROSPECTS_PER_COMPANY
         value: "15"
       - key: MIN_DELAY_MS
