@@ -57,34 +57,61 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://api.phantombuster.com/api/v2/containers/fetch-result-object",
+        "url": "https://api.phantombuster.com/api/v2/agents/fetch",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "={{ $json.body.containerId }}" }
+            { "name": "id", "value": "={{ $json.body.agentId }}" }
           ]
         },
         "options": { "timeout": 20000 }
       },
-      "id": "fetch-results-json",
-      "name": "Fetch Result JSON",
+      "id": "fetch-agent-info",
+      "name": "Fetch Agent Info",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-740, 120],
-      "notes": "The webhook's inline body.resultObject was null on this agent even on a successful run — PhantomBuster doesn't embed output for every phantom type. This calls /containers/fetch-result-object with the containerId from the webhook instead, which is the documented way to pull a specific run's result on demand. Set the same 'Header Auth' credential used on the kickoff workflow's Launch node (X-Phantombuster-Key) here too."
+      "position": [-820, 120],
+      "notes": "Returns the agent's orgS3Folder and s3Folder, used to build the URL to its full accumulated output file (every lead this agent has ever scraped, not just this run's new finds). This is what lets us catch up on companies that were scraped in a past run but never made it into the Prospects sheet — PhantomBuster's per-run resultObject/container data only covers what changed THIS run, and with Watcher Mode on, a company already scraped produces nothing new even if our pipeline failed to process it last time."
     },
     {
       "parameters": {
-        "jsCode": "// Response shape from fetch-result-object isn't confirmed yet for this agent — handle the likely variants defensively.\nconst res = $json;\nlet candidates = res;\n\nif (res && res.resultObject !== undefined) {\n  candidates = res.resultObject;\n}\nif (typeof candidates === 'string') {\n  try { candidates = JSON.parse(candidates); } catch (e) { candidates = []; }\n}\nif (candidates && !Array.isArray(candidates)) {\n  candidates = candidates.data || candidates.rows || candidates.results || [];\n}\nif (!Array.isArray(candidates)) candidates = [];\n\nreturn candidates.map((c) => ({ json: c }));"
+        "method": "GET",
+        "url": "={{ `https://phantombuster.s3.amazonaws.com/${$json.orgS3Folder}/${$json.s3Folder}/result.json` }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "fetch-full-result",
+      "name": "Fetch Full Accumulated Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-680, 120],
+      "notes": "No PhantomBuster auth needed — this is a direct S3 object URL. Confirm result.json is the right filename against a real run (PhantomBuster support docs mention result.csv as the alternative); if this 404s, try result.csv instead and adjust the Code node after Read All Companies to parse CSV instead of JSON."
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Companies", "mode": "list" },
+        "options": {}
+      },
+      "id": "read-all-companies",
+      "name": "Read All Companies",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-580, 120],
+      "notes": "Reads every row (no Status filter here — the filtering happens in the next Code node) so we can compare against the full accumulated candidate list and find companies still not Done."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input = all rows from \"Read All Companies\" (one item per company).\nconst companies = $input.all().map(i => i.json);\nconst pendingCompanyNames = companies\n  .filter(c => (c.Status || '').trim().toLowerCase() !== 'done')\n  .map(c => (c['Company Name'] || '').trim().toLowerCase());\n\n// Full accumulated candidate list from \"Fetch Full Accumulated Result\".\nlet candidates = $('Fetch Full Accumulated Result').first().json;\nif (candidates && !Array.isArray(candidates)) {\n  candidates = candidates.data || candidates.rows || candidates.results || [];\n}\nif (!Array.isArray(candidates)) candidates = [];\n\nconst filtered = candidates.filter(c => {\n  const name = (c.companyName || '').trim().toLowerCase();\n  return pendingCompanyNames.includes(name);\n});\n\nreturn filtered.map((c) => ({ json: c }));"
       },
       "id": "split-candidates",
-      "name": "Split Out Candidates",
+      "name": "Filter To Pending Companies",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-520, 120],
-      "notes": "Once you see a real successful run here, check this node's output — if it's empty despite the phantom finding profiles, the raw structure from Fetch Result JSON needs inspecting (click that node's output) and this parsing logic adjusted to match."
+      "position": [-460, 120],
+      "notes": "This is the fix for \"Success / Input already processed\" leaving companies permanently stuck: instead of only looking at this run's new finds, it cross-references the FULL accumulated candidate list against which companies are still not marked Done in the Companies sheet, and processes those — regardless of which run originally scraped them. Check this node's output first if results are empty: confirm the S3 result file actually parsed (previous node) and that your Companies sheet's 'Company Name' values exactly match candidate.companyName from PhantomBuster (case differences are already normalized, but typos/extra spaces in the sheet won't match)."
     },
     {
       "parameters": { "amount": 1, "unit": "seconds" },
@@ -124,7 +151,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const responseText = $json.choices[0].message.content;\nlet parsed;\ntry {\n  parsed = JSON.parse(responseText);\n} catch (e) {\n  parsed = { score: 0, seniority: 'Other', priority: 'Skip', reason: 'Could not parse LLM response' };\n}\nconst candidate = $('Split Out Candidates').item.json;\nreturn [{\n  json: {\n    Company: candidate.companyName,\n    Name: candidate.fullName,\n    Designation: candidate.title,\n    Seniority: parsed.seniority,\n    LinkedInURL: candidate.profileUrl,\n    Score: parsed.score,\n    Priority: parsed.priority,\n    Reason: parsed.reason,\n    Activity: 'Unknown',\n    Status: parsed.score >= 70 ? 'Auto-Approved' : 'Needs Review'\n  }\n}];"
+        "jsCode": "const responseText = $json.choices[0].message.content;\nlet parsed;\ntry {\n  parsed = JSON.parse(responseText);\n} catch (e) {\n  parsed = { score: 0, seniority: 'Other', priority: 'Skip', reason: 'Could not parse LLM response' };\n}\nconst candidate = $('Filter To Pending Companies').item.json;\nreturn [{\n  json: {\n    Company: candidate.companyName,\n    Name: candidate.fullName,\n    Designation: candidate.title,\n    Seniority: parsed.seniority,\n    LinkedInURL: candidate.profileUrl,\n    Score: parsed.score,\n    Priority: parsed.priority,\n    Reason: parsed.reason,\n    Activity: 'Unknown',\n    Status: parsed.score >= 70 ? 'Auto-Approved' : 'Needs Review'\n  }\n}];"
       },
       "id": "parse-result",
       "name": "Parse OpenAI Response",
@@ -186,11 +213,13 @@
     "IF Phantom Run Failed": {
       "main": [
         [{ "node": "Log Failure", "type": "main", "index": 0 }],
-        [{ "node": "Fetch Result JSON", "type": "main", "index": 0 }]
+        [{ "node": "Fetch Agent Info", "type": "main", "index": 0 }]
       ]
     },
-    "Fetch Result JSON": { "main": [[{ "node": "Split Out Candidates", "type": "main", "index": 0 }]] },
-    "Split Out Candidates": { "main": [[{ "node": "Pace (light safety margin)", "type": "main", "index": 0 }]] },
+    "Fetch Agent Info": { "main": [[{ "node": "Fetch Full Accumulated Result", "type": "main", "index": 0 }]] },
+    "Fetch Full Accumulated Result": { "main": [[{ "node": "Read All Companies", "type": "main", "index": 0 }]] },
+    "Read All Companies": { "main": [[{ "node": "Filter To Pending Companies", "type": "main", "index": 0 }]] },
+    "Filter To Pending Companies": { "main": [[{ "node": "Pace (light safety margin)", "type": "main", "index": 0 }]] },
     "Pace (light safety margin)": { "main": [[{ "node": "OpenAI - Qualify Candidate", "type": "main", "index": 0 }]] },
     "OpenAI - Qualify Candidate": { "main": [[{ "node": "Parse OpenAI Response", "type": "main", "index": 0 }]] },
     "Parse OpenAI Response": { "main": [[{ "node": "Top 4 Per Company", "type": "main", "index": 0 }]] },
