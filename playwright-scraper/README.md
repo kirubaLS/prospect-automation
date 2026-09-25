@@ -126,7 +126,47 @@ file with **all** prospects collected so far, not just this run's.
 Drop new companies into the same input file and re-run; already-Done ones
 are skipped.
 
-### Option B — Render (free tier)
+### Option B — GitHub Actions (free, no card, recommended)
+
+Render's free tier (Option C) runs out of memory launching Chromium. GitHub
+Actions runners have 7 GB RAM, and a private repo gets 2,000 free minutes a
+month — enough for a daily run over a few dozen companies (roughly a minute
+per company). The workflow is `.github/workflows/scrape.yml` at the repo
+root; results and progress are committed back to the repo, so nothing is
+ever lost between runs.
+
+Files, all under `data/` at the repo root:
+
+| File | Who writes it | What it is |
+|---|---|---|
+| `companies.csv` (or `companies.xlsx`) | you | the master list — `Company Name`, `LinkedIn URL`, optional `Status` |
+| `prospects.xlsx` | the workflow | every prospect collected so far (cumulative) |
+| `companies-status.csv` | the workflow | each company's `Done` / `No Matches` / `Error` and the reason |
+| `state.json` | the workflow | progress; delete it to start over from scratch |
+
+Setup (once):
+
+1. GitHub → the repo → **Settings → Secrets and variables → Actions → New
+   repository secret**, twice: `LINKEDIN_LI_AT_COOKIE` and `OPENAI_API_KEY`.
+2. **Settings → Actions → General → Workflow permissions** → select **Read
+   and write permissions** → Save (needed so the run can commit results).
+3. Put your companies in `data/companies.csv` — edit it in the GitHub web
+   UI (pencil icon) or **Add file → Upload files** to replace it, or upload a
+   `data/companies.xlsx` (an `.xlsx` takes precedence if both exist).
+
+Running:
+
+- **Manually**: **Actions** tab → **Sales Navigator scrape** → **Run
+  workflow** → optionally set a limit → **Run workflow**. Watch the run's
+  log; when it finishes, `data/prospects.xlsx` is updated in the repo and
+  also attached to the run as the `prospects` artifact.
+- **Daily**: the schedule runs at 09:00 IST. Companies already `Done` are
+  skipped, so re-running with no new companies costs nothing.
+
+Diagnosing a run that found nothing: the `debug-screenshots` artifact on
+the run holds a full-page screenshot of each company's search page.
+
+### Option C — Render (free tier)
 
 Render's **free tier only supports Web Services** (Background Workers and
 Cron Jobs need a paid plan), and a free Web Service **sleeps after 15
@@ -135,6 +175,10 @@ an HTTP server (`src/server.js`): a small page at `/` to upload the companies
 file and download results, plus a `/run` endpoint woken periodically by an
 external pinger — the same pattern this project's n8n deployment already
 uses to keep itself alive.
+
+**Render's free tier has been tried and runs out of memory** (see Option
+B). Kept here for reference or for a paid instance with 2 GB (Standard,
+~$25/mo — the $7 Starter plan is still 512 MB).
 
 **Two things to know before choosing Render:**
 

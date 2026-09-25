@@ -55,6 +55,10 @@ function parseArgs(argv) {
     fs.writeFileSync(output, files.exportProspects(store.getProspects(), files.formatFromName(output)));
     logger.info(`Wrote ${store.getProspects().length} prospects to ${output}`);
 
+    const statusFile = path.join(path.dirname(output), 'companies-status.csv');
+    fs.writeFileSync(statusFile, files.exportCompanies(store.getCompanies(), 'csv'));
+    logger.info(`Wrote per-company status to ${statusFile}`);
+
     const snap = store.snapshot();
     if (snap.pending > 0) logger.info(`${snap.pending} companies still pending - run again to continue`);
     if (snap.error > 0) logger.warn(`${snap.error} companies ended in Error - see the Companies status export or state.json`);

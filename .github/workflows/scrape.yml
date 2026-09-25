@@ -1,0 +1,108 @@
+name: Sales Navigator scrape
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max companies to process this run (0 = all pending)"
+        default: "0"
+        required: false
+  schedule:
+    # 09:00 IST daily (03:30 UTC). GitHub may delay scheduled runs by some minutes.
+    - cron: "30 3 * * *"
+
+# Never let two runs scrape (and push results) at the same time.
+concurrency:
+  group: salesnav-scrape
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: playwright-scraper
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: playwright-scraper/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Pick the companies file
+        id: input
+        run: |
+          if [ -f ../data/companies.xlsx ]; then echo "file=../data/companies.xlsx" >> "$GITHUB_OUTPUT";
+          elif [ -f ../data/companies.csv ]; then echo "file=../data/companies.csv" >> "$GITHUB_OUTPUT";
+          else echo "No data/companies.xlsx or data/companies.csv in the repo" >&2; exit 1; fi
+
+      - name: Scrape and qualify
+        env:
+          LINKEDIN_LI_AT_COOKIE: ${{ secrets.LINKEDIN_LI_AT_COOKIE }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          STORAGE_BACKEND: file
+          DATA_DIR: ../data
+          HEADLESS: "true"
+          BLOCK_MEDIA: "true"
+          DEBUG_SCRAPER: "true"
+          MAX_PROSPECTS_PER_COMPANY: "25"
+          TOP_N_PER_COMPANY: "4"
+          AUTO_APPROVE_SCORE: "70"
+          MIN_DELAY_MS: "2000"
+          MAX_DELAY_MS: "5000"
+        run: |
+          node src/index.js \
+            --input "${{ steps.input.outputs.file }}" \
+            --output ../data/prospects.xlsx \
+            --limit "${{ github.event.inputs.limit || '0' }}"
+
+      # Results and progress live in the repo, so nothing is lost between runs
+      # and prospects.xlsx is always the latest cumulative file.
+      - name: Commit results
+        if: always()
+        working-directory: .
+        run: |
+          git config user.name "salesnav-scraper[bot]"
+          git config user.email "salesnav-scraper@users.noreply.github.com"
+          git add data/prospects.xlsx data/companies-status.csv data/state.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Scrape results: $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
+            git push
+          fi
+
+      - name: Upload prospects as a downloadable artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospects
+          path: |
+            data/prospects.xlsx
+            data/companies-status.csv
+          if-no-files-found: ignore
+
+      # Full-page screenshots of each company's search, for diagnosing a
+      # run that found nothing without needing a local browser.
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: playwright-scraper/debug-*.png
+          if-no-files-found: ignore
