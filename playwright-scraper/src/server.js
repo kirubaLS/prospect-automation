@@ -113,9 +113,9 @@ function setLinks(){$('dl-xlsx').href=q('/download?format=xlsx');$('dl-csv').hre
 setLinks();
 if(token&&!localStorage.getItem('runToken'))localStorage.setItem('runToken',token);
 function unauthorized(){$('tokmsg').textContent=token?'Token rejected - it must match RUN_TOKEN exactly (no spaces or quotes), and the service must have redeployed after you set it.':'Paste your RUN_TOKEN above and click Save.';$('token').focus();}
-async function call(p,opts){const r=await fetch(q(p),opts);const j=await r.json().catch(()=>({}));if(r.status===401)unauthorized();$('msg').textContent=r.ok?JSON.stringify(j):('Error '+r.status+': '+(j.error||''));refresh();}
+async function call(p,opts){$('msg').textContent='working…';try{const r=await fetch(q(p),opts);const j=await r.json().catch(()=>({}));if(r.status===401)unauthorized();$('msg').textContent=(r.ok?'OK ':'Error '+r.status+': ')+(j.error||JSON.stringify(j));}catch(e){$('msg').textContent='Request failed: '+e.message+' (is the service still deploying? check Render → Events)';}refresh();}
 async function upload(){const f=$('file').files[0];if(!f){alert('Choose a file first');return;}
-const rep=$('replace').checked;await call('/upload?filename='+encodeURIComponent(f.name)+(rep?'&replace=1':''),{method:'POST',body:f});}
+const rep=$('replace').checked;await call('/upload?filename='+encodeURIComponent(f.name)+(rep?'&replace=1':''),{method:'POST',body:f});$('file').value='';}
 async function refresh(){const r=await fetch(q('/status'));if(r.status===401)unauthorized();$('status').textContent=r.ok?JSON.stringify(await r.json(),null,2):'Error '+r.status+(r.status===401?' - enter the token above':'');}
 refresh();setInterval(refresh,15000);
 </script>`;
