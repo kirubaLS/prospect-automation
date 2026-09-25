@@ -54,6 +54,8 @@ jobs:
       - name: Scrape and qualify
         env:
           LINKEDIN_LI_AT_COOKIE: ${{ secrets.LINKEDIN_LI_AT_COOKIE }}
+          LINKEDIN_LI_A_COOKIE: ${{ secrets.LINKEDIN_LI_A_COOKIE }}
+          LINKEDIN_USER_AGENT: ${{ secrets.LINKEDIN_USER_AGENT }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           STORAGE_BACKEND: file
           DATA_DIR: ../data
@@ -79,7 +81,7 @@ jobs:
         run: |
           git config user.name "salesnav-scraper[bot]"
           git config user.email "salesnav-scraper@users.noreply.github.com"
-          git add data/prospects.xlsx data/companies-status.csv data/state.json 2>/dev/null || true
+          git add data/prospects.xlsx data/companies-status.csv data/state.json data/last-run-debug.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else

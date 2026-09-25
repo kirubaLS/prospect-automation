@@ -13,10 +13,22 @@ async function gotoWithRetry(page, url, attempts = 2) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
-      return await page.goto(url, { waitUntil: 'domcontentloaded' });
+      const res = await page.goto(url, { waitUntil: 'domcontentloaded' });
+      const title = await page.title().catch(() => '');
+      logger.info(`  -> ${res ? res.status() : '???'} ${page.url()} "${title}"`);
+      return res;
     } catch (err) {
       lastErr = err;
-      logger.warn(`goto failed (attempt ${i + 1}/${attempts}): ${err.message}`);
+      // A redirect loop on a /sales/ URL means Sales Navigator is bouncing
+      // the session (missing li_a cookie, UA mismatch, or a challenge) - it
+      // will do the same for every company, so don't keep retrying.
+      if (/ERR_TOO_MANY_REDIRECTS/.test(err.message) && /\/sales\//.test(url)) {
+        throw new Error(
+          `Sales Navigator redirect loop at ${url.split('?')[0]} - the session is not accepted for Sales Navigator ` +
+            '(add the li_a cookie as LINKEDIN_LI_A_COOKIE and set LINKEDIN_USER_AGENT to your real browser UA)'
+        );
+      }
+      logger.warn(`goto failed (attempt ${i + 1}/${attempts}): ${err.message.split('\n')[0]}`);
       if (i < attempts - 1) await randomDelay();
     }
   }
@@ -24,7 +36,7 @@ async function gotoWithRetry(page, url, attempts = 2) {
 }
 
 function looksLikeCheckpoint(url) {
-  return url.includes('/login') || url.includes('/checkpoint') || url.includes('/authwall');
+  return /\/(login|checkpoint|authwall|uas\/login|sales\/login|sales\/contract-chooser)/.test(url);
 }
 
 // Everything here is about fitting Chromium into a 512MB container:
@@ -57,16 +69,11 @@ async function launchSession() {
       return ['image', 'media', 'font'].includes(type) ? route.abort() : route.continue();
     });
   }
-  await context.addCookies([
-    {
-      name: 'li_at',
-      value: config.liAtCookie,
-      domain: '.linkedin.com',
-      path: '/',
-      httpOnly: true,
-      secure: true
-    }
-  ]);
+  const cookies = [{ name: 'li_at', value: config.liAtCookie, domain: '.linkedin.com', path: '/', httpOnly: true, secure: true }];
+  if (config.liACookie) {
+    cookies.push({ name: 'li_a', value: config.liACookie, domain: '.linkedin.com', path: '/', httpOnly: true, secure: true });
+  }
+  await context.addCookies(cookies);
   const page = await context.newPage();
   // Fail fast instead of hanging: a stuck navigation on a constrained host
   // ties up memory/CPU indefinitely without this.
@@ -92,10 +99,11 @@ function assertNotCheckpoint(page) {
 // is more precise than a name search, which can land on a similarly-named
 // company. Returns null if the URL isn't a company page or the id isn't found.
 async function companyIdFromLinkedInUrl(page, linkedInUrl) {
-  if (!linkedInUrl || !/linkedin\.com\/company\//i.test(linkedInUrl)) return null;
-  // A sheet row may already hold a Sales Navigator account URL.
+  if (!linkedInUrl) return null;
+  // A row may already hold a Sales Navigator account URL - the id is right there.
   const direct = linkedInUrl.match(/\/sales\/company\/(\d+)/);
   if (direct) return direct[1];
+  if (!/linkedin\.com\/company\//i.test(linkedInUrl)) return null;
 
   await gotoWithRetry(page, linkedInUrl.split('?')[0]);
   assertNotCheckpoint(page);
@@ -226,10 +234,18 @@ async function scrapeSearchResults(page, maxResults) {
 
   for (let pageNo = 1; results.length < maxResults; pageNo++) {
     await page.locator('#search-results-container').waitFor({ timeout: config.navigationTimeoutMs }).catch(() => {});
+    const containerFound = (await page.locator('#search-results-container').count()) > 0;
     const items = page.locator('#search-results-container li.artdeco-list__item');
     const total = await items.count();
+    if (!containerFound) {
+      // The Sales Navigator app never rendered its results panel - that's a
+      // page/session problem, not "this company has no decision makers".
+      throw new Error(
+        `Search results page did not render (no #search-results-container) at ${page.url().split('?')[0]} - title "${await page.title().catch(() => '')}"`
+      );
+    }
     if (total === 0) {
-      logger.warn('No result rows found on the search page (selector mismatch or empty results)');
+      logger.info('Results container rendered with no rows - treating as no matches');
       break;
     }
 
@@ -261,7 +277,17 @@ async function scrapeSearchResults(page, maxResults) {
   return results.slice(0, maxResults);
 }
 
+// Compact description of the current page for the per-run debug file.
+async function pageSnapshot(page) {
+  return {
+    url: page.url(),
+    title: await page.title().catch(() => ''),
+    text: await page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 1500)).catch(() => '')
+  };
+}
+
 module.exports = {
+  pageSnapshot,
   launchSession,
   isLoggedIn,
   findCompanyId,

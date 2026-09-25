@@ -147,7 +147,17 @@ Files, all under `data/` at the repo root:
 Setup (once):
 
 1. GitHub → the repo → **Settings → Secrets and variables → Actions → New
-   repository secret**, twice: `LINKEDIN_LI_AT_COOKIE` and `OPENAI_API_KEY`.
+   repository secret**, for each of:
+   - `LINKEDIN_LI_AT_COOKIE` — the `li_at` cookie (see Setup above).
+   - `LINKEDIN_LI_A_COOKIE` — the `li_a` cookie from the same cookie list.
+     It only exists after you've opened Sales Navigator in that browser;
+     it's Sales Navigator's own session. Without it `/sales/` pages can
+     redirect-loop even though linkedin.com works.
+   - `LINKEDIN_USER_AGENT` — your browser's user-agent string (open
+     `chrome://version` and copy the "User Agent" line). LinkedIn ties the
+     cookies to it; a mismatch is a common reason Sales Navigator rejects an
+     otherwise valid session.
+   - `OPENAI_API_KEY`.
 2. **Settings → Actions → General → Workflow permissions** → select **Read
    and write permissions** → Save (needed so the run can commit results).
 3. Put your companies in `data/companies.csv` — edit it in the GitHub web
@@ -163,8 +173,11 @@ Running:
 - **Daily**: the schedule runs at 09:00 IST. Companies already `Done` are
   skipped, so re-running with no new companies costs nothing.
 
-Diagnosing a run that found nothing: the `debug-screenshots` artifact on
-the run holds a full-page screenshot of each company's search page.
+Diagnosing a run that found nothing: `data/last-run-debug.json` (committed
+after every run) records the URL, page title and visible text after each
+step for each company — enough to tell a login/redirect problem from a
+selector problem without a browser. The `debug-screenshots` artifact on the
+run page holds a full-page screenshot of each company's search page.
 
 ### Option C — Render (free tier)
 

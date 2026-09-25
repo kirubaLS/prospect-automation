@@ -21,9 +21,16 @@ if (storageBackend === 'sheets' && !process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH 
 
 module.exports = {
   liAtCookie: requireEnv('LINKEDIN_LI_AT_COOKIE'),
+  // Sales Navigator's own session cookie (set once you've opened Sales
+  // Navigator in the browser). Optional but strongly recommended: without
+  // it /sales/ pages may redirect-loop even though linkedin.com works.
+  liACookie: process.env.LINKEDIN_LI_A_COOKIE || null,
+  // Should match the browser the cookies came from (chrome://version or
+  // whatismybrowser.com); LinkedIn ties sessions to it. Default is current
+  // desktop Chrome.
   userAgent:
     process.env.LINKEDIN_USER_AGENT ||
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   storageBackend,
   // file backend: where uploaded companies/prospects state is kept
   dataDir: process.env.DATA_DIR || require('path').join(__dirname, '..', 'data'),
