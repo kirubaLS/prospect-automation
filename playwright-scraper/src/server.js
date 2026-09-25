@@ -67,9 +67,15 @@ function readBody(req) {
   });
 }
 
+const processStartedAt = new Date();
+
 function statusBody() {
   return {
     mode: config.storageBackend,
+    // If this keeps resetting to "just now", the container is restarting -
+    // on Render's free tier that's usually an out-of-memory kill.
+    processStartedAt: processStartedAt.toISOString(),
+    processUptimeMin: Math.round((Date.now() - processStartedAt.getTime()) / 60000),
     isRunning,
     lastRunFinishedAt: lastRunFinishedAt ? lastRunFinishedAt.toISOString() : null,
     nextRunAllowedInMs: isRunning ? null : Math.max(0, config.minRunIntervalMs - msSinceLastRun()),
@@ -200,7 +206,15 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(config.port, () => {
-  logger.info(`Scraper server listening on :${config.port} (storage: ${config.storageBackend})`);
+  logger.info(`Scraper server listening on :${config.port} (storage: ${config.storageBackend}, pid ${process.pid})`);
+  if (isFileMode) {
+    const snap = filestore.snapshot();
+    logger.info(
+      snap.companies === 0
+        ? 'No saved state found - starting empty (a previous upload is lost if the container was restarted)'
+        : `Resumed saved state: ${snap.companies} companies, ${snap.pending} pending, ${snap.prospects} prospects`
+    );
+  }
   logger.info(
     (isFileMode ? 'Open / in a browser to upload companies and download results. ' : '') +
       'Trigger a run with GET /run' +

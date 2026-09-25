@@ -2,7 +2,7 @@
 # it needs already installed - avoids hunting down apt packages by hand on
 # Render's build image. Version must match package.json's pinned "playwright"
 # version exactly, or the npm package and the preinstalled browser mismatch.
-FROM mcr.microsoft.com/playwright:v1.47.2-jammy
+FROM mcr.microsoft.com/playwright:v1.49.1-jammy
 
 WORKDIR /app
 

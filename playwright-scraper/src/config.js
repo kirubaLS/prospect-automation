@@ -38,6 +38,12 @@ module.exports = {
   maxDelayMs: parseInt(process.env.MAX_DELAY_MS || '5000', 10),
   headless: process.env.HEADLESS !== 'false',
   debug: process.env.DEBUG_SCRAPER === 'true',
+  // Skip downloading images/fonts/media - not needed to scrape text, and a
+  // large share of a LinkedIn page's memory/bandwidth. Set false to debug
+  // layout issues with HEADLESS=false.
+  blockMedia: process.env.BLOCK_MEDIA !== 'false',
+  // Use a specific Chromium binary instead of Playwright's own download.
+  chromiumPath: process.env.CHROMIUM_PATH || null,
   navigationTimeoutMs: parseInt(process.env.NAVIGATION_TIMEOUT_MS || '30000', 10),
   maxRetriesPerCompany: parseInt(process.env.MAX_RETRIES_PER_COMPANY || '1', 10),
   // Optional - appends one summary row per run to this sheet tab if set, so

@@ -103,9 +103,15 @@ async function processCompany(page, company) {
 // returning/throwing, so callers (CLI or an HTTP server) don't need to manage
 // browser lifecycle themselves - important on a memory-constrained host where
 // a leaked browser process is fatal.
+function rssMb() {
+  return Math.round(process.memoryUsage().rss / 1024 / 1024);
+}
+
 async function runScrape({ limit } = {}) {
   const startedAt = new Date();
+  logger.info(`Run starting (node rss ${rssMb()} MB before browser launch)`);
   const { browser, page } = await li.launchSession();
+  logger.info(`Browser launched (node rss ${rssMb()} MB; Chromium's own processes are extra)`);
   const results = [];
   let fatalError = null;
 
@@ -138,6 +144,7 @@ async function runScrape({ limit } = {}) {
     logger.error('Run aborted:', err.message);
   } finally {
     await browser.close().catch((err) => logger.error('Error closing browser:', err.message));
+    logger.info(`Browser closed (node rss ${rssMb()} MB)`);
   }
 
   const summary = {

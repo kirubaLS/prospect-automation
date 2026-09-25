@@ -26,6 +26,8 @@ services:
         value: "5000"
       - key: HEADLESS
         value: "true"
+      - key: BLOCK_MEDIA
+        value: "true"
       - key: DEBUG_SCRAPER
         value: "false"
       - key: RUN_TOKEN

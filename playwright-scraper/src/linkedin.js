@@ -27,15 +27,36 @@ function looksLikeCheckpoint(url) {
   return url.includes('/login') || url.includes('/checkpoint') || url.includes('/authwall');
 }
 
+// Everything here is about fitting Chromium into a 512MB container:
+// - headless shell is the slimmer headless-only build (Playwright >= 1.49)
+// - one renderer process instead of one per site
+// - images/fonts/media are never needed for scraping text, and LinkedIn
+//   pages are heavy with profile photos
 async function launchSession() {
   const browser = await chromium.launch({
     headless: config.headless,
-    // --disable-dev-shm-usage avoids Chromium crashing in containers with a
-    // small /dev/shm (default on most PaaS free tiers, including Render).
-    // --no-sandbox is required to run Chromium as root in most containers.
-    args: ['--disable-dev-shm-usage', '--no-sandbox', '--disable-gpu']
+    channel: config.headless && !config.chromiumPath ? 'chromium-headless-shell' : undefined,
+    executablePath: config.chromiumPath || undefined,
+    args: [
+      // avoids Chromium crashing in containers with a small /dev/shm
+      '--disable-dev-shm-usage',
+      // required to run as root in most containers
+      '--no-sandbox',
+      '--disable-gpu',
+      '--disable-features=site-per-process,IsolateOrigins',
+      '--renderer-process-limit=2',
+      '--disable-background-networking',
+      '--disable-extensions',
+      '--js-flags=--max-old-space-size=128'
+    ]
   });
-  const context = await browser.newContext({ userAgent: config.userAgent });
+  const context = await browser.newContext({ userAgent: config.userAgent, viewport: { width: 1280, height: 800 } });
+  if (config.blockMedia) {
+    await context.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      return ['image', 'media', 'font'].includes(type) ? route.abort() : route.continue();
+    });
+  }
   await context.addCookies([
     {
       name: 'li_at',
