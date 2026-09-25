@@ -7,9 +7,11 @@ on:
         description: "Max companies to process this run (0 = all pending)"
         default: "0"
         required: false
-  schedule:
-    # 09:00 IST daily (03:30 UTC). GitHub may delay scheduled runs by some minutes.
-    - cron: "30 3 * * *"
+  # Scheduled runs are disabled: a run from GitHub's datacenter IPs with
+  # copied cookies got the user's LinkedIn session invalidated. Manual runs
+  # only, until the approach changes (see README "Where to run this").
+  # schedule:
+  #   - cron: "30 3 * * *"
 
 # Never let two runs scrape (and push results) at the same time.
 concurrency:
