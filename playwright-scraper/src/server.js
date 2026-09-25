@@ -89,6 +89,10 @@ button,a.btn{display:inline-block;background:#0a66c2;color:#fff;border:0;border-
 button.secondary,a.secondary{background:#555}pre{background:#f6f6f6;padding:.75rem;border-radius:6px;overflow:auto;font-size:13px}
 .muted{color:#666;font-size:13px}#msg{margin:.5rem 0;font-weight:600}</style>
 <h1>Sales Navigator scraper</h1>
+<section><h3>Access token</h3>
+<p class="muted">The <b>RUN_TOKEN</b> set in the server's environment variables. Remembered in this browser only.</p>
+<input type="password" id="token" size="48" placeholder="paste RUN_TOKEN"> <button class="secondary" onclick="saveToken()">Save</button>
+<div id="tokmsg" class="muted"></div></section>
 <section><h3>1. Upload companies (CSV or Excel)</h3>
 <p class="muted">Needs a <b>Company Name</b> and/or <b>LinkedIn URL</b> column (company page URLs, e.g. linkedin.com/company/...). New rows are added as pending; already-Done companies are kept.</p>
 <input type="file" id="file" accept=".csv,.xlsx,.xls"> <label><input type="checkbox" id="replace"> Replace existing list</label>
@@ -100,15 +104,19 @@ button.secondary,a.secondary{background:#555}pre{background:#f6f6f6;padding:.75r
 <section><h3>Status</h3><pre id="status">loading…</pre>
 <button class="secondary" onclick="if(confirm('Delete all uploaded companies and prospects?'))call('/reset',{method:'POST'})">Reset everything</button></section>
 <script>
-const token=new URLSearchParams(location.search).get('token')||'';
+let token=new URLSearchParams(location.search).get('token')||localStorage.getItem('runToken')||'';
+const $=id=>document.getElementById(id);
+$('token').value=token;
+function saveToken(){token=$('token').value.trim();localStorage.setItem('runToken',token);setLinks();$('tokmsg').textContent='';refresh();}
 const q=p=>p+(p.includes('?')?'&':'?')+'token='+encodeURIComponent(token);
-document.getElementById('dl-xlsx').href=q('/download?format=xlsx');
-document.getElementById('dl-csv').href=q('/download?format=csv');
-document.getElementById('dl-companies').href=q('/download?what=companies&format=csv');
-async function call(p,opts){const r=await fetch(q(p),opts);const j=await r.json().catch(()=>({}));document.getElementById('msg').textContent=r.ok?JSON.stringify(j):('Error '+r.status+': '+(j.error||''));refresh();}
-async function upload(){const f=document.getElementById('file').files[0];if(!f){alert('Choose a file first');return;}
-const rep=document.getElementById('replace').checked;await call('/upload?filename='+encodeURIComponent(f.name)+(rep?'&replace=1':''),{method:'POST',body:f});}
-async function refresh(){const r=await fetch(q('/status'));document.getElementById('status').textContent=r.ok?JSON.stringify(await r.json(),null,2):'Error '+r.status+' (bad token?)';}
+function setLinks(){$('dl-xlsx').href=q('/download?format=xlsx');$('dl-csv').href=q('/download?format=csv');$('dl-companies').href=q('/download?what=companies&format=csv');}
+setLinks();
+if(token&&!localStorage.getItem('runToken'))localStorage.setItem('runToken',token);
+function unauthorized(){$('tokmsg').textContent=token?'Token rejected - it must match RUN_TOKEN exactly (no spaces or quotes), and the service must have redeployed after you set it.':'Paste your RUN_TOKEN above and click Save.';$('token').focus();}
+async function call(p,opts){const r=await fetch(q(p),opts);const j=await r.json().catch(()=>({}));if(r.status===401)unauthorized();$('msg').textContent=r.ok?JSON.stringify(j):('Error '+r.status+': '+(j.error||''));refresh();}
+async function upload(){const f=$('file').files[0];if(!f){alert('Choose a file first');return;}
+const rep=$('replace').checked;await call('/upload?filename='+encodeURIComponent(f.name)+(rep?'&replace=1':''),{method:'POST',body:f});}
+async function refresh(){const r=await fetch(q('/status'));if(r.status===401)unauthorized();$('status').textContent=r.ok?JSON.stringify(await r.json(),null,2):'Error '+r.status+(r.status===401?' - enter the token above':'');}
 refresh();setInterval(refresh,15000);
 </script>`;
 
