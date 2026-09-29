@@ -2,7 +2,7 @@
 // Upload a CSV/XLSX of company LinkedIn URLs, type the geography and ICP for
 // this project, choose people per company, run, download one CSV.
 //
-// Env: APOLLO_API_KEY (required), RUN_TOKEN (recommended), PORT,
+// Env: APOLLO_API_KEY (required), PORT,
 //      PROJECTS_DIR (optional: projects/*/config.json become form presets).
 require('dotenv').config();
 const http = require('http');
@@ -13,7 +13,6 @@ const logger = require('./logger');
 const { runJob, toCsv, parseGeography, parseIcp } = require('./jobs');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const RUN_TOKEN = process.env.RUN_TOKEN || null;
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY || null;
 const PROJECTS_DIR = process.env.PROJECTS_DIR || path.resolve(__dirname, '..', '..', 'projects');
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -27,11 +26,6 @@ const processStartedAt = new Date();
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
-}
-
-function authorized(req, url) {
-  if (!RUN_TOKEN) return true;
-  return (url.searchParams.get('token') || req.headers['x-run-token']) === RUN_TOKEN;
 }
 
 function readBody(req) {
@@ -155,10 +149,9 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end(PAGE);
   }
-  if (!authorized(req, url)) return send(401, { error: 'unauthorized - pass ?token=RUN_TOKEN' });
 
   try {
-    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, tokenRequired: !!RUN_TOKEN, presets: presets() });
+    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, presets: presets() });
 
     if (url.pathname === '/jobs' && req.method === 'GET') {
       return send(200, { running: runningId, jobs: [...jobs.values()].reverse().map(publicJob) });
@@ -212,7 +205,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR})`);
   if (!APOLLO_API_KEY) logger.warn('APOLLO_API_KEY is not set - runs will fail until it is');
-  if (!RUN_TOKEN) logger.info('RUN_TOKEN not set - no login; anyone with the URL can run jobs');
 });
 
 async function shutdown(signal) {

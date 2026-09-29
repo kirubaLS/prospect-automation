@@ -54,7 +54,8 @@ The page shows a preview of the uploaded file (and warns when no LinkedIn
 URL column is found), live per-company results as the run progresses
 (`GET /jobs/:id/rows`), a partial CSV download mid-run, **Stop after
 current company**, a template CSV, recent jobs, and a dark mode.
-Optional `RUN_TOKEN` adds a login box; leave it unset for no login. The root `Dockerfile`
+There is no login: anyone with the service URL can run jobs, so keep the
+URL internal. The root `Dockerfile`
 builds it (Node only, ~100 MB RAM — fits Render's free tier now that no
 browser is involved). Results are kept on the server only while it runs;
 download after each run.
@@ -62,9 +63,8 @@ download after each run.
 Render setup: New + → Web Service → this repo → leave **Root Directory
 empty** (the Dockerfile is at the repo root and needs `projects/`), runtime
 Docker, instance Free, Health Check Path `/healthz`. Env vars:
-`APOLLO_API_KEY`, optional `RUN_TOKEN` (any random string) and optional
-`OPENAI_API_KEY`. Open `https://<service>.onrender.com/` (add
-`?token=<RUN_TOKEN>` only if you set one).
+`APOLLO_API_KEY` and optional `OPENAI_API_KEY`. Open
+`https://<service>.onrender.com/`.
 A free service sleeps after 15 idle minutes; the first request wakes it in
 ~30 s.
 

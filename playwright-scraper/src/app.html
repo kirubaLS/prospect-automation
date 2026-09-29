@@ -92,11 +92,6 @@
 <main class="wrap">
   <section class="card" id="setup">
     <h2><span class="step">1</span> Project settings</h2>
-    <div id="tokbox" style="display:none">
-      <label>Access token <small>RUN_TOKEN on the server</small></label>
-      <div class="row" style="margin-top:0"><input type="password" id="token" placeholder="paste token" style="flex:1"><button class="btn secondary sm" onclick="saveToken()">Save</button></div>
-      <div id="tokmsg" class="hint"></div>
-    </div>
 
     <label>Preset <small>fills the settings from a saved project</small></label>
     <div class="row" style="margin-top:0">
@@ -161,7 +156,6 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const GEO_SHORTCUTS = ['South India', 'North India', 'India', 'US', 'UK', 'UAE', 'GCC', 'APAC', 'Europe'];
-let token = new URLSearchParams(location.search).get('token') || localStorage.getItem('runToken') || '';
 let presets = [];
 let currentId = localStorage.getItem('currentJob') || null;
 let rowsLoaded = 0;
@@ -173,13 +167,6 @@ const savedTheme = localStorage.getItem('theme');
 if (savedTheme) document.documentElement.dataset.theme = savedTheme;
 $('theme').onclick = () => { const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); const next = cur === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; localStorage.setItem('theme', next); };
 
-// token
-$('token').value = token;
-if (token && !localStorage.getItem('runToken')) localStorage.setItem('runToken', token);
-const q = (p) => token ? p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token) : p;
-function saveToken() { token = $('token').value.trim(); localStorage.setItem('runToken', token); $('tokmsg').textContent = ''; loadPresets(); refresh(); }
-function unauthorized() { $('tokbox').style.display = ''; $('tokmsg').textContent = token ? 'Token rejected — it must match RUN_TOKEN on the server.' : 'This server requires a token. Paste it and click Save.'; }
-
 // form persistence
 ['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
 GEO_SHORTCUTS.forEach((g) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = g; c.onclick = () => { const cur = $('geography').value.trim(); $('geography').value = cur ? cur + '; ' + g : g; $('geography').dispatchEvent(new Event('input')); }; $('geochips').appendChild(c); });
@@ -187,10 +174,8 @@ GEO_SHORTCUTS.forEach((g) => { const c = document.createElement('span'); c.class
 // presets: server (projects/) + browser-saved
 function localPresets() { try { return JSON.parse(localStorage.getItem('presets') || '[]'); } catch { return []; } }
 async function loadPresets() {
-  const r = await fetch(q('/presets'));
-  if (r.status === 401) return unauthorized();
+  const r = await fetch('/presets');
   const j = await r.json();
-  $('tokbox').style.display = j.tokenRequired && !token ? '' : 'none';
   $('keywarn').style.display = j.apolloKeySet ? 'none' : '';
   presets = [...j.presets.map((p) => ({ ...p, source: 'server' })), ...localPresets().map((p) => ({ ...p, source: 'mine' }))];
   const sel = $('preset');
@@ -257,9 +242,8 @@ async function startJob() {
   setMsg('Starting…');
   const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value });
   try {
-    const r = await fetch(q('/jobs?' + params), { method: 'POST', body: selectedFile });
+    const r = await fetch('/jobs?' + params, { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401) return unauthorized();
     if (!r.ok) return setMsg('Error: ' + (j.error || r.status), 'err');
     currentId = j.job.id; localStorage.setItem('currentJob', currentId); rowsLoaded = 0; rowsJob = null;
     setMsg(`Started — geography: ${j.job.params.locations.join(' | ') || 'anywhere'}; roles: ${j.job.params.icpKeywords.join(', ')}.`, 'ok');
@@ -268,7 +252,7 @@ async function startJob() {
   } catch (e) { setMsg('Request failed: ' + e.message + ' — is the server awake?', 'err'); }
   refresh();
 }
-async function stopJob() { if (!currentId) return; await fetch(q('/jobs/' + currentId + '/stop'), { method: 'POST' }); refresh(); }
+async function stopJob() { if (!currentId) return; await fetch('/jobs/' + currentId + '/stop', { method: 'POST' }); refresh(); }
 function setMsg(t, cls) { $('msg').textContent = t; $('msg').className = 'msg ' + (cls || ''); }
 
 function show(j) {
@@ -283,7 +267,7 @@ function show(j) {
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
   $('current').textContent = j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`);
-  $('dl').style.display = 'inline-flex'; $('dl').href = q('/jobs/' + j.id + '/download');
+  $('dl').style.display = 'inline-flex'; $('dl').href = '/jobs/' + j.id + '/download';
 }
 
 let rowsBusy = false;
@@ -294,7 +278,7 @@ async function loadRows(j) {
   rowsBusy = true;
   let d;
   try {
-    const r = await fetch(q(`/jobs/${j.id}/rows?from=${rowsLoaded}`));
+    const r = await fetch(`/jobs/${j.id}/rows?from=${rowsLoaded}`);
     if (!r.ok) return;
     d = await r.json();
   } catch { return; } finally { rowsBusy = false; }
@@ -320,13 +304,12 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&am
 
 async function refresh() {
   let r;
-  try { r = await fetch(q('/jobs')); } catch { return; }
-  if (r.status === 401) return unauthorized();
+  try { r = await fetch('/jobs'); } catch { return; }
   const j = await r.json();
   const cur = j.jobs.find((x) => x.id === currentId) || j.jobs.find((x) => x.id === j.running) || j.jobs[0] || null;
   if (cur) currentId = cur.id;
   show(cur); loadRows(cur);
-  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt).toLocaleString()}</td><td><a href="${q('/jobs/' + x.id + '/download')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
+  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt).toLocaleString()}</td><td><a href="/jobs/${x.id}/download">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);
 </script>
