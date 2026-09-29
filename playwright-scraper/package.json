@@ -9,6 +9,7 @@
     "server": "node src/server.js",
     "test": "node test/files.test.js && node test/apollo.test.js && node test/scrape-results.test.js",
     "project": "node src/project.js",
+    "app": "node src/app.js",
     "install-browsers": "playwright install chromium"
   },
   "dependencies": {

@@ -42,6 +42,21 @@ URL; no data API has LinkedIn activity or connection counts.
 
 Run locally: `cd playwright-scraper && npm install && APOLLO_API_KEY=… npm run project -- --project sharp [--limit 1]`.
 
+Run as a web app (Render): `npm run app` serves a one-page UI — pick a
+project, upload the companies file, run, download `prospects.xlsx` /
+`companies-status.csv`. Protected by `RUN_TOKEN`. The root `Dockerfile`
+builds it (Node only, ~100 MB RAM — fits Render's free tier now that no
+browser is involved). Results are kept on the server only while it runs;
+download after each run.
+
+Render setup: New + → Web Service → this repo → leave **Root Directory
+empty** (the Dockerfile is at the repo root and needs `projects/`), runtime
+Docker, instance Free, Health Check Path `/healthz`. Env vars:
+`APOLLO_API_KEY`, `RUN_TOKEN` (any random string), optional
+`OPENAI_API_KEY`. Open `https://<service>.onrender.com/?token=<RUN_TOKEN>`.
+A free service sleeps after 15 idle minutes; the first request wakes it in
+~30 s.
+
 Run on GitHub Actions: `.github/workflows/apollo.yml` — **Actions → Apollo
 prospecting → Run workflow** (pick the project), and daily at 09:00 IST for
 the default project. Results are committed back into the project folder

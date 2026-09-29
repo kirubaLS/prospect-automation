@@ -1,0 +1,165 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospecting</title>
+<style>
+  :root { --bg:#f7f7f8; --card:#fff; --ink:#1f2328; --muted:#6b7280; --line:#e5e7eb; --accent:#0a66c2; --ok:#15803d; --warn:#b45309; --bad:#b91c1c; }
+  body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); margin: 0; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.35rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 14px 0; }
+  h3 { margin: 0 0 8px; font-size: 1rem; }
+  .muted { color: var(--muted); font-size: 13px; }
+  button, a.btn { display: inline-block; background: var(--accent); color: #fff; border: 0; border-radius: 7px; padding: 8px 14px; font-size: 14px; cursor: pointer; text-decoration: none; margin: 4px 6px 4px 0; }
+  button.secondary, a.secondary { background: #4b5563; }
+  button.danger { background: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=text], input[type=password], select { padding: 8px; border: 1px solid var(--line); border-radius: 7px; font-size: 14px; }
+  input[type=file] { font-size: 14px; }
+  #msg { margin: 8px 0 0; font-weight: 600; min-height: 1.4em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 8px 0; }
+  .stat { background: var(--bg); border-radius: 8px; padding: 10px; }
+  .stat b { display: block; font-size: 1.4rem; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  pre { background: var(--bg); padding: 10px; border-radius: 8px; overflow: auto; font-size: 12px; max-height: 260px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #e5e7eb; }
+  .pill.run { background: #dbeafe; color: #1e40af; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+</style>
+<main>
+  <h1>Prospecting</h1>
+  <p class="sub">Upload a companies file → Apollo finds the decision makers → download the prospects. <span id="proj-desc"></span></p>
+
+  <section>
+    <div class="row">
+      <label>Project <select id="project"></select></label>
+      <label>Token <input type="password" id="token" size="30" placeholder="RUN_TOKEN"> <button class="secondary" onclick="saveToken()">Save</button></label>
+    </div>
+    <div id="tokmsg" class="muted"></div>
+  </section>
+
+  <section>
+    <h3>1. Companies</h3>
+    <p class="muted">CSV or Excel with <b>Company Name</b> and <b>LinkedIn URL</b> (company page) columns. <a id="tpl" href="#">Download a template</a>. Re-uploading merges by LinkedIn URL; companies already Done are skipped.</p>
+    <div class="row">
+      <input type="file" id="file" accept=".csv,.xlsx,.xls">
+      <label><input type="checkbox" id="replace"> Replace existing list</label>
+      <label><input type="checkbox" id="runafter" checked> Run right after upload</label>
+    </div>
+    <button onclick="upload()">Upload</button>
+    <div id="msg"></div>
+  </section>
+
+  <section>
+    <h3>2. Run <span id="runpill" class="pill">idle</span></h3>
+    <p class="muted">Processes every pending company (a few seconds each). Safe to leave the page — refresh to see progress.</p>
+    <button id="runbtn" onclick="call('run')">Run now</button>
+    <button class="secondary" onclick="call('stop',{method:'POST'})">Stop after current company</button>
+    <button class="secondary" onclick="refresh()">Refresh</button>
+  </section>
+
+  <section>
+    <h3>3. Download</h3>
+    <a class="btn" id="dl-x">Prospects .xlsx</a>
+    <a class="btn" id="dl-c">Prospects .csv</a>
+    <a class="btn secondary" id="dl-s">Companies status .csv</a>
+    <p class="muted" id="manualnote"></p>
+  </section>
+
+  <section>
+    <h3>Status</h3>
+    <div class="grid" id="stats"></div>
+    <pre id="last"></pre>
+    <button class="danger" onclick="if(confirm('Delete this project\'s uploaded companies and prospects on the server?'))call('reset',{method:'POST'})">Reset this project</button>
+    <p class="muted">Results live on the server only while it runs; a redeploy or restart clears them. Download after every run.</p>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let token = new URLSearchParams(location.search).get('token') || localStorage.getItem('runToken') || '';
+$('token').value = token;
+let projects = [];
+let current = localStorage.getItem('project') || '';
+
+function saveToken() { token = $('token').value.trim(); localStorage.setItem('runToken', token); $('tokmsg').textContent = ''; loadProjects(); }
+if (token && !localStorage.getItem('runToken')) localStorage.setItem('runToken', token);
+const q = (p) => p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
+const base = () => '/projects/' + encodeURIComponent(current);
+
+function unauthorized() { $('tokmsg').textContent = token ? 'Token rejected — it must match RUN_TOKEN on the server exactly.' : 'Paste the RUN_TOKEN and click Save.'; }
+
+async function loadProjects() {
+  const r = await fetch(q('/projects'));
+  if (r.status === 401) return unauthorized();
+  const j = await r.json();
+  projects = j.projects;
+  const sel = $('project');
+  sel.innerHTML = projects.map((p) => `<option value="${p.slug}">${p.name}</option>`).join('');
+  if (!projects.find((p) => p.slug === current)) current = projects[0] ? projects[0].slug : '';
+  sel.value = current;
+  if (!j.apolloKeySet) $('tokmsg').textContent = 'Server has no APOLLO_API_KEY set — runs will fail.';
+  render();
+}
+$('project').addEventListener('change', () => { current = $('project').value; localStorage.setItem('project', current); render(); });
+
+function render() {
+  const p = projects.find((x) => x.slug === current);
+  if (!p) return;
+  $('proj-desc').textContent = p.description ? `${p.name}: ${p.description}` : p.name;
+  $('manualnote').textContent = p.manualColumns.length ? `Columns left for you to fill from the LinkedIn URL: ${p.manualColumns.join(', ')}.` : '';
+  $('dl-x').href = q(base() + '/download?format=xlsx');
+  $('dl-c').href = q(base() + '/download?format=csv');
+  $('dl-s').href = q(base() + '/download?what=companies&format=csv');
+  $('tpl').href = q(base() + '/template');
+  showStatus(p);
+}
+
+function showStatus(s) {
+  const d = s.data || {};
+  $('runpill').textContent = s.isRunning ? 'running…' : 'idle';
+  $('runpill').className = 'pill' + (s.isRunning ? ' run' : '');
+  $('runbtn').disabled = !!s.isRunning;
+  const stats = [['Companies', d.companies], ['Pending', d.pending], ['Done', d.done], ['No matches', d.noMatches], ['Not in Apollo', d.notInApollo], ['Pre-screen failed', d.prescreenFailed], ['Errors', d.error], ['Prospects', d.prospects]];
+  $('stats').innerHTML = stats.map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
+  const last = s.lastRun;
+  $('last').textContent = last
+    ? (last.error ? 'Last run failed: ' + last.error : `Last run ${last.finishedAt}: ${last.summary.companiesProcessed} companies, ${last.summary.totalProspects} prospects kept` +
+      (last.summary.results.length ? '\n' + last.summary.results.map((r) => `  ${r.status.padEnd(16)} ${r.company}${r.prospects ? ' (' + r.prospects + ')' : ''}${r.error ? ' - ' + r.error : ''}`).join('\n') : ''))
+    : (d.sourceFile ? `Loaded ${d.sourceFile} at ${d.uploadedAt}` : 'No companies uploaded yet.');
+}
+
+async function refresh() {
+  if (!current) return;
+  const r = await fetch(q(base() + '/status'));
+  if (r.status === 401) return unauthorized();
+  const s = await r.json();
+  const p = projects.find((x) => x.slug === current);
+  if (p) Object.assign(p, s);
+  showStatus(s);
+}
+
+async function call(action, opts) {
+  $('msg').textContent = 'working…';
+  try {
+    const r = await fetch(q(base() + '/' + action), opts);
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) unauthorized();
+    $('msg').textContent = (r.ok ? 'OK: ' : 'Error ' + r.status + ': ') + (j.error || JSON.stringify(j));
+  } catch (e) {
+    $('msg').textContent = 'Request failed: ' + e.message;
+  }
+  refresh();
+}
+
+async function upload() {
+  const f = $('file').files[0];
+  if (!f) { alert('Choose a file first'); return; }
+  const params = 'filename=' + encodeURIComponent(f.name) + ($('replace').checked ? '&replace=1' : '') + ($('runafter').checked ? '&run=1' : '');
+  await call('upload?' + params, { method: 'POST', body: f });
+  $('file').value = '';
+}
+
+loadProjects();
+setInterval(refresh, 8000);
+</script>

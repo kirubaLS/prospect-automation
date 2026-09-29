@@ -29,7 +29,7 @@ function buildMatcher(rules) {
         return {
           score,
           priority: tier.priority,
-          seniority: tier.seniority || seniorityLabel(candidate.seniority),
+          seniority: candidate.seniority ? seniorityLabel(candidate.seniority) : tier.seniority || 'Other',
           reason: `${tier.priority}: title matched "${hit.source}"${candidate.seniority ? ` (Apollo seniority: ${candidate.seniority})` : ''}`
         };
       }
