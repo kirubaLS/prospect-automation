@@ -158,7 +158,7 @@ const server = http.createServer(async (req, res) => {
   if (!authorized(req, url)) return send(401, { error: 'unauthorized - pass ?token=RUN_TOKEN' });
 
   try {
-    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, presets: presets() });
+    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, tokenRequired: !!RUN_TOKEN, presets: presets() });
 
     if (url.pathname === '/jobs' && req.method === 'GET') {
       return send(200, { running: runningId, jobs: [...jobs.values()].reverse().map(publicJob) });
@@ -208,7 +208,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR})`);
   if (!APOLLO_API_KEY) logger.warn('APOLLO_API_KEY is not set - runs will fail until it is');
-  if (!RUN_TOKEN) logger.warn('RUN_TOKEN is not set - the app is open to anyone with the URL');
+  if (!RUN_TOKEN) logger.info('RUN_TOKEN not set - no login; anyone with the URL can run jobs');
 });
 
 async function shutdown(signal) {

@@ -37,10 +37,9 @@
 
   <section>
     <div class="row">
-      <div><label>Access token <span class="hint">RUN_TOKEN from the server</span></label><input type="password" id="token" placeholder="paste token"></div>
+      <div id="tokbox"><label>Access token <span class="hint">RUN_TOKEN from the server</span></label><input type="password" id="token" placeholder="paste token"> <button class="secondary" onclick="saveToken()">Save token</button></div>
       <div><label>Preset <span class="hint">fills the form from a saved project</span></label><select id="preset"><option value="">— none —</option></select></div>
     </div>
-    <button class="secondary" onclick="saveToken()">Save token</button>
     <div id="tokmsg" class="hint"></div>
   </section>
 
@@ -104,6 +103,7 @@ async function loadPresets() {
   if (r.status === 401) return unauthorized();
   const j = await r.json();
   presets = j.presets;
+  $('tokbox').style.display = j.tokenRequired ? '' : 'none';
   $('preset').innerHTML = '<option value="">— none —</option>' + presets.map((p) => `<option value="${p.slug}">${p.name}</option>`).join('');
   if (!j.apolloKeySet) $('tokmsg').textContent = 'Server has no APOLLO_API_KEY set — runs will fail.';
 }
