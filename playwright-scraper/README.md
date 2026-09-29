@@ -42,9 +42,14 @@ URL; no data API has LinkedIn activity or connection counts.
 
 Run locally: `cd playwright-scraper && npm install && APOLLO_API_KEY=… npm run project -- --project sharp [--limit 1]`.
 
-Run as a web app (Render): `npm run app` serves a one-page UI — pick a
-project, upload the companies file, run, download `prospects.xlsx` /
-`companies-status.csv`. Protected by `RUN_TOKEN`. The root `Dockerfile`
+Run as a web app (Render): `npm run app` serves a one-page UI — upload
+the companies file, type the person geography (shortcuts: South India, US,
+APAC…) and the ICP ("Industries; roles"), set people per company, run,
+download one CSV: one row per person (Name, Designation, Seniority,
+Function, LinkedIn URL, Location, Match, Rank) plus a `Company not found` /
+`No people found` row per company that produced nothing. No emails or
+phones. `projects/*/config.json` appear as presets that prefill the form.
+Protected by `RUN_TOKEN`. The root `Dockerfile`
 builds it (Node only, ~100 MB RAM — fits Render's free tier now that no
 browser is involved). Results are kept on the server only while it runs;
 download after each run.

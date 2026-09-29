@@ -3,163 +3,158 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prospecting</title>
 <style>
-  :root { --bg:#f7f7f8; --card:#fff; --ink:#1f2328; --muted:#6b7280; --line:#e5e7eb; --accent:#0a66c2; --ok:#15803d; --warn:#b45309; --bad:#b91c1c; }
+  :root { --bg:#f7f7f8; --card:#fff; --ink:#1f2328; --muted:#6b7280; --line:#e5e7eb; --accent:#0a66c2; --bad:#b91c1c; }
   body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); margin: 0; }
-  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+  main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 1.35rem; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 20px; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
   section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 14px 0; }
-  h3 { margin: 0 0 8px; font-size: 1rem; }
-  .muted { color: var(--muted); font-size: 13px; }
-  button, a.btn { display: inline-block; background: var(--accent); color: #fff; border: 0; border-radius: 7px; padding: 8px 14px; font-size: 14px; cursor: pointer; text-decoration: none; margin: 4px 6px 4px 0; }
+  h3 { margin: 0 0 10px; font-size: 1rem; }
+  label { display: block; font-weight: 600; margin: 10px 0 4px; }
+  .hint { font-weight: 400; color: var(--muted); font-size: 13px; }
+  input[type=text], input[type=number], input[type=password], select, textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; font: inherit; }
+  textarea { min-height: 60px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  button, a.btn { display: inline-block; background: var(--accent); color: #fff; border: 0; border-radius: 7px; padding: 9px 16px; font-size: 14px; cursor: pointer; text-decoration: none; margin: 6px 8px 0 0; }
   button.secondary, a.secondary { background: #4b5563; }
-  button.danger { background: var(--bad); }
   button:disabled { opacity: .5; cursor: default; }
-  input[type=text], input[type=password], select { padding: 8px; border: 1px solid var(--line); border-radius: 7px; font-size: 14px; }
-  input[type=file] { font-size: 14px; }
-  #msg { margin: 8px 0 0; font-weight: 600; min-height: 1.4em; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 8px 0; }
+  #msg { margin: 10px 0 0; font-weight: 600; min-height: 1.4em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin: 8px 0; }
   .stat { background: var(--bg); border-radius: 8px; padding: 10px; }
   .stat b { display: block; font-size: 1.4rem; }
   .stat span { font-size: 12px; color: var(--muted); }
-  pre { background: var(--bg); padding: 10px; border-radius: 8px; overflow: auto; font-size: 12px; max-height: 260px; }
+  .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+  .bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #e5e7eb; }
-  .pill.run { background: #dbeafe; color: #1e40af; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pill.running { background: #dbeafe; color: #1e40af; } .pill.done { background: #dcfce7; color: #166534; } .pill.failed, .pill.stopped { background: #fee2e2; color: #991b1b; }
 </style>
 <main>
   <h1>Prospecting</h1>
-  <p class="sub">Upload a companies file → Apollo finds the decision makers → download the prospects. <span id="proj-desc"></span></p>
+  <p class="sub">Upload company LinkedIn URLs → Apollo finds the decision makers matching your geography and ICP → download one CSV. No emails or phone numbers are collected.</p>
 
   <section>
     <div class="row">
-      <label>Project <select id="project"></select></label>
-      <label>Token <input type="password" id="token" size="30" placeholder="RUN_TOKEN"> <button class="secondary" onclick="saveToken()">Save</button></label>
+      <div><label>Access token <span class="hint">RUN_TOKEN from the server</span></label><input type="password" id="token" placeholder="paste token"></div>
+      <div><label>Preset <span class="hint">fills the form from a saved project</span></label><select id="preset"><option value="">— none —</option></select></div>
     </div>
-    <div id="tokmsg" class="muted"></div>
+    <button class="secondary" onclick="saveToken()">Save token</button>
+    <div id="tokmsg" class="hint"></div>
   </section>
 
   <section>
-    <h3>1. Companies</h3>
-    <p class="muted">CSV or Excel with <b>Company Name</b> and <b>LinkedIn URL</b> (company page) columns. <a id="tpl" href="#">Download a template</a>. Re-uploading merges by LinkedIn URL; companies already Done are skipped.</p>
+    <h3>Run a project</h3>
+    <label>Project / batch name <span class="hint">used for the download file name</span></label>
+    <input type="text" id="label" placeholder="e.g. Sharp - batch 3">
+
+    <label>Companies file <span class="hint">CSV or Excel; a column with the company's LinkedIn page URL (and optionally the name)</span></label>
+    <input type="file" id="file" accept=".csv,.xlsx,.xls">
+
     <div class="row">
-      <input type="file" id="file" accept=".csv,.xlsx,.xls">
-      <label><input type="checkbox" id="replace"> Replace existing list</label>
-      <label><input type="checkbox" id="runafter" checked> Run right after upload</label>
+      <div>
+        <label>Geography of the person <span class="hint">one per line or separated by ;</span></label>
+        <textarea id="geography" placeholder="South India&#10;or: United States&#10;or: Karnataka, India; Tamil Nadu, India"></textarea>
+        <div class="hint">Shortcuts: South India, North India, India, US, UK, UAE, GCC, APAC, Europe. Leave empty for anywhere.</div>
+      </div>
+      <div>
+        <label>ICP <span class="hint">roles/functions to look for; optionally industries before a semicolon</span></label>
+        <textarea id="icp" placeholder="Education, Healthcare, Retail; IT, Administration, Procurement, Finance, Purchasing"></textarea>
+        <div class="hint">Before “;” = industries (noted in the output, not used to skip companies). After “;” = roles. Order: decision makers with these roles → managers with these roles → any decision maker.</div>
+      </div>
     </div>
-    <button onclick="upload()">Upload</button>
+
+    <label>People per company</label>
+    <input type="number" id="count" value="8" min="1" max="25" style="max-width:120px">
+
+    <div><button id="runbtn" onclick="startJob()">Run</button> <button class="secondary" onclick="stopJob()">Stop current job</button></div>
     <div id="msg"></div>
   </section>
 
   <section>
-    <h3>2. Run <span id="runpill" class="pill">idle</span></h3>
-    <p class="muted">Processes every pending company (a few seconds each). Safe to leave the page — refresh to see progress.</p>
-    <button id="runbtn" onclick="call('run')">Run now</button>
-    <button class="secondary" onclick="call('stop',{method:'POST'})">Stop after current company</button>
-    <button class="secondary" onclick="refresh()">Refresh</button>
-  </section>
-
-  <section>
-    <h3>3. Download</h3>
-    <a class="btn" id="dl-x">Prospects .xlsx</a>
-    <a class="btn" id="dl-c">Prospects .csv</a>
-    <a class="btn secondary" id="dl-s">Companies status .csv</a>
-    <p class="muted" id="manualnote"></p>
-  </section>
-
-  <section>
-    <h3>Status</h3>
+    <h3>Current job <span id="jobpill" class="pill">none</span></h3>
+    <div id="jobname" class="hint"></div>
+    <div class="bar"><i id="barfill"></i></div>
     <div class="grid" id="stats"></div>
-    <pre id="last"></pre>
-    <button class="danger" onclick="if(confirm('Delete this project\'s uploaded companies and prospects on the server?'))call('reset',{method:'POST'})">Reset this project</button>
-    <p class="muted">Results live on the server only while it runs; a redeploy or restart clears them. Download after every run.</p>
+    <div id="current" class="hint"></div>
+    <a class="btn" id="dl" href="#" style="display:none">Download CSV</a>
+    <div class="hint">Results stay on the server only while it runs (a redeploy or restart clears them). Download as soon as a job finishes. You can download a partial CSV while a job is still running.</div>
+  </section>
+
+  <section>
+    <h3>Recent jobs</h3>
+    <table><thead><tr><th>Name</th><th>File</th><th>Status</th><th>Companies</th><th>People</th><th></th></tr></thead><tbody id="jobs"></tbody></table>
   </section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
 let token = new URLSearchParams(location.search).get('token') || localStorage.getItem('runToken') || '';
 $('token').value = token;
-let projects = [];
-let current = localStorage.getItem('project') || '';
-
-function saveToken() { token = $('token').value.trim(); localStorage.setItem('runToken', token); $('tokmsg').textContent = ''; loadProjects(); }
 if (token && !localStorage.getItem('runToken')) localStorage.setItem('runToken', token);
 const q = (p) => p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
-const base = () => '/projects/' + encodeURIComponent(current);
+let currentId = localStorage.getItem('currentJob') || null;
+let presets = [];
 
-function unauthorized() { $('tokmsg').textContent = token ? 'Token rejected — it must match RUN_TOKEN on the server exactly.' : 'Paste the RUN_TOKEN and click Save.'; }
+function saveToken() { token = $('token').value.trim(); localStorage.setItem('runToken', token); $('tokmsg').textContent = ''; loadPresets(); refresh(); }
+function unauthorized() { $('tokmsg').textContent = token ? 'Token rejected — it must match RUN_TOKEN on the server exactly.' : 'Paste the RUN_TOKEN and click Save token.'; }
 
-async function loadProjects() {
-  const r = await fetch(q('/projects'));
+async function loadPresets() {
+  const r = await fetch(q('/presets'));
   if (r.status === 401) return unauthorized();
   const j = await r.json();
-  projects = j.projects;
-  const sel = $('project');
-  sel.innerHTML = projects.map((p) => `<option value="${p.slug}">${p.name}</option>`).join('');
-  if (!projects.find((p) => p.slug === current)) current = projects[0] ? projects[0].slug : '';
-  sel.value = current;
+  presets = j.presets;
+  $('preset').innerHTML = '<option value="">— none —</option>' + presets.map((p) => `<option value="${p.slug}">${p.name}</option>`).join('');
   if (!j.apolloKeySet) $('tokmsg').textContent = 'Server has no APOLLO_API_KEY set — runs will fail.';
-  render();
 }
-$('project').addEventListener('change', () => { current = $('project').value; localStorage.setItem('project', current); render(); });
-
-function render() {
-  const p = projects.find((x) => x.slug === current);
+$('preset').addEventListener('change', () => {
+  const p = presets.find((x) => x.slug === $('preset').value);
   if (!p) return;
-  $('proj-desc').textContent = p.description ? `${p.name}: ${p.description}` : p.name;
-  $('manualnote').textContent = p.manualColumns.length ? `Columns left for you to fill from the LinkedIn URL: ${p.manualColumns.join(', ')}.` : '';
-  $('dl-x').href = q(base() + '/download?format=xlsx');
-  $('dl-c').href = q(base() + '/download?format=csv');
-  $('dl-s').href = q(base() + '/download?what=companies&format=csv');
-  $('tpl').href = q(base() + '/template');
-  showStatus(p);
-}
+  $('geography').value = p.geography; $('icp').value = p.icp; $('count').value = p.peoplePerCompany; if (!$('label').value) $('label').value = p.name;
+});
+['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
 
-function showStatus(s) {
-  const d = s.data || {};
-  $('runpill').textContent = s.isRunning ? 'running…' : 'idle';
-  $('runpill').className = 'pill' + (s.isRunning ? ' run' : '');
-  $('runbtn').disabled = !!s.isRunning;
-  const stats = [['Companies', d.companies], ['Pending', d.pending], ['Done', d.done], ['No matches', d.noMatches], ['Not in Apollo', d.notInApollo], ['Pre-screen failed', d.prescreenFailed], ['Errors', d.error], ['Prospects', d.prospects]];
-  $('stats').innerHTML = stats.map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
-  const last = s.lastRun;
-  $('last').textContent = last
-    ? (last.error ? 'Last run failed: ' + last.error : `Last run ${last.finishedAt}: ${last.summary.companiesProcessed} companies, ${last.summary.totalProspects} prospects kept` +
-      (last.summary.results.length ? '\n' + last.summary.results.map((r) => `  ${r.status.padEnd(16)} ${r.company}${r.prospects ? ' (' + r.prospects + ')' : ''}${r.error ? ' - ' + r.error : ''}`).join('\n') : ''))
-    : (d.sourceFile ? `Loaded ${d.sourceFile} at ${d.uploadedAt}` : 'No companies uploaded yet.');
+async function startJob() {
+  const f = $('file').files[0];
+  if (!f) { alert('Choose the companies file first'); return; }
+  if (!$('icp').value.trim()) { alert('Enter the ICP roles'); return; }
+  $('msg').textContent = 'starting…';
+  const params = new URLSearchParams({ filename: f.name, label: $('label').value, geography: $('geography').value, icp: $('icp').value, count: $('count').value });
+  try {
+    const r = await fetch(q('/jobs?' + params), { method: 'POST', body: f });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) unauthorized();
+    if (!r.ok) { $('msg').textContent = 'Error ' + r.status + ': ' + (j.error || ''); return; }
+    currentId = j.job.id; localStorage.setItem('currentJob', currentId);
+    $('msg').textContent = 'Started. Geography: ' + (j.job.params.locations.join(' | ') || 'anywhere') + '. Roles: ' + j.job.params.icpKeywords.join(', ') + '.';
+    $('file').value = '';
+  } catch (e) { $('msg').textContent = 'Request failed: ' + e.message; }
+  refresh();
+}
+async function stopJob() { if (!currentId) return; await fetch(q('/jobs/' + currentId + '/stop'), { method: 'POST' }); refresh(); }
+
+function show(j) {
+  $('jobpill').textContent = j ? j.status : 'none';
+  $('jobpill').className = 'pill ' + (j ? j.status : '');
+  $('runbtn').disabled = !!(j && j.status === 'running');
+  if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
+  const p = j.progress || {};
+  $('jobname').textContent = `${j.label} — ${j.params.peoplePerCompany}/company · geography: ${j.params.locations.join(' | ') || 'anywhere'} · roles: ${j.params.icpKeywords.join(', ')}`;
+  $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
+  $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
+    .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
+  $('current').textContent = j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${j.finishedAt}`);
+  $('dl').style.display = 'inline-block'; $('dl').href = q('/jobs/' + j.id + '/download');
 }
 
 async function refresh() {
-  if (!current) return;
-  const r = await fetch(q(base() + '/status'));
+  const r = await fetch(q('/jobs'));
   if (r.status === 401) return unauthorized();
-  const s = await r.json();
-  const p = projects.find((x) => x.slug === current);
-  if (p) Object.assign(p, s);
-  showStatus(s);
+  const j = await r.json();
+  const cur = j.jobs.find((x) => x.id === currentId) || j.jobs.find((x) => x.id === j.running) || j.jobs[0] || null;
+  if (cur) currentId = cur.id;
+  show(cur);
+  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${x.label}</td><td>${x.filename}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td><a href="${q('/jobs/' + x.id + '/download')}">CSV</a> · <a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="6" class="hint">No jobs yet.</td></tr>';
 }
-
-async function call(action, opts) {
-  $('msg').textContent = 'working…';
-  try {
-    const r = await fetch(q(base() + '/' + action), opts);
-    const j = await r.json().catch(() => ({}));
-    if (r.status === 401) unauthorized();
-    $('msg').textContent = (r.ok ? 'OK: ' : 'Error ' + r.status + ': ') + (j.error || JSON.stringify(j));
-  } catch (e) {
-    $('msg').textContent = 'Request failed: ' + e.message;
-  }
-  refresh();
-}
-
-async function upload() {
-  const f = $('file').files[0];
-  if (!f) { alert('Choose a file first'); return; }
-  const params = 'filename=' + encodeURIComponent(f.name) + ($('replace').checked ? '&replace=1' : '') + ($('runafter').checked ? '&run=1' : '');
-  await call('upload?' + params, { method: 'POST', body: f });
-  $('file').value = '';
-}
-
-loadProjects();
-setInterval(refresh, 8000);
+loadPresets(); refresh(); setInterval(refresh, 4000);
 </script>
