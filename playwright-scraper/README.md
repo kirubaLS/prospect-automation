@@ -48,8 +48,13 @@ APAC…) and the ICP ("Industries; roles"), set people per company, run,
 download one CSV: one row per person (Name, Designation, Seniority,
 Function, LinkedIn URL, Location, Match, Rank) plus a `Company not found` /
 `No people found` row per company that produced nothing. No emails or
-phones. `projects/*/config.json` appear as presets that prefill the form.
-Protected by `RUN_TOKEN`. The root `Dockerfile`
+phones. `projects/*/config.json` appear as presets that prefill the form,
+and **Save as preset** keeps your own geography/ICP combos in the browser.
+The page shows a preview of the uploaded file (and warns when no LinkedIn
+URL column is found), live per-company results as the run progresses
+(`GET /jobs/:id/rows`), a partial CSV download mid-run, **Stop after
+current company**, a template CSV, recent jobs, and a dark mode.
+Optional `RUN_TOKEN` adds a login box; leave it unset for no login. The root `Dockerfile`
 builds it (Node only, ~100 MB RAM — fits Render's free tier now that no
 browser is involved). Results are kept on the server only while it runs;
 download after each run.
@@ -57,8 +62,9 @@ download after each run.
 Render setup: New + → Web Service → this repo → leave **Root Directory
 empty** (the Dockerfile is at the repo root and needs `projects/`), runtime
 Docker, instance Free, Health Check Path `/healthz`. Env vars:
-`APOLLO_API_KEY`, `RUN_TOKEN` (any random string), optional
-`OPENAI_API_KEY`. Open `https://<service>.onrender.com/?token=<RUN_TOKEN>`.
+`APOLLO_API_KEY`, optional `RUN_TOKEN` (any random string) and optional
+`OPENAI_API_KEY`. Open `https://<service>.onrender.com/` (add
+`?token=<RUN_TOKEN>` only if you set one).
 A free service sleeps after 15 idle minutes; the first request wakes it in
 ~30 s.
 

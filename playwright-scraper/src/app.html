@@ -1,160 +1,334 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prospecting</title>
 <style>
-  :root { --bg:#f7f7f8; --card:#fff; --ink:#1f2328; --muted:#6b7280; --line:#e5e7eb; --accent:#0a66c2; --bad:#b91c1c; }
-  body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); margin: 0; }
-  main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.35rem; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 18px; }
-  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 14px 0; }
-  h3 { margin: 0 0 10px; font-size: 1rem; }
-  label { display: block; font-weight: 600; margin: 10px 0 4px; }
-  .hint { font-weight: 400; color: var(--muted); font-size: 13px; }
-  input[type=text], input[type=number], input[type=password], select, textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; font: inherit; }
-  textarea { min-height: 60px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
-  button, a.btn { display: inline-block; background: var(--accent); color: #fff; border: 0; border-radius: 7px; padding: 9px 16px; font-size: 14px; cursor: pointer; text-decoration: none; margin: 6px 8px 0 0; }
-  button.secondary, a.secondary { background: #4b5563; }
-  button:disabled { opacity: .5; cursor: default; }
-  #msg { margin: 10px 0 0; font-weight: 600; min-height: 1.4em; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin: 8px 0; }
-  .stat { background: var(--bg); border-radius: 8px; padding: 10px; }
-  .stat b { display: block; font-size: 1.4rem; }
-  .stat span { font-size: 12px; color: var(--muted); }
-  .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 8px 0; }
-  .bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #e5e7eb; }
-  .pill.running { background: #dbeafe; color: #1e40af; } .pill.done { background: #dcfce7; color: #166534; } .pill.failed, .pill.stopped { background: #fee2e2; color: #991b1b; }
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f0f2f5; --ink: #16181d; --ink-2: #5b6270; --line: #e2e5ea;
+    --accent: #0a66c2; --accent-ink: #ffffff; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --info: #0550ae;
+    --radius: 12px; --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --surface: #171b21; --surface-2: #1f242c; --ink: #e8eaee; --ink-2: #9aa3b2; --line: #2a313b;
+      --accent: #4c9be8; --accent-ink: #0b1220; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --info: #58a6ff;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1216; --surface: #171b21; --surface-2: #1f242c; --ink: #e8eaee; --ink-2: #9aa3b2; --line: #2a313b;
+    --accent: #4c9be8; --accent-ink: #0b1220; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --info: #58a6ff;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  header { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+  header .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+  .brand { font-weight: 700; letter-spacing: .2px; }
+  .brand small { font-weight: 400; color: var(--ink-2); margin-left: 8px; }
+  main.wrap { padding: 20px 16px 64px; display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { main.wrap { grid-template-columns: 380px 1fr; align-items: start; } .span2 { grid-column: 1 / -1; } }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
+  .step { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 700; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 5px; }
+  label small { font-weight: 400; color: var(--ink-2); }
+  input[type=text], input[type=number], input[type=password], select, textarea {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); border-color: var(--accent); }
+  textarea { min-height: 64px; resize: vertical; }
+  .hint { color: var(--ink-2); font-size: 12.5px; margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); cursor: pointer; }
+  .chip:hover { border-color: var(--accent); }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 9px; border: 1px solid transparent; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .btn.secondary { background: var(--surface-2); color: var(--ink); border-color: var(--line); }
+  .btn.danger { background: transparent; color: var(--bad); border-color: var(--line); }
+  .btn.sm { padding: 6px 10px; font-size: 13px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 22px; text-align: center; color: var(--ink-2); cursor: pointer; transition: .15s; background: var(--surface-2); }
+  .drop.over { border-color: var(--accent); color: var(--ink); }
+  .drop b { color: var(--ink); }
+  .preview { margin-top: 10px; font-size: 13px; }
+  .preview table { width: 100%; border-collapse: collapse; }
+  .preview th, .preview td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin: 10px 0; }
+  .stat { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 22px; line-height: 1.1; }
+  .stat span { font-size: 12px; color: var(--ink-2); }
+  .bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--ink-2); }
+  .pill.running { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+  .pill.done { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .pill.failed, .pill.stopped { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tbl th { position: sticky; top: 0; background: var(--surface); text-align: left; padding: 8px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--ink-2); }
+  .tbl td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tbl tr.co td { background: var(--surface-2); font-weight: 600; }
+  .tbl .s-found { color: var(--ok); } .tbl .s-nf { color: var(--bad); } .tbl .s-np { color: var(--warn); }
+  .scroll { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+  .msg { margin-top: 10px; font-size: 13.5px; min-height: 1.4em; }
+  .msg.err { color: var(--bad); } .msg.ok { color: var(--ok); }
+  .muted { color: var(--ink-2); }
+  .toggle { background: none; border: 1px solid var(--line); border-radius: 8px; color: var(--ink-2); padding: 5px 9px; cursor: pointer; font-size: 13px; }
+  details summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+  .jobs td a { margin-right: 8px; }
+  .empty { padding: 28px; text-align: center; color: var(--ink-2); }
 </style>
-<main>
-  <h1>Prospecting</h1>
-  <p class="sub">Upload company LinkedIn URLs → Apollo finds the decision makers matching your geography and ICP → download one CSV. No emails or phone numbers are collected.</p>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">Prospecting <small>company URLs → decision makers, via Apollo</small></div>
+  <div class="row" style="margin:0"><span id="keywarn" class="pill" style="display:none">no Apollo key on server</span><button class="toggle" id="theme" title="Toggle dark mode">◐</button></div>
+</div></header>
 
-  <section>
-    <div class="row">
-      <div id="tokbox"><label>Access token <span class="hint">RUN_TOKEN from the server</span></label><input type="password" id="token" placeholder="paste token"> <button class="secondary" onclick="saveToken()">Save token</button></div>
-      <div><label>Preset <span class="hint">fills the form from a saved project</span></label><select id="preset"><option value="">— none —</option></select></div>
+<main class="wrap">
+  <section class="card" id="setup">
+    <h2><span class="step">1</span> Project settings</h2>
+    <div id="tokbox" style="display:none">
+      <label>Access token <small>RUN_TOKEN on the server</small></label>
+      <div class="row" style="margin-top:0"><input type="password" id="token" placeholder="paste token" style="flex:1"><button class="btn secondary sm" onclick="saveToken()">Save</button></div>
+      <div id="tokmsg" class="hint"></div>
     </div>
-    <div id="tokmsg" class="hint"></div>
-  </section>
 
-  <section>
-    <h3>Run a project</h3>
-    <label>Project / batch name <span class="hint">used for the download file name</span></label>
-    <input type="text" id="label" placeholder="e.g. Sharp - batch 3">
-
-    <label>Companies file <span class="hint">CSV or Excel; a column with the company's LinkedIn page URL (and optionally the name)</span></label>
-    <input type="file" id="file" accept=".csv,.xlsx,.xls">
-
-    <div class="row">
-      <div>
-        <label>Geography of the person <span class="hint">one per line or separated by ;</span></label>
-        <textarea id="geography" placeholder="South India&#10;or: United States&#10;or: Karnataka, India; Tamil Nadu, India"></textarea>
-        <div class="hint">Shortcuts: South India, North India, India, US, UK, UAE, GCC, APAC, Europe. Leave empty for anywhere.</div>
-      </div>
-      <div>
-        <label>ICP <span class="hint">roles/functions to look for; optionally industries before a semicolon</span></label>
-        <textarea id="icp" placeholder="Education, Healthcare, Retail; IT, Administration, Procurement, Finance, Purchasing"></textarea>
-        <div class="hint">Before “;” = industries (noted in the output, not used to skip companies). After “;” = roles. Order: decision makers with these roles → managers with these roles → any decision maker.</div>
-      </div>
+    <label>Preset <small>fills the settings from a saved project</small></label>
+    <div class="row" style="margin-top:0">
+      <select id="preset" style="flex:1"><option value="">— choose —</option></select>
+      <button class="btn secondary sm" onclick="savePreset()" title="Save the current settings as a preset in this browser">Save as preset</button>
     </div>
+
+    <label>Project / batch name <small>becomes the download file name</small></label>
+    <input type="text" id="label" placeholder="e.g. Sharp – batch 3">
+
+    <label>Geography of the person <small>one per line or separated by ;</small></label>
+    <textarea id="geography" placeholder="South India"></textarea>
+    <div class="chips" id="geochips"></div>
+    <div class="hint">Leave empty for anywhere. Custom entries use Apollo's form, e.g. <code>Karnataka, India</code>.</div>
+
+    <label>ICP <small>industries; roles</small></label>
+    <textarea id="icp" placeholder="Education, Healthcare, Retail; IT, Administration, Procurement, Finance, Purchasing"></textarea>
+    <div class="hint">Before “;” = industries (noted in the output, companies are not skipped). After “;” = roles to look for. Search order: decision makers with these roles → managers with these roles → any decision maker.</div>
 
     <label>People per company</label>
     <input type="number" id="count" value="8" min="1" max="25" style="max-width:120px">
-
-    <div><button id="runbtn" onclick="startJob()">Run</button> <button class="secondary" onclick="stopJob()">Stop current job</button></div>
-    <div id="msg"></div>
   </section>
 
-  <section>
-    <h3>Current job <span id="jobpill" class="pill">none</span></h3>
-    <div id="jobname" class="hint"></div>
-    <div class="bar"><i id="barfill"></i></div>
-    <div class="grid" id="stats"></div>
-    <div id="current" class="hint"></div>
-    <a class="btn" id="dl" href="#" style="display:none">Download CSV</a>
-    <div class="hint">Results stay on the server only while it runs (a redeploy or restart clears them). Download as soon as a job finishes. You can download a partial CSV while a job is still running.</div>
-  </section>
+  <div style="display:grid; gap:16px">
+    <section class="card" id="companies">
+      <h2><span class="step">2</span> Companies</h2>
+      <div class="drop" id="drop">
+        <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none">
+        <div><b>Drop the CSV / Excel here</b> or click to choose</div>
+        <div class="hint">A column with each company's LinkedIn page URL (<code>linkedin.com/company/…</code>). Company name optional.</div>
+      </div>
+      <div class="preview" id="preview"></div>
+      <div class="row">
+        <button class="btn" id="runbtn" onclick="startJob()">▶ Run</button>
+        <button class="btn secondary" id="stopbtn" onclick="stopJob()" disabled>Stop after current company</button>
+        <a class="btn secondary sm" id="tpl" href="#" download="companies-template.csv">Template CSV</a>
+      </div>
+      <div class="msg" id="msg"></div>
+    </section>
 
-  <section>
-    <h3>Recent jobs</h3>
-    <table><thead><tr><th>Name</th><th>File</th><th>Status</th><th>Companies</th><th>People</th><th></th></tr></thead><tbody id="jobs"></tbody></table>
+    <section class="card" id="results">
+      <h2><span class="step">3</span> Results <span id="jobpill" class="pill">no job</span></h2>
+      <div id="jobname" class="hint"></div>
+      <div class="bar" style="margin:8px 0"><i id="barfill"></i></div>
+      <div class="stats" id="stats"></div>
+      <div id="current" class="hint"></div>
+      <div class="row">
+        <a class="btn" id="dl" href="#" style="display:none">⬇ Download CSV</a>
+        <span class="hint">Results live on the server only while it runs — download when a job finishes.</span>
+      </div>
+      <div class="scroll" style="margin-top:12px"><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Seniority</th><th>Location</th><th>Match</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="7" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
+    </section>
+  </div>
+
+  <section class="card span2">
+    <details><summary>Recent jobs</summary>
+      <table class="tbl jobs" style="margin-top:8px"><thead><tr><th>Name</th><th>File</th><th>Status</th><th>Companies</th><th>People</th><th>Started</th><th></th></tr></thead><tbody id="jobs"></tbody></table>
+    </details>
   </section>
 </main>
+
 <script>
 const $ = (id) => document.getElementById(id);
+const GEO_SHORTCUTS = ['South India', 'North India', 'India', 'US', 'UK', 'UAE', 'GCC', 'APAC', 'Europe'];
 let token = new URLSearchParams(location.search).get('token') || localStorage.getItem('runToken') || '';
+let presets = [];
+let currentId = localStorage.getItem('currentJob') || null;
+let rowsLoaded = 0;
+let rowsJob = null;
+let selectedFile = null;
+
+// theme
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+$('theme').onclick = () => { const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); const next = cur === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; localStorage.setItem('theme', next); };
+
+// token
 $('token').value = token;
 if (token && !localStorage.getItem('runToken')) localStorage.setItem('runToken', token);
-const q = (p) => p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
-let currentId = localStorage.getItem('currentJob') || null;
-let presets = [];
-
+const q = (p) => token ? p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token) : p;
 function saveToken() { token = $('token').value.trim(); localStorage.setItem('runToken', token); $('tokmsg').textContent = ''; loadPresets(); refresh(); }
-function unauthorized() { $('tokmsg').textContent = token ? 'Token rejected — it must match RUN_TOKEN on the server exactly.' : 'Paste the RUN_TOKEN and click Save token.'; }
+function unauthorized() { $('tokbox').style.display = ''; $('tokmsg').textContent = token ? 'Token rejected — it must match RUN_TOKEN on the server.' : 'This server requires a token. Paste it and click Save.'; }
 
+// form persistence
+['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
+GEO_SHORTCUTS.forEach((g) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = g; c.onclick = () => { const cur = $('geography').value.trim(); $('geography').value = cur ? cur + '; ' + g : g; $('geography').dispatchEvent(new Event('input')); }; $('geochips').appendChild(c); });
+
+// presets: server (projects/) + browser-saved
+function localPresets() { try { return JSON.parse(localStorage.getItem('presets') || '[]'); } catch { return []; } }
 async function loadPresets() {
   const r = await fetch(q('/presets'));
   if (r.status === 401) return unauthorized();
   const j = await r.json();
-  presets = j.presets;
-  $('tokbox').style.display = j.tokenRequired ? '' : 'none';
-  $('preset').innerHTML = '<option value="">— none —</option>' + presets.map((p) => `<option value="${p.slug}">${p.name}</option>`).join('');
-  if (!j.apolloKeySet) $('tokmsg').textContent = 'Server has no APOLLO_API_KEY set — runs will fail.';
+  $('tokbox').style.display = j.tokenRequired && !token ? '' : 'none';
+  $('keywarn').style.display = j.apolloKeySet ? 'none' : '';
+  presets = [...j.presets.map((p) => ({ ...p, source: 'server' })), ...localPresets().map((p) => ({ ...p, source: 'mine' }))];
+  const sel = $('preset');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— choose —</option>' + presets.map((p, i) => `<option value="${i}">${p.name}${p.source === 'mine' ? ' (saved)' : ''}</option>`).join('');
+  sel.value = cur;
 }
 $('preset').addEventListener('change', () => {
-  const p = presets.find((x) => x.slug === $('preset').value);
-  if (!p) return;
-  $('geography').value = p.geography; $('icp').value = p.icp; $('count').value = p.peoplePerCompany; if (!$('label').value) $('label').value = p.name;
+  const p = presets[$('preset').value]; if (!p) return;
+  $('geography').value = p.geography || ''; $('icp').value = p.icp || ''; $('count').value = p.peoplePerCompany || 8;
+  if (!$('label').value) $('label').value = p.name;
+  ['geography', 'icp', 'count', 'label'].forEach((id) => $(id).dispatchEvent(new Event('input')));
 });
-['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
+function savePreset() {
+  const name = prompt('Preset name (e.g. the client name):', $('label').value || '');
+  if (!name) return;
+  const mine = localPresets().filter((p) => p.name !== name);
+  mine.push({ slug: 'local-' + Date.now(), name, geography: $('geography').value, icp: $('icp').value, peoplePerCompany: parseInt($('count').value, 10) || 8 });
+  localStorage.setItem('presets', JSON.stringify(mine));
+  loadPresets();
+}
 
+// file drop + preview
+const drop = $('drop'), fileInput = $('file');
+drop.onclick = () => fileInput.click();
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); };
+fileInput.onchange = () => { if (fileInput.files[0]) setFile(fileInput.files[0]); };
+$('tpl').href = 'data:text/csv;charset=utf-8,' + encodeURIComponent('Company Name,LinkedIn URL\r\nExample Company,https://www.linkedin.com/company/example/\r\n');
+
+function parseCsv(text) {
+  const rows = []; let row = [], cell = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else inQ = false; } else cell += c; }
+    else if (c === '"') inQ = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((x) => x.trim()));
+}
+async function setFile(f) {
+  selectedFile = f;
+  const kb = Math.round(f.size / 1024);
+  if (/\.csv$/i.test(f.name)) {
+    const rows = parseCsv(await f.text());
+    const head = rows[0] || [], body = rows.slice(1);
+    const urlCol = head.findIndex((h) => /linkedin|url|link/i.test(h));
+    const bad = urlCol >= 0 ? body.filter((r) => !/linkedin\.com\/(company|school|showcase)\//i.test(r[urlCol] || '')).length : body.length;
+    $('preview').innerHTML = `<div><b>${f.name}</b> · ${body.length} companies · ${kb} KB` + (urlCol < 0 ? ' · <span style="color:var(--bad)">no LinkedIn URL column found</span>' : bad ? ` · <span style="color:var(--warn)">${bad} row(s) without a company page URL (will be looked up by name)</span>` : ' · URLs look good') + `</div>` +
+      `<table><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body.slice(0, 5).map((r) => `<tr>${head.map((_, i) => `<td>${r[i] || ''}</td>`).join('')}</tr>`).join('')}</tbody></table>` + (body.length > 5 ? `<div class="hint">… and ${body.length - 5} more</div>` : '');
+  } else {
+    $('preview').innerHTML = `<div><b>${f.name}</b> · ${kb} KB · Excel file (first sheet will be used)</div>`;
+  }
+}
+
+// jobs
 async function startJob() {
-  const f = $('file').files[0];
-  if (!f) { alert('Choose the companies file first'); return; }
-  if (!$('icp').value.trim()) { alert('Enter the ICP roles'); return; }
-  $('msg').textContent = 'starting…';
-  const params = new URLSearchParams({ filename: f.name, label: $('label').value, geography: $('geography').value, icp: $('icp').value, count: $('count').value });
+  if (!selectedFile) { setMsg('Choose the companies file first.', 'err'); return; }
+  if (!$('icp').value.trim()) { setMsg('Enter the ICP roles (after the semicolon).', 'err'); $('icp').focus(); return; }
+  setMsg('Starting…');
+  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value });
   try {
-    const r = await fetch(q('/jobs?' + params), { method: 'POST', body: f });
+    const r = await fetch(q('/jobs?' + params), { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401) unauthorized();
-    if (!r.ok) { $('msg').textContent = 'Error ' + r.status + ': ' + (j.error || ''); return; }
-    currentId = j.job.id; localStorage.setItem('currentJob', currentId);
-    $('msg').textContent = 'Started. Geography: ' + (j.job.params.locations.join(' | ') || 'anywhere') + '. Roles: ' + j.job.params.icpKeywords.join(', ') + '.';
-    $('file').value = '';
-  } catch (e) { $('msg').textContent = 'Request failed: ' + e.message; }
+    if (r.status === 401) return unauthorized();
+    if (!r.ok) return setMsg('Error: ' + (j.error || r.status), 'err');
+    currentId = j.job.id; localStorage.setItem('currentJob', currentId); rowsLoaded = 0; rowsJob = null;
+    setMsg(`Started — geography: ${j.job.params.locations.join(' | ') || 'anywhere'}; roles: ${j.job.params.icpKeywords.join(', ')}.`, 'ok');
+    selectedFile = null; fileInput.value = ''; $('preview').innerHTML = '';
+    $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { setMsg('Request failed: ' + e.message + ' — is the server awake?', 'err'); }
   refresh();
 }
 async function stopJob() { if (!currentId) return; await fetch(q('/jobs/' + currentId + '/stop'), { method: 'POST' }); refresh(); }
+function setMsg(t, cls) { $('msg').textContent = t; $('msg').className = 'msg ' + (cls || ''); }
 
 function show(j) {
-  $('jobpill').textContent = j ? j.status : 'none';
+  $('jobpill').textContent = j ? j.status : 'no job';
   $('jobpill').className = 'pill ' + (j ? j.status : '');
   $('runbtn').disabled = !!(j && j.status === 'running');
+  $('stopbtn').disabled = !(j && j.status === 'running');
   if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
-  $('jobname').textContent = `${j.label} — ${j.params.peoplePerCompany}/company · geography: ${j.params.locations.join(' | ') || 'anywhere'} · roles: ${j.params.icpKeywords.join(', ')}`;
+  $('jobname').textContent = `${j.label} · ${j.params.peoplePerCompany}/company · ${j.params.locations.join(' | ') || 'anywhere'} · ${j.params.icpKeywords.join(', ')}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
-  $('current').textContent = j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${j.finishedAt}`);
-  $('dl').style.display = 'inline-block'; $('dl').href = q('/jobs/' + j.id + '/download');
+  $('current').textContent = j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`);
+  $('dl').style.display = 'inline-flex'; $('dl').href = q('/jobs/' + j.id + '/download');
 }
 
+let rowsBusy = false;
+async function loadRows(j) {
+  if (!j || rowsBusy) return;
+  if (rowsJob !== j.id) { rowsJob = j.id; rowsLoaded = 0; $('rows').querySelector('tbody').innerHTML = ''; $('rows').querySelector('tbody').dataset.lastCo = ''; }
+  if (j.rows <= rowsLoaded) { if (!rowsLoaded) $('rows').querySelector('tbody').innerHTML = '<tr><td colspan="7" class="empty">' + (j.status === 'running' ? 'Waiting for the first company…' : 'No rows.') + '</td></tr>'; return; }
+  rowsBusy = true;
+  let d;
+  try {
+    const r = await fetch(q(`/jobs/${j.id}/rows?from=${rowsLoaded}`));
+    if (!r.ok) return;
+    d = await r.json();
+  } catch { return; } finally { rowsBusy = false; }
+  if (rowsJob !== j.id) return;
+  const tb = $('rows').querySelector('tbody');
+  if (!rowsLoaded) tb.innerHTML = '';
+  let lastCo = tb.dataset.lastCo || '';
+  for (const x of d.rows) {
+    if (x.company !== lastCo) {
+      lastCo = x.company;
+      const cls = x.companyStatus === 'Found' ? 's-found' : x.companyStatus === 'Company not found' ? 's-nf' : 's-np';
+      tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="7"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`);
+    }
+    if (x.companyStatus === 'Found') {
+      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.seniority)}</td><td>${esc(x.location)}</td><td class="muted">${esc(x.match)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td></tr>`);
+    }
+  }
+  tb.dataset.lastCo = lastCo;
+  rowsLoaded = d.from + d.rows.length;
+  if (rowsLoaded < d.total) loadRows(j);
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
 async function refresh() {
-  const r = await fetch(q('/jobs'));
+  let r;
+  try { r = await fetch(q('/jobs')); } catch { return; }
   if (r.status === 401) return unauthorized();
   const j = await r.json();
   const cur = j.jobs.find((x) => x.id === currentId) || j.jobs.find((x) => x.id === j.running) || j.jobs[0] || null;
   if (cur) currentId = cur.id;
-  show(cur);
-  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${x.label}</td><td>${x.filename}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td><a href="${q('/jobs/' + x.id + '/download')}">CSV</a> · <a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="6" class="hint">No jobs yet.</td></tr>';
+  show(cur); loadRows(cur);
+  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt).toLocaleString()}</td><td><a href="${q('/jobs/' + x.id + '/download')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
-loadPresets(); refresh(); setInterval(refresh, 4000);
+loadPresets(); refresh(); setInterval(refresh, 3000);
 </script>
+</body>
+</html>

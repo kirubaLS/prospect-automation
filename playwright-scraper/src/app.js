@@ -178,8 +178,8 @@ const server = http.createServer(async (req, res) => {
       return send(202, { status: 'started', job: publicJob(job) });
     }
 
-    const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download))?$/);
-    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', 'POST /jobs/:id/stop', '/jobs/:id/download'] });
+    const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows))?$/);
+    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download'] });
     const job = jobs.get(m[1]);
     if (!job) return send(404, { error: 'unknown or expired job (results are kept only while the server runs)' });
 
@@ -187,6 +187,10 @@ const server = http.createServer(async (req, res) => {
     if (m[2] === 'stop' && req.method === 'POST') {
       job.stopRequested = true;
       return send(202, { status: job.status === 'running' ? 'stopping' : job.status });
+    }
+    if (m[2] === 'rows') {
+      const from = Math.max(0, parseInt(url.searchParams.get('from') || '0', 10) || 0);
+      return send(200, { total: job.rows.length, from, rows: job.rows.slice(from, from + 500) });
     }
     if (m[2] === 'download') {
       const csv = toCsv(job.rows);
