@@ -92,7 +92,7 @@ async function qualifyCandidate(candidate) {
 
 // Scores every candidate, then keeps the top N by score per company - same
 // selection rule as the n8n pipeline's "Top 4 Per Company" node.
-async function qualifyAndSelect(candidates) {
+async function qualifyAndSelect(candidates, { topN = config.topNPerCompany } = {}) {
   const scored = [];
   for (const c of candidates) {
     const q = await qualifyCandidate(c);
@@ -103,7 +103,7 @@ async function qualifyAndSelect(candidates) {
     });
     await new Promise((r) => setTimeout(r, 1000));
   }
-  return scored.sort((a, b) => b.score - a.score).slice(0, config.topNPerCompany);
+  return scored.sort((a, b) => b.score - a.score).slice(0, topN);
 }
 
 module.exports = { qualifyAndSelect };

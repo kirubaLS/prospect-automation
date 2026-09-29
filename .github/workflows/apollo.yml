@@ -1,0 +1,77 @@
+name: Apollo prospecting
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Project folder under projects/ (e.g. sharp)"
+        default: "sharp"
+        required: true
+      limit:
+        description: "Max companies to process this run (0 = all pending)"
+        default: "0"
+        required: false
+  schedule:
+    # 09:00 IST daily (03:30 UTC) - runs the default project; add a matrix
+    # entry below for each additional project.
+    - cron: "30 3 * * *"
+
+concurrency:
+  group: apollo-${{ github.event.inputs.project || 'sharp' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prospect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        project: ${{ fromJSON(github.event_name == 'schedule' && '["sharp"]' || format('["{0}"]', github.event.inputs.project)) }}
+    defaults:
+      run:
+        working-directory: playwright-scraper
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: playwright-scraper/package-lock.json
+
+      - name: Install dependencies (no browser needed)
+        run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+      - name: Run project
+        env:
+          APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node src/project.js --project "${{ matrix.project }}" --limit "${{ github.event.inputs.limit || '0' }}"
+
+      - name: Commit results
+        if: always()
+        working-directory: .
+        run: |
+          git config user.name "prospect-bot"
+          git config user.email "prospect-bot@users.noreply.github.com"
+          git add "projects/${{ matrix.project }}/prospects.xlsx" "projects/${{ matrix.project }}/companies-status.csv" "projects/${{ matrix.project }}/state.json" 2>/dev/null || true
+          if git diff --cached --quiet; then echo "No changes to commit"; else
+            git commit -m "${{ matrix.project }}: prospects $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
+            git pull --rebase origin main && git push
+          fi
+
+      - name: Upload results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.project }}-prospects
+          path: |
+            projects/${{ matrix.project }}/prospects.xlsx
+            projects/${{ matrix.project }}/companies-status.csv
+          if-no-files-found: ignore

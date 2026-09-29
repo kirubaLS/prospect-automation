@@ -74,7 +74,7 @@ const MAX_ERROR_ATTEMPTS = 3;
 function isPending(c) {
   const s = (c.Status || '').trim().toLowerCase();
   if (!(c['Company Name'] || '').trim()) return false;
-  if (s === 'done' || s === 'no matches') return false;
+  if (['done', 'no matches', 'not in apollo', 'pre-screen failed'].includes(s)) return false;
   if (s === 'error' && (c.Attempts || 0) >= MAX_ERROR_ATTEMPTS) return false;
   return true;
 }
@@ -109,6 +109,13 @@ async function updateCompanyStatus(rowNumber, status, error = '') {
     c.Attempts = (c.Attempts || 0) + 1;
     if (c.Attempts >= MAX_ERROR_ATTEMPTS) c.Error = `${c.Error} (gave up after ${c.Attempts} attempts)`;
   }
+  save();
+}
+
+async function setCompanyMeta(rowNumber, meta) {
+  const c = state.companies[rowNumber - 1];
+  if (!c) throw new Error(`No company at row ${rowNumber}`);
+  Object.assign(c, meta);
   save();
 }
 
@@ -159,6 +166,7 @@ module.exports = {
   getPendingCompanies,
   appendProspects,
   updateCompanyStatus,
+  setCompanyMeta,
   appendRunLog,
   snapshot,
   getCompanies,

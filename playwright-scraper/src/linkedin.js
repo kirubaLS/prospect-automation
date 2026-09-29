@@ -45,6 +45,7 @@ function looksLikeCheckpoint(url) {
 // - images/fonts/media are never needed for scraping text, and LinkedIn
 //   pages are heavy with profile photos
 async function launchSession() {
+  if (!config.liAtCookie) throw new Error('LINKEDIN_LI_AT_COOKIE is required for the LinkedIn source (see .env.example)');
   const browser = await chromium.launch({
     headless: config.headless,
     channel: config.headless && !config.chromiumPath ? 'chromium-headless-shell' : undefined,

@@ -71,7 +71,7 @@ const store = require('../src/filestore');
 
   // Export round-trip: CSV and XLSX both re-parse to the same rows.
   const csvOut = files.exportProspects(store.getProspects(), 'csv').toString('utf8');
-  assert.ok(csvOut.startsWith('Company,Name,Designation,Seniority,LinkedInURL,Score,Priority,Reason,Activity,Status,Location,Tenure'));
+  assert.ok(csvOut.startsWith('Company,Name,Designation,Seniority,Function,LinkedInURL,Location,Score,Priority,Reason,Status,Connections 500+,Activity,Open to work?,Tenure,Source'), csvOut.split('\n')[0]);
   const xlsxOut = files.exportProspects(store.getProspects(), 'xlsx');
   const back = XLSX.utils.sheet_to_json(XLSX.read(xlsxOut, { type: 'buffer' }).Sheets.Prospects);
   assert.strictEqual(back.length, 2);

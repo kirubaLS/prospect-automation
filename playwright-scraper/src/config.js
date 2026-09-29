@@ -20,7 +20,10 @@ if (storageBackend === 'sheets' && !process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH 
 }
 
 module.exports = {
-  liAtCookie: requireEnv('LINKEDIN_LI_AT_COOKIE'),
+  // Only needed for the LinkedIn/Playwright source; launchSession() checks it.
+  liAtCookie: process.env.LINKEDIN_LI_AT_COOKIE || null,
+  // Apollo.io data source (no browser, no LinkedIn session).
+  apolloApiKey: process.env.APOLLO_API_KEY || null,
   // Sales Navigator's own session cookie (set once you've opened Sales
   // Navigator in the browser). Optional but strongly recommended: without
   // it /sales/ pages may redirect-loop even though linkedin.com works.

@@ -9,7 +9,8 @@ const COMPANY_HEADER_ALIASES = {
 };
 
 const PROSPECT_COLUMNS = [
-  'Company', 'Name', 'Designation', 'Seniority', 'LinkedInURL', 'Score', 'Priority', 'Reason', 'Activity', 'Status', 'Location', 'Tenure'
+  'Company', 'Name', 'Designation', 'Seniority', 'Function', 'LinkedInURL', 'Location', 'Score', 'Priority', 'Reason', 'Status',
+  'Connections 500+', 'Activity', 'Open to work?', 'Tenure', 'Source'
 ];
 
 function normalize(h) {
@@ -65,10 +66,14 @@ function toRow(p) {
     Score: p.score ?? '',
     Priority: p.priority || '',
     Reason: p.reason || '',
-    Activity: p.activity || 'Unknown',
+    Activity: p.activity || '',
     Status: p.status || '',
     Location: p.location || '',
-    Tenure: p.tenure || ''
+    Tenure: p.tenure || '',
+    Function: Array.isArray(p.departments) ? p.departments.join(', ') : p.function || '',
+    'Connections 500+': p.connections500 || '',
+    'Open to work?': p.openToWork || '',
+    Source: p.source || ''
   };
 }
 
@@ -91,10 +96,17 @@ function exportCompanies(companies, format = 'csv') {
       'LinkedIn URL': c['LinkedIn URL'],
       Status: c.Status || '',
       Error: c.Error || '',
+      PreScreen: c.PreScreen || '',
+      ApolloOrg: c.ApolloOrg || '',
+      ApolloLinkedIn: c.ApolloLinkedIn || '',
+      Industry: c.Industry || '',
+      Employees: c.Employees ?? '',
+      HQ: c.HQ || '',
+      Prospects: c.Prospects ?? '',
       Attempts: c.Attempts || 0,
       UpdatedAt: c.UpdatedAt || ''
     })),
-    { header: ['Company Name', 'LinkedIn URL', 'Status', 'Error', 'Attempts', 'UpdatedAt'] }
+    { header: ['Company Name', 'LinkedIn URL', 'Status', 'Error', 'PreScreen', 'ApolloOrg', 'ApolloLinkedIn', 'Industry', 'Employees', 'HQ', 'Prospects', 'Attempts', 'UpdatedAt'] }
   );
   if (format === 'xlsx') {
     const wb = XLSX.utils.book_new();

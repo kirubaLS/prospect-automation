@@ -1,35 +1,58 @@
-# LeadStrategus Sales Navigator Scraper (standalone Playwright)
+# LeadStrategus prospecting engine
 
-Takes a list of companies (a CSV/XLSX file, or a Google Sheet) and, for each
-one, mirrors the manual Sales Navigator workflow: open the company's account
-page (`/sales/company/<id>`), open its built-in **"Decision makers"** quick
-search (under "Common searches"), scrape the resulting prospect list, qualify
-each person with the Sharp SSDI rubric via OpenAI, and write the top ones out
-as a CSV/XLSX (or to a Prospects sheet). Runs on its own — independent of the
-n8n/PhantomBuster pipeline in `../n8n/`.
+Two data sources, one pipeline: a companies file in, a prospects file out.
 
-How each company is handled:
+- **Apollo.io (recommended, current)** — `src/project.js`. No browser, no
+  LinkedIn session, nothing to get an account logged out. Configured per
+  project under `projects/<name>/config.json`. See **Projects** below.
+- **LinkedIn Sales Navigator via Playwright (legacy)** — `src/index.js` /
+  `src/server.js`. Kept for reference; running it from cloud IPs got the
+  user's LinkedIn session invalidated. Everything from "Read this before
+  running it" onward describes that path.
 
-1. **Resolve the company id** from the `LinkedIn URL` column — the regular
-   company page embeds LinkedIn's numeric company id, which is the same id
-   Sales Navigator uses. Falls back to a Sales Navigator account search by
-   `Company Name` if the URL isn't a company page (e.g. a personal profile
-   URL was pasted by mistake).
-2. **Open "Decision makers"** from the account page — Sales Navigator's own
-   preset, which is Current company = this company + Seniority level
-   Director / Vice President / CXO (filter ids 6, 7, 8, confirmed from the
-   page's own link). The link's href is followed when present; otherwise the
-   identical URL is built directly.
-3. **Scrape the results** — each row's name, title, company, location,
-   tenure, and full "About" text.
-4. **Qualify with OpenAI** (if `OPENAI_API_KEY` is set) using the same Sharp
-   SSDI Tier 1/2/3 prompt as the n8n pipeline, keep the top
-   `TOP_N_PER_COMPANY` (default 4) by score. Without an OpenAI key, every
-   decision maker is kept, unscored, as `Needs Review`.
-5. **Write the prospects** with the same columns the n8n flow uses:
-   `Company, Name, Designation, Seniority, LinkedInURL, Score, Priority,
-   Reason, Activity, Status, Location, Tenure`. A profile URL already present
-   is never written twice.
+## Projects (Apollo)
+
+Each client/project is a folder:
+
+```
+projects/sharp/
+  config.json           ICP titles, seniority tiers, geography, per-company target, rules
+  companies.csv|xlsx    your input: Company Name, LinkedIn URL (company page)
+  prospects.xlsx        output, cumulative (written by the run)
+  companies-status.csv  per-company outcome + what Apollo matched (written by the run)
+  state.json            progress; delete to start over
+```
+
+Per company the run: looks the company up in Apollo (matched on the
+LinkedIn URL, not just the name) → pre-screens it (in Apollo, has employees,
+HQ country, industry warning) → searches people tier by tier (decision
+makers first, managers as fallback) filtered by ICP title keywords and
+person geography → qualifies them with the project's title rules (or the
+OpenAI rubric if `"qualification": "openai"`) → keeps the top
+`targetPerCompany` → appends to `prospects.xlsx`. Excluded titles
+(doctors, developers, assistants…) are never written, not even as filler.
+
+Company outcomes in `companies-status.csv`: `Done`, `No Matches`,
+`Not in Apollo` (find the decision maker manually), `Pre-screen failed`,
+`Error`.
+
+Columns the run cannot fill — **Connections 500+**, **Activity**, **Open to
+work?** — are left blank for the researcher to complete from the LinkedIn
+URL; no data API has LinkedIn activity or connection counts.
+
+Run locally: `cd playwright-scraper && npm install && APOLLO_API_KEY=… npm run project -- --project sharp [--limit 1]`.
+
+Run on GitHub Actions: `.github/workflows/apollo.yml` — **Actions → Apollo
+prospecting → Run workflow** (pick the project), and daily at 09:00 IST for
+the default project. Results are committed back into the project folder
+and attached to the run as an artifact. Needs the `APOLLO_API_KEY` secret
+(and `OPENAI_API_KEY` only for projects using the OpenAI rubric).
+
+New project: copy `projects/sharp` to `projects/<name>`, edit `config.json`
+(titles, tiers, `personLocations`, `targetPerCompany`, `rules`), drop in a
+companies file, run with `--project <name>`.
+
+## Legacy: LinkedIn Sales Navigator scraper
 
 ## Read this before running it
 
