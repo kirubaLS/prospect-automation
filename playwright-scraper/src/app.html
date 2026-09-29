@@ -139,8 +139,9 @@
       <div class="stats" id="stats"></div>
       <div id="current" class="hint"></div>
       <div class="row">
-        <a class="btn" id="dl" href="#" style="display:none">⬇ Download CSV</a>
-        <span class="hint">Results live on the server only while it runs — download when a job finishes.</span>
+        <a class="btn" id="dlx" href="#" style="display:none">⬇ Download Excel</a>
+        <a class="btn secondary" id="dl" href="#" style="display:none">⬇ Download CSV</a>
+        <span class="hint">Same columns in both. Results live on the server only while it runs — download when a job finishes.</span>
       </div>
       <div class="scroll" style="margin-top:12px"><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Seniority</th><th>Location</th><th>Match</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="7" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
     </section>
@@ -260,14 +261,15 @@ function show(j) {
   $('jobpill').className = 'pill ' + (j ? j.status : '');
   $('runbtn').disabled = !!(j && j.status === 'running');
   $('stopbtn').disabled = !(j && j.status === 'running');
-  if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
+  if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
   $('jobname').textContent = `${j.label} · ${j.params.peoplePerCompany}/company · ${j.params.locations.join(' | ') || 'anywhere'} · ${j.params.icpKeywords.join(', ')}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
   $('current').textContent = j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`);
-  $('dl').style.display = 'inline-flex'; $('dl').href = '/jobs/' + j.id + '/download';
+  $('dl').style.display = 'inline-flex'; $('dl').href = '/jobs/' + j.id + '/download?format=csv';
+  $('dlx').style.display = 'inline-flex'; $('dlx').href = '/jobs/' + j.id + '/download?format=xlsx';
 }
 
 let rowsBusy = false;
@@ -309,7 +311,7 @@ async function refresh() {
   const cur = j.jobs.find((x) => x.id === currentId) || j.jobs.find((x) => x.id === j.running) || j.jobs[0] || null;
   if (cur) currentId = cur.id;
   show(cur); loadRows(cur);
-  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt).toLocaleString()}</td><td><a href="/jobs/${x.id}/download">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
+  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt).toLocaleString()}</td><td><a href="/jobs/${x.id}/download?format=xlsx">Excel</a><a href="/jobs/${x.id}/download?format=csv">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);
 </script>

@@ -3,14 +3,16 @@
 // this project, choose people per company, run, download one CSV.
 //
 // Env: APOLLO_API_KEY (required), PORT,
-//      PROJECTS_DIR (optional: projects/*/config.json become form presets).
+//      PROJECTS_DIR (optional: projects/*/config.json become form presets),
+//      RENDER_EXTERNAL_URL (set by Render; used to keep a free instance awake
+//      while a job runs - see keepAlive below).
 require('dotenv').config();
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
-const { runJob, toCsv, parseGeography, parseIcp } = require('./jobs');
+const { runJob, exportRows, parseGeography, parseIcp } = require('./jobs');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY || null;
@@ -18,10 +20,30 @@ const PROJECTS_DIR = process.env.PROJECTS_DIR || path.resolve(__dirname, '..', '
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_JOBS_KEPT = 20;
 const MAX_PEOPLE_PER_COMPANY = 25;
+// Render's free tier spins a web service down after 15 idle minutes, which
+// would kill a job mid-run if the browser tab polling /jobs is closed. While
+// a job runs, hit our own public URL every few minutes so it counts as
+// inbound traffic. No-op when RENDER_EXTERNAL_URL is unset (local runs).
+const KEEP_ALIVE_URL = process.env.KEEP_ALIVE_URL || process.env.RENDER_EXTERNAL_URL || null;
+const KEEP_ALIVE_EVERY_MS = 5 * 60 * 1000;
 
 const jobs = new Map(); // id -> job
 let runningId = null;
 const processStartedAt = new Date();
+let keepAliveTimer = null;
+
+function keepAlive(on) {
+  if (!KEEP_ALIVE_URL) return;
+  if (on && !keepAliveTimer) {
+    keepAliveTimer = setInterval(() => {
+      fetch(`${KEEP_ALIVE_URL.replace(/\/+$/, '')}/healthz`).catch((err) => logger.warn(`keep-alive ping failed: ${err.message}`));
+    }, KEEP_ALIVE_EVERY_MS);
+    logger.info(`Keep-alive: pinging ${KEEP_ALIVE_URL} every ${KEEP_ALIVE_EVERY_MS / 60000} min while the job runs`);
+  } else if (!on && keepAliveTimer) {
+    clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+}
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -110,6 +132,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
   while (jobs.size > MAX_JOBS_KEPT) jobs.delete(jobs.keys().next().value);
 
   logger.info(`Job ${id} "${job.label}": ${count}/company, geography=[${locations.join(' | ') || 'any'}], ICP=[${keywords.join(', ')}]${industries.length ? `, industries=[${industries.join(', ')}]` : ''}`);
+  keepAlive(true);
   runJob({
     apiKey: APOLLO_API_KEY,
     fileBuffer,
@@ -134,6 +157,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
     .finally(() => {
       job.finishedAt = new Date().toISOString();
       runningId = null;
+      keepAlive(false);
     });
   return job;
 }
@@ -172,7 +196,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows))?$/);
-    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download'] });
+    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx'] });
     const job = jobs.get(m[1]);
     if (!job) return send(404, { error: 'unknown or expired job (results are kept only while the server runs)' });
 
@@ -186,14 +210,15 @@ const server = http.createServer(async (req, res) => {
       return send(200, { total: job.rows.length, from, rows: job.rows.slice(from, from + 500) });
     }
     if (m[2] === 'download') {
-      const csv = toCsv(job.rows);
+      const format = url.searchParams.get('format') === 'xlsx' ? 'xlsx' : 'csv';
+      const { buffer, contentType, extension } = exportRows(job.rows, format);
       const base = (job.label || 'prospects').replace(/[^\w.-]+/g, '_').replace(/\.(csv|xlsx|xls)$/i, '');
       res.writeHead(200, {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${base}-prospects.csv"`,
-        'Content-Length': Buffer.byteLength(csv)
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${base}-prospects.${extension}"`,
+        'Content-Length': buffer.length
       });
-      return res.end(csv);
+      return res.end(buffer);
     }
     send(405, { error: 'method not allowed' });
   } catch (err) {

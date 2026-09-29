@@ -1,64 +1,27 @@
+# Render Blueprint: the Apollo prospecting web app (playwright-scraper/src/app.js).
+#   Render dashboard -> New + -> Blueprint -> connect this repo -> Apply.
+# Free tier: no card, 512 MB RAM (this app uses ~100 MB, no browser),
+# spins down after 15 idle minutes and wakes on the next request (~30 s).
+# The app pings itself while a job runs so a long batch is not cut off.
+#
+# After the first deploy, set APOLLO_API_KEY under the service's
+# Environment tab (sync: false = never stored in this repo).
+#
+# The older n8n + PhantomBuster deployment lives in n8n/render.yaml.
 services:
   - type: web
-    name: prospect-automation-n8n
-    runtime: image
-    image:
-      url: docker.io/n8nio/n8n:latest
+    name: prospect-automation
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: free
+    region: singapore
     healthCheckPath: /healthz
+    autoDeploy: true
     envVars:
-      - key: N8N_HOST
-        fromService:
-          type: web
-          name: prospect-automation-n8n
-          property: host
-      - key: N8N_PROTOCOL
-        value: https
-      - key: N8N_PORT
-        value: "10000"
-      - key: WEBHOOK_URL
-        fromService:
-          type: web
-          name: prospect-automation-n8n
-          property: hostport
-      - key: GENERIC_TIMEZONE
-        value: Asia/Kolkata
-      - key: N8N_BASIC_AUTH_ACTIVE
-        value: "true"
-      - key: N8N_BASIC_AUTH_USER
-        sync: false
-      - key: N8N_BASIC_AUTH_PASSWORD
-        sync: false
-      - key: N8N_ENCRYPTION_KEY
+      - key: APOLLO_API_KEY
         sync: false
       - key: NODE_OPTIONS
         value: "--max-old-space-size=400"
-      - key: N8N_BLOCK_ENV_ACCESS_IN_NODE
-        value: "false"
-      - key: DB_TYPE
-        value: postgresdb
-      - key: DB_POSTGRESDB_HOST
-        fromDatabase:
-          name: prospect-automation-db
-          property: host
-      - key: DB_POSTGRESDB_PORT
-        fromDatabase:
-          name: prospect-automation-db
-          property: port
-      - key: DB_POSTGRESDB_DATABASE
-        fromDatabase:
-          name: prospect-automation-db
-          property: database
-      - key: DB_POSTGRESDB_USER
-        fromDatabase:
-          name: prospect-automation-db
-          property: user
-      - key: DB_POSTGRESDB_PASSWORD
-        fromDatabase:
-          name: prospect-automation-db
-          property: password
-
-databases:
-  - name: prospect-automation-db
-    plan: free
-    postgresMajorVersion: "17"
+      - key: PROJECTS_DIR
+        value: /app/projects

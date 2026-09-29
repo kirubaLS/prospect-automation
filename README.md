@@ -1,14 +1,78 @@
-# Prospect Automation — n8n on Render + PhantomBuster + OpenAI
+# Prospect Automation — Apollo.io prospecting app on Render (free tier)
 
-LeadStrategus AI Prospect Research Agent implementation. Automates the
-company → decision-maker → qualified-prospect pipeline: PhantomBuster runs
-the Sales Navigator scraping (your own logged-in seat), n8n orchestrates,
-OpenAI (`gpt-4o-mini`, paid — see cost note below) scores candidates against
-the ICP rubric, results land in Google Sheets.
+LeadStrategus prospect research automation. **Current pipeline** (this is
+what the root `render.yaml` deploys): a small Node web app that reads a
+CSV/Excel of company LinkedIn URLs, looks each company up in Apollo.io,
+pulls N people per company matching the project's geography and ICP, and
+gives back one Excel/CSV of prospects — Name, Designation, LinkedIn URL,
+Location. No emails, no phone numbers. No browser, no LinkedIn session, no
+n8n, no OpenAI: it fits Render's free tier (≈100 MB RAM).
+
+```
+SETUP (per project, typed on the page)   geography of the person · ICP (industries; roles) · people per company
+        ▼
+COMPANY LIST (upload)                    CSV / .xlsx with a "LinkedIn URL" column (company page URLs)
+        ▼
+COMPANY PRE-SCREEN                       matched in Apollo on the LinkedIn slug; industry noted vs ICP
+        ▼
+APOLLO PEOPLE SEARCH                     decision makers with ICP titles → managers with ICP titles → any decision maker,
+                                         filtered by the person's location; up to N per company (default 8)
+        ▼
+DOWNLOAD (Excel or CSV)                  one row per person; "Company not found" / "No people found" row otherwise
+```
+
+## Deploy on Render (free, no card)
+
+1. Render dashboard → **New +** → **Blueprint** → connect this repo →
+   **Apply**. The root `render.yaml` builds the root `Dockerfile` (Node
+   only) as a free web service named `prospect-automation`.
+2. Open the service → **Environment** → add `APOLLO_API_KEY` (Apollo →
+   Settings → Integrations → API). Save; Render redeploys.
+3. Open `https://prospect-automation-<hash>.onrender.com/`.
+   Pick a preset or type the project's geography and ICP, set people per
+   company, drop the companies file, **Run**, then **Download Excel**.
+
+Free-tier behaviour you should know:
+
+- The service **sleeps after 15 idle minutes**; the first request wakes it
+  in ~30 s. While a job runs the app pings itself, so a long batch is not
+  cut off even if you close the tab — but come back and download before it
+  goes idle again, results are held in memory only.
+- A redeploy or restart clears finished jobs. Download after each run.
+- There is no login; anyone with the URL can run jobs. Keep it internal
+  (or put it behind a paid Render plan's access controls later).
+- Apollo's own plan decides the rate/volume: people search does not spend
+  credits, but the free Apollo plan caps API calls per hour/day. The app
+  paces itself at ~1 call/s and retries on 429.
+
+Per-project presets: `projects/<name>/config.json` (see `projects/sharp`)
+show up in the page's Preset dropdown; **Save as preset** on the page keeps
+a geography/ICP combo in that browser without a git push.
+
+Full details (input columns, output columns, local CLI, GitHub Actions
+alternative): `playwright-scraper/README.md`. A Google Sheets / Apps Script
+variant per project lives in `apps-script/`.
+
+## Why Render's web app rather than n8n or others
+
+| Option | Free? | Verdict |
+|---|---|---|
+| **This Node app on Render** | yes | ~100 MB RAM, one Docker build, upload → run → download Excel. Chosen. |
+| n8n on Render free | yes, barely | n8n + its task runner exceeds 512 MB under load (hit `heap out of memory` here), needs Postgres + encryption key + keep-alive pinger, and the per-company loop is slower to build/maintain than 200 lines of Node. Kept in `n8n/` for reference. |
+| GitHub Actions (`.github/workflows/apollo.yml`) | yes | Good for scheduled runs of a project folder; input/output live in the repo, so not point-and-click for researchers. |
+| Google Apps Script (`apps-script/`) | yes | Fully inside a Google Sheet, 6-minute run chunks; nice when the team lives in Sheets. |
+| Make / Zapier | limited | Free tiers cap operations per month far below "8 people × N companies". |
+
+---
+
+# Legacy: n8n on Render + PhantomBuster + OpenAI
+
+The sections below describe the earlier pipeline (`n8n/`, `n8n/render.yaml`).
+It still works but is no longer the recommended path.
 
 ## What's here
 
-- `render.yaml` — Blueprint for deploying n8n + a free Postgres database on Render (free tier, no credit card). Postgres gives n8n persistent storage so workflows/credentials survive Render's free-tier restarts.
+- `n8n/render.yaml` — Blueprint for deploying n8n + a free Postgres database on Render (free tier, no credit card). Postgres gives n8n persistent storage so workflows/credentials survive Render's free-tier restarts.
 - `n8n/01-kickoff.json` — launches PhantomBuster's Sales Navigator Account Employees Export agent **once per schedule tick**, pointing it directly at the Companies Google Sheet as its input list (this phantom processes a whole spreadsheet of company URLs in one run — it isn't launched per-company).
 - `n8n/02-ingest-webhook.json` — receives PhantomBuster's completion webhook, pulls the agent's *full accumulated* candidate list (not just this run's new finds — see "Orphaned companies" below), filters it to companies still not marked `Done`, scores each with OpenAI against the Sharp SSDI Tier 1/2/3 rubric, keeps only the **top 4 highest-scoring candidates per company**, writes results to the Prospects sheet, and marks each company `Done`.
 - `playwright-scraper/` — a separate, standalone alternative to the n8n+PhantomBuster pipeline above: a Node.js/Playwright script that drives your own Sales Navigator session directly (no PhantomBuster), applying a title/seniority filter per company and writing matches to the sheet itself. See `playwright-scraper/README.md` for setup and important risk notes before using it.
@@ -27,7 +91,7 @@ unlike Groq's free tier this replaces.
 
 ## Deploy
 
-1. **Render** → New → Blueprint → connect this repo → Deploy Blueprint. This provisions the n8n web service and its Postgres database together.
+1. Copy `n8n/render.yaml` over the root `render.yaml` (or keep both in separate branches), then **Render** → New → Blueprint → connect this repo → Deploy Blueprint. This provisions the n8n web service and its Postgres database together.
 2. In the Render dashboard, set the `sync: false` env vars manually (never commit these to this repo):
    - `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD`
    - `N8N_ENCRYPTION_KEY` — **required**, generate once with `openssl rand -hex 32` and set it before n8n's first successful boot. Render's free web service has no persistent disk, so n8n's own auto-generated key gets thrown away on every restart while the Postgres database (which *is* persistent) keeps data encrypted with whatever key was active when it was written. Without a fixed key, every restart mismatches the two and n8n crash-loops with `Deployment key 'signing.hmac' cannot be read with this instance encryption key`. Set this once, never change it afterward — changing it later makes all previously stored credentials/workflow secrets unreadable.

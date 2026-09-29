@@ -1,0 +1,67 @@
+# n8n + PhantomBuster deployment (the earlier pipeline). To use it, copy this
+# file to the repo root as render.yaml, or point Render at it. The root
+# render.yaml now deploys the Apollo prospecting app instead.
+services:
+  - type: web
+    name: prospect-automation-n8n
+    runtime: image
+    image:
+      url: docker.io/n8nio/n8n:latest
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: N8N_HOST
+        fromService:
+          type: web
+          name: prospect-automation-n8n
+          property: host
+      - key: N8N_PROTOCOL
+        value: https
+      - key: N8N_PORT
+        value: "10000"
+      - key: WEBHOOK_URL
+        fromService:
+          type: web
+          name: prospect-automation-n8n
+          property: hostport
+      - key: GENERIC_TIMEZONE
+        value: Asia/Kolkata
+      - key: N8N_BASIC_AUTH_ACTIVE
+        value: "true"
+      - key: N8N_BASIC_AUTH_USER
+        sync: false
+      - key: N8N_BASIC_AUTH_PASSWORD
+        sync: false
+      - key: N8N_ENCRYPTION_KEY
+        sync: false
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=400"
+      - key: N8N_BLOCK_ENV_ACCESS_IN_NODE
+        value: "false"
+      - key: DB_TYPE
+        value: postgresdb
+      - key: DB_POSTGRESDB_HOST
+        fromDatabase:
+          name: prospect-automation-db
+          property: host
+      - key: DB_POSTGRESDB_PORT
+        fromDatabase:
+          name: prospect-automation-db
+          property: port
+      - key: DB_POSTGRESDB_DATABASE
+        fromDatabase:
+          name: prospect-automation-db
+          property: database
+      - key: DB_POSTGRESDB_USER
+        fromDatabase:
+          name: prospect-automation-db
+          property: user
+      - key: DB_POSTGRESDB_PASSWORD
+        fromDatabase:
+          name: prospect-automation-db
+          property: password
+
+databases:
+  - name: prospect-automation-db
+    plan: free
+    postgresMajorVersion: "17"

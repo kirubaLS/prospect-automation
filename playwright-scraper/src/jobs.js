@@ -2,6 +2,7 @@
 // page (person geography, ICP keywords, people per company) -> one CSV of
 // prospects, with a "Company not found" / "No people found" row for every
 // company that produced nothing. No emails or phone numbers are ever kept.
+const XLSX = require('xlsx');
 const logger = require('./logger');
 const apollo = require('./apollo');
 const { parseCompaniesFile } = require('./files');
@@ -163,6 +164,17 @@ async function findPeople(apiKey, org, params, opts = {}) {
   return out;
 }
 
+// "Healthcare" should match Apollo's "hospital & health care", "Retail" its
+// "retail" / "consumer goods & retail": compare letters only, both ways.
+function industryMatches(apolloIndustry, wanted) {
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+  const have = norm(apolloIndustry);
+  return wanted.some((w) => {
+    const n = norm(w);
+    return n && (have.includes(n) || (n.length > 4 && n.includes(have)));
+  });
+}
+
 function companyRow(company, status, note, org) {
   return {
     company: (org && org.name) || company['Company Name'] || '',
@@ -202,7 +214,7 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
       } else {
         logger.info(`[${name}] -> ${org.name} (${matchedBy}) | ${org.industry || '?'} | ${org.employees ?? '?'} employees`);
         const industryNote =
-          params.industries.length && org.industry && !params.industries.some((i) => org.industry.toLowerCase().includes(i.toLowerCase()))
+          params.industries.length && org.industry && !industryMatches(org.industry, params.industries)
             ? `Industry "${org.industry}" not in ICP list`
             : '';
         const people = await findPeople(apiKey, org, params, opts);
@@ -249,4 +261,24 @@ function toCsv(rows) {
   return lines.join('\r\n') + '\r\n';
 }
 
-module.exports = { runJob, toCsv, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };
+// Same columns as the CSV, as an .xlsx workbook (sheet "Prospects") so the
+// output can be handed over as Excel without a conversion step.
+function toXlsx(rows) {
+  const headers = OUTPUT_COLUMNS.map(([h]) => h);
+  const data = rows.map((r) => Object.fromEntries(OUTPUT_COLUMNS.map(([h, k]) => [h, k === '_manual' ? '' : r[k] == null ? '' : r[k]])));
+  const sheet = XLSX.utils.json_to_sheet(data, { header: headers });
+  sheet['!cols'] = headers.map((h) => ({ wch: /url/i.test(h) ? 48 : /company|name|designation|note|location/i.test(h) ? 30 : 14 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet, 'Prospects');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+// format: 'csv' | 'xlsx' -> { buffer, contentType, extension }
+function exportRows(rows, format) {
+  if (format === 'xlsx') {
+    return { buffer: toXlsx(rows), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', extension: 'xlsx' };
+  }
+  return { buffer: Buffer.from(toCsv(rows), 'utf8'), contentType: 'text/csv; charset=utf-8', extension: 'csv' };
+}
+
+module.exports = { runJob, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };

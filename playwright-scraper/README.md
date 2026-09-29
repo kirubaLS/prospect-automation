@@ -43,30 +43,39 @@ URL; no data API has LinkedIn activity or connection counts.
 Run locally: `cd playwright-scraper && npm install && APOLLO_API_KEY=… npm run project -- --project sharp [--limit 1]`.
 
 Run as a web app (Render): `npm run app` serves a one-page UI — upload
-the companies file, type the person geography (shortcuts: South India, US,
-APAC…) and the ICP ("Industries; roles"), set people per company, run,
-download one CSV: one row per person (Name, Designation, Seniority,
-Function, LinkedIn URL, Location, Match, Rank) plus a `Company not found` /
-`No people found` row per company that produced nothing. No emails or
-phones. `projects/*/config.json` appear as presets that prefill the form,
-and **Save as preset** keeps your own geography/ICP combos in the browser.
-The page shows a preview of the uploaded file (and warns when no LinkedIn
-URL column is found), live per-company results as the run progresses
-(`GET /jobs/:id/rows`), a partial CSV download mid-run, **Stop after
-current company**, a template CSV, recent jobs, and a dark mode.
-There is no login: anyone with the service URL can run jobs, so keep the
-URL internal. The root `Dockerfile`
-builds it (Node only, ~100 MB RAM — fits Render's free tier now that no
-browser is involved). Results are kept on the server only while it runs;
-download after each run.
+the companies file (CSV or Excel), type the person geography (shortcuts:
+South India, US, APAC…) and the ICP ("Industries; roles"), set people per
+company (default 8, max 25), run, download **Excel or CSV** with the same
+columns: one row per person (Company, Name, Designation, Seniority,
+Function, LinkedIn URL, Location, Match, Rank, plus blank Connections 500+
+/ Activity columns for the researcher) and a `Company not found` /
+`No people found` row for every company that produced nothing. No emails
+or phones are ever written. `projects/*/config.json` appear as presets that
+prefill the form, and **Save as preset** keeps your own geography/ICP
+combos in the browser. The page shows a preview of the uploaded file (and
+warns when no LinkedIn URL column is found), live per-company results as
+the run progresses (`GET /jobs/:id/rows`), a partial download mid-run,
+**Stop after current company**, a template CSV, recent jobs, and a dark
+mode. There is no login: anyone with the service URL can run jobs, so keep
+the URL internal. The root `Dockerfile` builds it (Node only, ~100 MB RAM —
+fits Render's free tier now that no browser is involved). Results are kept
+in memory only while the server runs; download after each run.
 
-Render setup: New + → Web Service → this repo → leave **Root Directory
-empty** (the Dockerfile is at the repo root and needs `projects/`), runtime
-Docker, instance Free, Health Check Path `/healthz`. Env vars:
-`APOLLO_API_KEY` and optional `OPENAI_API_KEY`. Open
+Render setup: **New + → Blueprint** → this repo → Apply (the root
+`render.yaml` describes the service: Docker, free plan, health check
+`/healthz`). Or manually: New + → Web Service → this repo → leave **Root
+Directory empty** (the Dockerfile is at the repo root and needs
+`projects/`), runtime Docker, instance Free, Health Check Path `/healthz`.
+Env vars: `APOLLO_API_KEY` (required). Open
 `https://<service>.onrender.com/`.
 A free service sleeps after 15 idle minutes; the first request wakes it in
-~30 s.
+~30 s. While a job is running the app requests its own `/healthz` every
+5 minutes (using Render's `RENDER_EXTERNAL_URL`; set `KEEP_ALIVE_URL` to
+override) so the instance is not spun down mid-batch.
+
+Endpoints: `GET /presets`, `POST /jobs?filename=&label=&geography=&icp=&count=`
+(body = the file), `GET /jobs`, `GET /jobs/:id`, `GET /jobs/:id/rows?from=`,
+`POST /jobs/:id/stop`, `GET /jobs/:id/download?format=xlsx|csv`.
 
 Run on GitHub Actions: `.github/workflows/apollo.yml` — **Actions → Apollo
 prospecting → Run workflow** (pick the project), and daily at 09:00 IST for

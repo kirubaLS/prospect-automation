@@ -11,6 +11,9 @@ assert.deepStrictEqual(icp.industries, ['Education', 'Healthcare', 'Retail']);
 assert.deepStrictEqual(icp.keywords, ['IT', 'Administration', 'Procurement', 'Finance', 'Purchasing']);
 assert.deepStrictEqual(jobs.parseIcp('CEO, MD, fleet').industries, []);
 assert.ok(jobs.expandKeywords(['IT']).includes('Information Technology'));
+assert.ok(jobs.industryMatches('hospital & health care', ['Education', 'Healthcare', 'Retail']));
+assert.ok(jobs.industryMatches('education management', ['Education']));
+assert.ok(!jobs.industryMatches('retail', ['Education', 'Healthcare']));
 console.log('PASS: geography/ICP parsing');
 
 const orgs = { organizations: [
@@ -55,5 +58,19 @@ const fetchImpl = async (url, init) => {
   assert.ok(!/secret@example|1234567890|email|phone/i.test(out), 'no contact details in the CSV');
   assert.strictEqual(out.split('\r\n').filter(Boolean).length, 1 + 5 + 2);
   assert.ok(progress.length >= 3);
+
+  const XLSX = require('xlsx');
+  const wb = XLSX.read(jobs.toXlsx(rows), { type: 'buffer' });
+  const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets.Prospects, { defval: '' });
+  assert.strictEqual(sheetRows.length, 7, 'xlsx has one row per person plus one per company without people');
+  assert.deepStrictEqual(Object.keys(sheetRows[0]), jobs.OUTPUT_COLUMNS.map(([h]) => h), 'xlsx columns match the CSV');
+  assert.strictEqual(sheetRows[0].Name, 'Priya N');
+  assert.strictEqual(sheetRows[0]['LinkedIn URL'], 'http://www.linkedin.com/in/priya');
+  assert.strictEqual(sheetRows.find((r) => r.Company === 'Ghost Co').Name, 'Company not found');
+  assert.ok(!JSON.stringify(sheetRows).match(/secret@example|1234567890/), 'no contact details in the xlsx');
+  const x = jobs.exportRows(rows, 'xlsx');
+  assert.strictEqual(x.extension, 'xlsx');
+  assert.ok(x.buffer.length > 1000);
+  assert.strictEqual(jobs.exportRows(rows, 'csv').buffer.toString('utf8'), out);
   console.log('PASS: job run against mocked Apollo');
 })().catch((e) => { console.error('FAIL:', e.stack || e.message); process.exit(1); });
