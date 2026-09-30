@@ -171,7 +171,7 @@ async function findPeople(apiKey, org, params, opts = {}) {
   if (params.enrich && out.some((p) => !p.profileUrl || p.nameMasked)) {
     const { people: full, requested, enriched } = await apollo.enrichPeople(apiKey, out, opts);
     logger.info(`    enrichment: ${enriched}/${requested} filled in`);
-    return full;
+    return full.map((p) => ({ ...p, seniority: SENIORITY_LABEL[p.seniority] || p.seniority || '', function: p.function || (p.departments || []).join(', ') }));
   }
   return out;
 }

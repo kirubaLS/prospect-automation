@@ -126,13 +126,14 @@ async function findOrganization(apiKey, company, opts = {}) {
 // Explicit whitelist: emails, phone numbers and anything else Apollo
 // returns are dropped here and never reach the rest of the app.
 function mapPerson(p, org) {
-  const last = p.last_name || '';
+  // api_search returns last_name_obfuscated ("Sm***h") instead of last_name
+  // - flagged so the enrichment step knows this person needs the full record.
+  const masked = !p.last_name && !!p.last_name_obfuscated;
+  const last = p.last_name || p.last_name_obfuscated || '';
   return {
     apolloId: p.id,
     name: [p.first_name, last].filter(Boolean).join(' ') || p.name || '',
-    // api_search on some plans masks the last name ("S.") - flagged so the
-    // enrichment step knows this person still needs the full record.
-    nameMasked: !!last && /^\S\.?$/.test(last),
+    nameMasked: masked,
     title: p.title || '',
     headline: p.headline || '',
     seniority: p.seniority || '',
@@ -161,7 +162,7 @@ async function searchPeople(apiKey, org, { seniorities, titles, locations, perPa
 
   const data = await post(apiKey, '/mixed_people/api_search', {}, { ...opts, query });
   const people = (data.people || data.contacts || []).map((p) => mapPerson(p, org));
-  const total = data.pagination ? data.pagination.total_entries : people.length;
+  const total = data.total_entries ?? (data.pagination ? data.pagination.total_entries : people.length);
   return { people, total };
 }
 
@@ -188,14 +189,16 @@ async function enrichPeople(apiKey, people, opts = {}) {
     const m = byId.get(p.apolloId);
     if (!m) return p;
     enriched++;
+    // The preview has no seniority, departments, location or LinkedIn URL;
+    // the enriched record is authoritative for all of those.
     const full = mapPerson(m, { name: p.company });
     return {
       ...p,
-      name: full.name || p.name,
+      name: full.nameMasked ? p.name : full.name || p.name,
       nameMasked: full.nameMasked,
       title: p.title || full.title,
-      seniority: p.seniority || full.seniority,
-      departments: p.departments && p.departments.length ? p.departments : full.departments,
+      seniority: full.seniority || p.seniority,
+      departments: full.departments && full.departments.length ? full.departments : p.departments,
       profileUrl: full.profileUrl || p.profileUrl,
       location: full.location || p.location
     };
