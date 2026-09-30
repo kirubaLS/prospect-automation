@@ -82,7 +82,7 @@ function presets() {
           slug: d.name,
           name: c.name || d.name,
           geography: (c.personLocations || []).join('; '),
-          icp: (industries.length ? industries.join(', ') + '; ' : '') + (c.titleKeywords || []).join(', '),
+          icp: (industries.length ? industries.join(', ') + '; ' : '') + (c.titlePriorities ? c.titlePriorities.map((g) => g.titles.join(', ')).join(' > ') : (c.titleKeywords || []).join(', ')),
           peoplePerCompany: c.targetPerCompany || 8
         };
       });
@@ -97,7 +97,7 @@ function publicJob(j) {
     id: j.id,
     label: j.label,
     filename: j.filename,
-    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, resolve: j.params.resolve, searchExhausted: !!j.params.searchExhausted },
+    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, searchExhausted: !!j.params.searchExhausted },
     status: j.status,
     startedAt: j.startedAt,
     finishedAt: j.finishedAt,
@@ -112,7 +112,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
   const count = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 8));
   const locations = parseGeography(geography);
-  const { industries, keywords } = parseIcp(icp);
+  const { industries, keywords, priorities } = parseIcp(icp);
   if (!keywords.length) throw new Error('ICP is empty - list the roles/functions to look for (e.g. "IT, Administration, Procurement, Finance")');
   resolve = ['search', 'apollo', 'apollo+search', 'none'].includes(resolve) ? resolve : 'apollo';
   if ((resolve === 'search' || resolve === 'apollo+search') && !SEARCH_PROVIDERS.length) throw new Error('web search is not configured on the server (BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX) - choose Apollo enrichment or none');
@@ -123,7 +123,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
     label: label || filename,
     filename,
     paramsText: { geography, icp },
-    params: { locations, industries, icpKeywords: keywords, peoplePerCompany: count, resolve, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
+    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
     status: 'running',
     startedAt: new Date().toISOString(),
     finishedAt: null,
@@ -135,7 +135,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
   runningId = id;
   while (jobs.size > MAX_JOBS_KEPT) jobs.delete(jobs.keys().next().value);
 
-  logger.info(`Job ${id} "${job.label}": ${count}/company, resolve=${resolve}, geography=[${locations.join(' | ') || 'any'}], ICP=[${keywords.join(', ')}]${industries.length ? `, industries=[${industries.join(', ')}]` : ''}`);
+  logger.info(`Job ${id} "${job.label}": ${count}/company, resolve=${resolve}, geography=[${locations.join(' | ') || 'any'}], ICP=${priorities ? priorities.map((g, i) => `P${i + 1}[${g.join(', ')}]`).join(' > ') : `[${keywords.join(', ')}]`}${industries.length ? `, industries=[${industries.join(', ')}]` : ''}`);
   keepAlive(true);
   runJob({
     apiKey: APOLLO_API_KEY,

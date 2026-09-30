@@ -176,12 +176,13 @@ function mapPerson(p, org) {
 // no LinkedIn URL), enrichPeople() fills in the rest for selected people.
 // `org` is either a matched Apollo organization ({id, name}) or a domain
 // stand-in ({domain, name}); by domain no company lookup call is needed.
-async function searchPeople(apiKey, org, { seniorities, titles, locations, perPage = 25, page = 1 }, opts = {}) {
+async function searchPeople(apiKey, org, { seniorities, titles, locations, perPage = 25, page = 1, includeSimilar = true }, opts = {}) {
   const query = {
-    person_seniorities: seniorities,
     page,
     per_page: perPage
   };
+  if (seniorities && seniorities.length) query.person_seniorities = seniorities;
+  if (!includeSimilar) query.include_similar_titles = false;
   if (org.id) query.organization_ids = [org.id];
   else if (org.domain) query.q_organization_domains_list = [org.domain];
   else throw new Error('searchPeople needs an organization id or a domain');

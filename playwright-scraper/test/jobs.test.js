@@ -153,6 +153,33 @@ const fetchImpl = async (url, init) => {
   assert.strictEqual(searchCalls.length, 2, 'web search queries only for people Apollo left blank');
   assert.ok(k6.every((r) => r.profileUrl));
 
+  // Priority groups: P1 searched first (exact titles, no seniority filter),
+  // then P2, then P3, until the target is met; listed P3 titles like
+  // Developer are never excluded; "similar" people only fill at the end.
+  const prioCalls = [];
+  const prioFetch = async (url, init) => {
+    const u = new URL(url);
+    if (u.pathname.endsWith('/mixed_people/api_search')) {
+      const titles = u.searchParams.getAll('person_titles[]');
+      prioCalls.push(titles);
+      assert.strictEqual(u.searchParams.get('include_similar_titles'), 'false');
+      assert.strictEqual(u.searchParams.get('person_seniorities[]'), null, 'priority search is by title, not seniority');
+      if (u.searchParams.get('organization_ids[]') !== 'o1') return { ok: true, status: 200, json: async () => ({ total_entries: 0, people: [] }), text: async () => '' };
+      const f = all.filter((p) => titles.some((t) => new RegExp('\\b' + t + '\\b', 'i').test(p.title)));
+      // Apollo also returns one loosely-similar person for the P1 query
+      const extra = titles.includes('CIO') ? [P('Loose', 'Match', 'IT Support Analyst', 'entry', [], 'loose')] : [];
+      const d = { total_entries: f.length, people: [...f, ...extra].map(preview) };
+      return { ok: true, status: 200, json: async () => d, text: async () => JSON.stringify(d) };
+    }
+    return fetchImpl(url, init);
+  };
+  const pr = jobs.parseIcp('Healthcare; CIO, CTO > Head of Operations, IT Head > IT Manager, Software Developer, Purchase Manager');
+  const r7 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { locations: params.locations, industries: pr.industries, icpKeywords: pr.keywords, priorities: pr.priorities, peoplePerCompany: 4, resolve: 'none' }, fetchImpl: prioFetch });
+  const k7 = r7.rows.filter((r) => r.companyStatus === 'Found');
+  assert.deepStrictEqual(prioCalls.slice(0, 3), [['CIO', 'CTO'], ['Head of Operations', 'IT Head'], ['IT Manager', 'Software Developer', 'Purchase Manager']], 'groups searched in order');
+  assert.deepStrictEqual(k7.map((r) => [r.title, r.match]), [['Head of Operations', 'Priority 2'], ['IT Head', 'Priority 2'], ['IT Manager', 'Priority 3'], ['Software Developer', 'Priority 3']], 'P2 people before P3; developer kept because it is listed; Purchase Manager (P3, 5th) cut by the target of 4');
+  assert.ok(!k7.some((r) => r.name.startsWith('Loose')), 'similar-title person not used while listed titles fill the target');
+
   // resolve: 'none' -> preview only, no bulk_match, masked names kept as-is.
   const before = calls.enrich;
   const r2 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'none' }, fetchImpl });

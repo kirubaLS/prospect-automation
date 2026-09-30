@@ -44,7 +44,9 @@ Run locally: `cd playwright-scraper && npm install && APOLLO_API_KEY=… npm run
 
 Run as a web app (Render): `npm run app` serves a one-page UI — upload
 the companies file (CSV or Excel), type the person geography (shortcuts:
-South India, US, APAC…) and the ICP ("Industries; roles"), set people per
+South India, US, APAC…) and the ICP ("Industries; titles", with `>`
+between priority groups: Priority 1 titles are searched first, then 2,
+then 3, exact titles at any seniority, until the target is met), set people per
 company (default 8, max 25), run, download **Excel or CSV** with the same
 columns: one row per person (Company, Company Status, Name, Designation,
 Location, LinkedIn URL, a blank Activity column for the researcher, Note,

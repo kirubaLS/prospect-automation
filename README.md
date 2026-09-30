@@ -9,15 +9,16 @@ Location. No emails, no phone numbers. No browser, no LinkedIn session, no
 n8n, no OpenAI: it fits Render's free tier (≈100 MB RAM).
 
 ```
-SETUP (per project, typed on the page)   geography of the person · ICP (industries; roles) · people per company
+SETUP (per project, typed on the page)   geography of the person · ICP (industries; Priority 1 titles > Priority 2 > Priority 3) · people per company
         ▼
 COMPANY LIST (upload)                    CSV / .xlsx with a "Website" column (best, 0 credits) and/or a "LinkedIn URL" column
         ▼
 COMPANY MATCH                            by website domain: none needed (People Search filters by employer domain);
                                          by LinkedIn URL: Organization Enrichment, 1 credit
         ▼
-APOLLO PEOPLE SEARCH                     decision makers with ICP titles → managers with ICP titles → any decision maker,
-                                         filtered by the person's location; up to N per company (default 8)
+APOLLO PEOPLE SEARCH                     Priority 1 titles first, then Priority 2, then Priority 3 (exact titles, any
+                                         seniority), filtered by the person's location, until N per company (default 8);
+                                         plain keyword ICPs fall back to decision makers → managers → any decision maker
         ▼
 DOWNLOAD (Excel or CSV)                  Company, Status, Name, Designation, Location, LinkedIn URL, Activity (blank, for the
                                          researcher), Note; "Company not found" / "No people found" row otherwise
@@ -92,8 +93,9 @@ Free-tier behaviour you should know:
   Activity column is left blank for the researcher to fill from the
   profile.
 
-Per-project presets: `projects/<name>/config.json` (see `projects/sharp`)
-show up in the page's Preset dropdown; **Save as preset** on the page keeps
+Per-project presets: `projects/<name>/config.json` (see `projects/sharp`,
+whose `titlePriorities` hold the Sharp SSDI Priority 1/2/3 designation
+lists) show up in the page's Preset dropdown; **Save as preset** on the page keeps
 a geography/ICP combo in that browser without a git push.
 
 Full details (input columns, output columns, local CLI, GitHub Actions

@@ -55,8 +55,11 @@ function parseIcp(text) {
     industries = a.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
     people = b;
   }
-  const keywords = people.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
-  return { industries, keywords };
+  // "CIO, CTO > Head of IT, IT Head > IT Manager": '>' separates priority
+  // groups, searched in order until enough people are found.
+  const groups = people.split(/\s*>\s*/).map((g) => g.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean)).filter((g) => g.length);
+  const keywords = groups.flat();
+  return { industries, keywords, priorities: groups.length > 1 ? groups : null };
 }
 
 // Title keyword expansions so "IT" also finds "Information Technology" etc.
@@ -108,8 +111,11 @@ const MANAGERS = ['manager', 'senior'];
 const ALWAYS_EXCLUDE = /\b(intern|trainee|student|assistant|associate|executive|analyst|coordinator|receptionist|clerk|cashier|driver|dispatcher|technician|mechanic|developer|programmer|engineer(?!ing (manager|head|director))|recruiter|nurse|teacher|lecturer|professor|therapist|pharmacist|physician|surgeon|dentist|doctor|dr\.?|clinician|\w+ologist|\w+iatrist|medical officer)\b/i;
 
 function titleMatches(title, patterns) {
-  const t = String(title || '');
-  return patterns.some((k) => new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(t));
+  const t = String(title || '').replace(/&/g, 'and').replace(/[\u2013\u2014]/g, '-');
+  return patterns.some((k) => {
+    const k2 = k.replace(/&/g, 'and');
+    return new RegExp(`(^|[^a-z0-9])${k2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*[-/]?\\s*')}($|[^a-z0-9])`, 'i').test(t);
+  });
 }
 
 function sanitize(p, org, tier, icpHit) {
@@ -137,37 +143,65 @@ function sanitize(p, org, tier, icpHit) {
 //   1. decision makers whose title matches the ICP keywords
 //   2. managers whose title matches the ICP keywords
 //   3. any decision maker (the "All Employees / Decision makers" fallback)
+// Two search strategies:
+//   priorities (ICP given as "P1 titles > P2 titles > P3 titles"): each
+//     group is searched in turn, exact titles only, until `want` people are
+//     found; people Apollo returns as "similar" to a group's titles are
+//     held back and used only if every group leaves the company short.
+//   seniority (plain ICP keywords): decision makers with the keywords in
+//     their title, then managers, then any decision maker.
 async function findPeople(apiKey, org, params, opts = {}) {
   const want = params.peoplePerCompany;
-  const titles = expandKeywords(params.icpKeywords);
-  const tiers = [
-    { label: 'Decision makers · ICP titles', seniorities: DECISION_MAKERS, titles },
-    { label: 'Managers · ICP titles', seniorities: MANAGERS, titles },
-    { label: 'Decision makers · any title', seniorities: DECISION_MAKERS, titles: [], fallback: true }
-  ];
+  const perPage = Math.min(50, Math.max(want * 2, 10));
+  // api_search may omit the LinkedIn URL (preview plans), so dedupe on
+  // the Apollo id and let enrichment fill the URL in afterwards.
+  const keyOf = (p) => p.apolloId || p.profileUrl || `${p.name}|${p.title}`;
   const seen = new Set();
   let out = [];
-  for (const tier of tiers) {
-    if (out.length >= want) break;
-    if (!titles.length && tier.titles.length) continue;
-    const { people, total } = await apollo.searchPeople(
-      apiKey,
-      org,
-      { seniorities: tier.seniorities, titles: tier.titles, locations: params.locations, perPage: Math.min(50, Math.max(want * 2, 10)) },
-      opts
-    );
-    logger.info(`    ${tier.label}: ${people.length} returned (${total} in Apollo)`);
-    // api_search may omit the LinkedIn URL (preview plans), so dedupe on
-    // the Apollo id and let enrichment fill the URL in afterwards.
-    const keyOf = (p) => p.apolloId || p.profileUrl || `${p.name}|${p.title}`;
-    const ranked = people
-      .filter((p) => p.name && !seen.has(keyOf(p)) && !ALWAYS_EXCLUDE.test(p.title || ''))
-      .map((p) => ({ p, icp: titles.length ? titleMatches(p.title, titles) : false }))
-      .sort((a, b) => Number(b.icp) - Number(a.icp) || (SENIORITY_RANK[a.p.seniority] ?? 9) - (SENIORITY_RANK[b.p.seniority] ?? 9));
-    for (const { p, icp } of ranked) {
+
+  if (params.priorities && params.priorities.length) {
+    const similar = [];
+    for (let i = 0; i < params.priorities.length && out.length < want; i++) {
+      const group = params.priorities[i];
+      const tier = { label: `Priority ${i + 1}`, priority: i + 1 };
+      const { people, total } = await apollo.searchPeople(apiKey, org, { titles: group, locations: params.locations, perPage, includeSimilar: false }, opts);
+      logger.info(`    ${tier.label}: ${people.length} returned (${total} in Apollo)`);
+      const fresh = people.filter((p) => p.name && !seen.has(keyOf(p)));
+      // An explicitly listed title is never excluded, whatever it is.
+      const exact = fresh.filter((p) => titleMatches(p.title, group)).sort((a, b) => (SENIORITY_RANK[a.seniority] ?? 9) - (SENIORITY_RANK[b.seniority] ?? 9));
+      const rest = fresh.filter((p) => !titleMatches(p.title, group) && !ALWAYS_EXCLUDE.test(p.title || ''));
+      for (const p of exact) {
+        if (out.length >= want) break;
+        seen.add(keyOf(p));
+        out.push({ ...sanitize(p, org, tier, true), match: tier.label });
+      }
+      for (const p of rest) if (!seen.has(keyOf(p))) { seen.add(keyOf(p)); similar.push({ p, tier }); }
+    }
+    for (const { p, tier } of similar) {
       if (out.length >= want) break;
-      seen.add(keyOf(p));
-      out.push(sanitize(p, org, tier, icp));
+      out.push({ ...sanitize(p, org, tier, false), match: `${tier.label} (similar title)` });
+    }
+  } else {
+    const titles = expandKeywords(params.icpKeywords);
+    const tiers = [
+      { label: 'Decision makers · ICP titles', seniorities: DECISION_MAKERS, titles },
+      { label: 'Managers · ICP titles', seniorities: MANAGERS, titles },
+      { label: 'Decision makers · any title', seniorities: DECISION_MAKERS, titles: [], fallback: true }
+    ];
+    for (const tier of tiers) {
+      if (out.length >= want) break;
+      if (!titles.length && tier.titles.length) continue;
+      const { people, total } = await apollo.searchPeople(apiKey, org, { seniorities: tier.seniorities, titles: tier.titles, locations: params.locations, perPage }, opts);
+      logger.info(`    ${tier.label}: ${people.length} returned (${total} in Apollo)`);
+      const ranked = people
+        .filter((p) => p.name && !seen.has(keyOf(p)) && !ALWAYS_EXCLUDE.test(p.title || ''))
+        .map((p) => ({ p, icp: titles.length ? titleMatches(p.title, titles) : false }))
+        .sort((a, b) => Number(b.icp) - Number(a.icp) || (SENIORITY_RANK[a.p.seniority] ?? 9) - (SENIORITY_RANK[b.p.seniority] ?? 9));
+      for (const { p, icp } of ranked) {
+        if (out.length >= want) break;
+        seen.add(keyOf(p));
+        out.push(sanitize(p, org, tier, icp));
+      }
     }
   }
   // Only the people being kept are resolved, and only those whose preview

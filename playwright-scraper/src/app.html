@@ -108,8 +108,8 @@
     <div class="hint">Leave empty for anywhere. Custom entries use Apollo's form, e.g. <code>Karnataka, India</code>.</div>
 
     <label>ICP <small>industries; roles</small></label>
-    <textarea id="icp" placeholder="Education, Healthcare, Retail; IT, Administration, Procurement, Finance, Purchasing"></textarea>
-    <div class="hint">Before “;” = industries (noted in the output, companies are not skipped). After “;” = roles to look for. Search order: decision makers with these roles → managers with these roles → any decision maker.</div>
+    <textarea id="icp" placeholder="Education, Healthcare, Retail; CIO, CTO, COO, CFO > Head of IT, Head of Procurement > IT Manager, Purchase Executive" style="min-height:96px"></textarea>
+    <div class="hint">Before “;” = industries (noted in the output, companies are not skipped). After “;” = titles to look for. Separate priority groups with “&gt;”: <code>CIO, CTO, COO &gt; Head of IT, IT Head &gt; IT Manager</code> — Priority 1 titles are searched first, then Priority 2, then 3, until “people per company” is reached. Without “&gt;”: decision makers with these roles → managers → any decision maker.</div>
 
     <label>People per company</label>
     <input type="number" id="count" value="8" min="1" max="25" style="max-width:120px">
@@ -278,7 +278,7 @@ function show(j) {
   $('stopbtn').disabled = !(j && j.status === 'running');
   if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
-  $('jobname').innerHTML = `${esc(j.label)} · ${j.params.peoplePerCompany}/company · ${j.params.locations.join(' | ') || 'anywhere'} · ${j.params.icpKeywords.join(', ')}${j.params.resolve === 'search' ? ' · web search' : j.params.resolve === 'apollo' ? ' · Apollo enrichment' : j.params.resolve === 'apollo+search' ? ' · Apollo, then web search' : ' · preview only'}${j.params.searchExhausted ? ' · <b>search quota ran out</b>' : ''}`;
+  $('jobname').innerHTML = `${esc(j.label)} · ${j.params.peoplePerCompany}/company · ${esc(j.params.locations.join(' | ') || 'anywhere')} · ${j.params.priorities ? j.params.priorities.map((g, i) => `P${i + 1}: ${esc(g.slice(0, 3).join(', '))}${g.length > 3 ? '…' : ''}`).join(' → ') : esc(j.params.icpKeywords.join(', '))}${j.params.resolve === 'search' ? ' · web search' : j.params.resolve === 'apollo' ? ' · Apollo enrichment' : j.params.resolve === 'apollo+search' ? ' · Apollo, then web search' : ' · preview only'}${j.params.searchExhausted ? ' · <b>search quota ran out</b>' : ''}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');

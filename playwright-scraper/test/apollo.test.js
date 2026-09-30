@@ -17,15 +17,16 @@ const sharp = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'proje
 // --- rules ---
 const { buildMatcher, qualifyAndSelectByRules } = require('../src/rules');
 const q = buildMatcher(sharp.rules);
-assert.strictEqual(q({ title: 'Chief Information Officer', seniority: 'c_suite' }).priority, 'Tier 1');
-assert.strictEqual(q({ title: 'Head of IT', seniority: 'head' }).priority, 'Tier 1');
-assert.strictEqual(q({ title: 'IT Manager', seniority: 'manager' }).priority, 'Tier 2');
-assert.strictEqual(q({ title: 'Head of Procurement', seniority: 'head' }).priority, 'Tier 2');
-assert.strictEqual(q({ title: 'Senior Purchase Manager', seniority: 'senior' }).priority, 'Tier 3');
-assert.strictEqual(q({ title: 'Founder & Chairperson', seniority: 'founder' }).priority, 'Tier 3');
-assert.strictEqual(q({ title: 'Software Developer', seniority: 'entry' }).priority, 'Skip');
+assert.strictEqual(q({ title: 'Chief Information Officer', seniority: 'c_suite' }).priority, 'Priority 1');
+assert.strictEqual(q({ title: 'Head of IT', seniority: 'head' }).priority, 'Priority 2');
+assert.strictEqual(q({ title: 'IT Manager', seniority: 'manager' }).priority, 'Priority 3');
+assert.strictEqual(q({ title: 'Head of Procurement', seniority: 'head' }).priority, 'Priority 2');
+assert.strictEqual(q({ title: 'Senior Purchase Manager', seniority: 'senior' }).priority, 'Priority 2');
+assert.strictEqual(q({ title: 'Founder & Chairperson', seniority: 'founder' }).priority, 'Skip', 'founders are not in any Sharp priority list');
+assert.strictEqual(q({ title: 'Software Developer', seniority: 'entry' }).priority, 'Priority 3', 'developers are explicitly Priority 3');
 assert.strictEqual(q({ title: 'Consultant Dermatologist', seniority: 'senior' }).priority, 'Skip', 'doctors excluded');
-assert.ok(q({ title: 'Chief Information Officer', seniority: 'c_suite' }).score > q({ title: 'IT Manager', seniority: 'manager' }).score);
+assert.ok(q({ title: 'Chief Information Officer', seniority: 'c_suite' }).score > q({ title: 'Head of IT', seniority: 'head' }).score);
+assert.ok(q({ title: 'Head of IT', seniority: 'head' }).score > q({ title: 'IT Manager', seniority: 'manager' }).score);
 
 const picked = qualifyAndSelectByRules(
   [
@@ -33,14 +34,14 @@ const picked = qualifyAndSelectByRules(
     { name: 'B', title: 'Head of Operations', seniority: 'head', tierIndex: 0 },
     { name: 'C', title: 'IT Manager', seniority: 'manager', tierIndex: 1 },
     { name: 'D', title: 'Software Developer', seniority: 'entry', tierIndex: 1 },
-    { name: 'E', title: 'Purchase Manager', seniority: 'manager', tierIndex: 1 },
+    { name: 'E', title: 'Regional Coordinator', seniority: 'manager', tierIndex: 1 },
     { name: 'F', title: 'CIO', seniority: 'c_suite', tierIndex: 0 }
   ],
   { ...sharp, targetPerCompany: 4 }
 );
-assert.deepStrictEqual(picked.map((p) => p.name), ['F', 'B', 'C', 'E'], 'top 4 by score, developer skipped');
+assert.deepStrictEqual(picked.map((p) => p.name), ['F', 'B', 'C', 'D'], 'Priority 1, then 2, then 3; unlisted titles left out');
 const short = qualifyAndSelectByRules(
-  [{ name: 'X', title: 'Software Developer', seniority: 'entry' }, { name: 'Y', title: 'Regional Coordinator', seniority: 'manager' }, { name: 'Z', title: 'CIO', seniority: 'c_suite' }],
+  [{ name: 'X', title: 'Consultant Dermatologist', seniority: 'senior' }, { name: 'Y', title: 'Regional Coordinator', seniority: 'manager' }, { name: 'Z', title: 'CIO', seniority: 'c_suite' }],
   { ...sharp, targetPerCompany: 3 }
 );
 assert.deepStrictEqual(short.map((p) => [p.name, p.status]), [['Z', 'Auto-Approved'], ['Y', 'Needs Review']], 'unmatched filler is flagged, excluded never included');
@@ -154,22 +155,22 @@ const mockFetch = (responses) => async (url, init) => {
   `);
   const out = runCli(['-r', preload, path.join(__dirname, '..', 'src', 'project.js'), '--project', 'sharp'], { PROJECTS_DIR: tmp, APOLLO_API_KEY: 'test' });
   assert.match(out, /Kosmoderma Healthcare \(linkedin\)/);
-  assert.match(out, /kept 3: Siva M - Head of Operations \(\d+, Tier 2\); Anu P - IT Manager \(\d+, Tier 2\); Chytra Anand - Founder & Chairperson \(\d+, Tier 3\)$/m, 'excluded doctor never used as filler');
+  assert.match(out, /kept 4: Siva M - Head of Operations \(\d+, Priority 2\); Anu P - IT Manager \(\d+, Priority 3\); Dev S - Software Developer \(\d+, Priority 3\); Chytra Anand - Founder & Chairperson \(\d+, Skip\)$/m, 'priority order; excluded doctor never used as filler');
   assert.match(out, /\[Ghost Co\] no Apollo organization matched/);
   assert.match(out, /\[Tiny Retail\] pre-screen failed: Employees 0 < 1/);
 
   const status = fs.readFileSync(path.join(tmp, 'sharp', 'companies-status.csv'), 'utf8');
-  assert.match(status, /Kosmoderma Skin, Hair & Body Clinics.*,Done,.*Kosmoderma Healthcare,http:\/\/www.linkedin.com\/company\/kosmodermahealthcare,hospital & health care,129,"Bengaluru, Karnataka, India",3/);
+  assert.match(status, /Kosmoderma Skin, Hair & Body Clinics.*,Done,.*Kosmoderma Healthcare,http:\/\/www.linkedin.com\/company\/kosmodermahealthcare,hospital & health care,129,"Bengaluru, Karnataka, India",4/);
   assert.match(status, /Ghost Co,.*Not in Apollo/);
   assert.match(status, /Tiny Retail,.*Pre-screen failed/);
 
   const rows = XLSX.utils.sheet_to_json(XLSX.read(fs.readFileSync(path.join(tmp, 'sharp', 'prospects.xlsx')), { type: 'buffer' }).Sheets.Prospects);
-  assert.strictEqual(rows.length, 3);
+  assert.strictEqual(rows.length, 4);
   assert.strictEqual(rows[0].Name, 'Siva M');
   assert.strictEqual(rows[0].Function, 'operations');
   assert.strictEqual(rows[0].LinkedInURL, 'http://www.linkedin.com/in/siva');
   assert.ok(!rows[0]['Connections 500+'], 'manual columns left blank');
-  assert.ok(!rows.find((r) => /Dermatologist|Developer/.test(r.Designation)), 'excluded titles never written');
+  assert.ok(!rows.find((r) => /Dermatologist/.test(r.Designation)), 'excluded titles never written');
 
   // Second run: nothing pending, nothing duplicated.
   const out2 = runCli(['-r', preload, path.join(__dirname, '..', 'src', 'project.js'), '--project', 'sharp'], { PROJECTS_DIR: tmp, APOLLO_API_KEY: 'test' });
