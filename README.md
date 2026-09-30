@@ -98,9 +98,9 @@ Free-tier behaviour you should know:
   Activity column is left blank for the researcher to fill from the
   profile.
 
-Per-project presets: `projects/<name>/config.json` (see `projects/sharp`,
-whose `titlePriorities` hold the Sharp SSDI Priority 1/2/3 designation
-lists) show up in the page's Preset dropdown; **Save as preset** on the page keeps
+Per-project presets: `projects/<name>/config.json` (see `projects/sharp`
+and `projects/reach24`, whose `titlePriorities` hold each client's
+Priority 1/2/3 designation lists) show up in the page's Preset dropdown; **Save as preset** on the page keeps
 a geography/ICP combo in that browser without a git push.
 
 Full details (input columns, output columns, local CLI, GitHub Actions
