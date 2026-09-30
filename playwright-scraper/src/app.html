@@ -129,7 +129,7 @@
       <div class="drop" id="drop">
         <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none">
         <div><b>Drop the CSV / Excel here</b> or click to choose</div>
-        <div class="hint">Best: a <b>Website</b> column (e.g. <code>acme.com</code>) — people are searched by employer domain with no company lookup, 0 credits. Otherwise a <b>LinkedIn URL</b> column (<code>linkedin.com/company/…</code>), 1 credit per company. Company name optional.</div>
+        <div class="hint">Best: a <b>Website</b> column (e.g. <code>acme.com</code>) — people are searched by employer domain with no company lookup call (0 credits for the company step). Otherwise a <b>LinkedIn URL</b> column (<code>linkedin.com/company/…</code>), 1 credit per company. Company name optional. Getting each person's LinkedIn URL is a separate step, chosen under project settings: Apollo enrichment costs 1 credit per person; web search costs none.</div>
       </div>
       <div class="preview" id="preview"></div>
       <div class="row">
@@ -304,7 +304,9 @@ function show(j) {
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
-  $('current').textContent = j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`);
+  const a = p.apollo;
+  $('current').textContent = (j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`))
+    + (a ? ` · Apollo: ${a.peopleSearch} people searches (0 credits), ${a.orgEnrich} company lookups by LinkedIn URL (${a.orgEnrich} cr), ${a.orgSearch} company name searches (${a.orgSearch} cr), ${a.peopleEnriched} people enriched (${a.peopleEnriched} cr) — about ${a.estimatedCredits} credits` : '');
   $('dl').style.display = 'inline-flex'; $('dl').href = '/jobs/' + j.id + '/download?format=csv';
   $('dlx').style.display = 'inline-flex'; $('dlx').href = '/jobs/' + j.id + '/download?format=xlsx';
 }

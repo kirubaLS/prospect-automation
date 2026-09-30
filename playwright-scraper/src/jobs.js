@@ -288,9 +288,11 @@ function companyRow(company, status, note, org) {
 async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () => {}, shouldStop = () => false, fetchImpl, rows = [] }) {
   if (!apiKey) throw new Error('APOLLO_API_KEY is not set on the server');
   const companies = parseCompaniesFile(fileBuffer, filename);
-  const opts = fetchImpl ? { fetchImpl } : {};
+  // Every Apollo call is counted here so the job can show where credits went.
+  const ledger = apollo.newLedger();
+  const opts = { ledger, ...(fetchImpl ? { fetchImpl } : {}) };
   // `rows` may be the caller's own array so partial results are downloadable mid-run.
-  const state = { total: companies.length, done: 0, found: 0, notFound: 0, noPeople: 0, prospects: 0, errors: 0, current: '' };
+  const state = { total: companies.length, done: 0, found: 0, notFound: 0, noPeople: 0, prospects: 0, errors: 0, current: '', apollo: ledger };
   params = { resolve: 'search', ...params };
   if (params.enrich === false && !('resolve' in (arguments[0].params || {}))) params.resolve = 'none';
   if (params.enrich === true && !('resolve' in (arguments[0].params || {}))) params.resolve = 'apollo';
@@ -350,6 +352,7 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
     onProgress(state);
   }
   state.current = '';
+  logger.info(`Apollo calls: ${ledger.peopleSearch} people searches (0 credits), ${ledger.orgEnrich} company enrichments, ${ledger.orgSearch} company searches, ${ledger.peopleEnrich} enrichment batches (${ledger.peopleEnriched} people) - about ${ledger.estimatedCredits} credits`);
   return { rows, state, params };
 }
 

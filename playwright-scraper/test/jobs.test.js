@@ -71,6 +71,8 @@ const fetchImpl = async (url, init) => {
   const { rows, state } = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params, fetchImpl, onProgress: (s) => progress.push(s.done) });
 
   assert.deepStrictEqual({ total: state.total, found: state.found, notFound: state.notFound, noPeople: state.noPeople, prospects: state.prospects }, { total: 3, found: 1, notFound: 1, noPeople: 1, prospects: 5 });
+  // LinkedIn-URL path: 1 credit per company found via enrichment (2 orgs found, Ghost not), plus 5 enriched people.
+  assert.deepStrictEqual({ ...state.apollo }, { peopleSearch: 6, orgSearch: 1, orgEnrich: 3, peopleEnrich: 1, peopleEnriched: 5, estimatedCredits: 8 });
   const k = rows.filter((r) => r.companyStatus === 'Found');
   assert.deepStrictEqual(k.map((r) => r.name), ['Priya N', 'Anu P', 'Raj B', 'Chytra Anand', 'Siva M'], 'ICP matches first, then decision-maker fallback');
   assert.deepStrictEqual(k.map((r) => r.match), ['ICP match', 'ICP match', 'ICP match', 'Fallback (no ICP title)', 'Fallback (no ICP title)']);
@@ -219,6 +221,10 @@ const fetchImpl = async (url, init) => {
   const csvDomain = Buffer.from('Company Name,Website,LinkedIn URL\nKosmoderma,https://www.kosmoderma.com/about,https://www.linkedin.com/company/kosmodermahealthcare/\n');
   const r3 = await jobs.runJob({ apiKey: 'k', fileBuffer: csvDomain, filename: 'c.csv', params, fetchImpl: domainFetch });
   assert.deepStrictEqual(lookups, [], 'no company lookup when a website domain is present');
+  assert.deepStrictEqual({ ...r3.state.apollo }, { peopleSearch: 3, orgSearch: 0, orgEnrich: 0, peopleEnrich: 1, peopleEnriched: 5, estimatedCredits: 5 }, 'ledger: domain path costs only the enrichment');
+  const r3b = await jobs.runJob({ apiKey: 'k', fileBuffer: csvDomain, filename: 'c.csv', params: { ...params, resolve: 'none' }, fetchImpl: domainFetch });
+  assert.strictEqual(r3b.state.apollo.estimatedCredits, 0, 'domain path + no resolution = 0 credits');
+  assert.strictEqual(r3b.state.apollo.peopleSearch, 3);
   const k3 = r3.rows.filter((r) => r.companyStatus === 'Found');
   assert.strictEqual(k3.length, 5);
   assert.strictEqual(k3[0].company, 'Kosmoderma');

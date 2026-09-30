@@ -24,7 +24,35 @@ function toQuery(params) {
   return str ? `?${str}` : '';
 }
 
-async function request(apiKey, method, path, body, { fetchImpl = fetch, query = null } = {}) {
+// Credit cost per endpoint, per Apollo's docs (docs.apollo.io, Sept 2026):
+//   mixed_people/api_search   0
+//   mixed_companies/search    1 per page
+//   organizations/enrich      1 per organization
+//   people/bulk_match         1 per person matched (counted from the response)
+const LEDGER_KEYS = {
+  '/mixed_people/api_search': 'peopleSearch',
+  '/mixed_companies/search': 'orgSearch',
+  '/organizations/enrich': 'orgEnrich',
+  '/people/bulk_match': 'peopleEnrich'
+};
+function newLedger() {
+  return { peopleSearch: 0, orgSearch: 0, orgEnrich: 0, peopleEnrich: 0, peopleEnriched: 0, estimatedCredits: 0 };
+}
+function record(ledger, path, data) {
+  if (!ledger) return;
+  const k = LEDGER_KEYS[path];
+  if (!k) return;
+  ledger[k]++;
+  if (k === 'orgSearch') ledger.estimatedCredits += 1;
+  if (k === 'orgEnrich' && data && data.organization) ledger.estimatedCredits += 1;
+  if (k === 'peopleEnrich') {
+    const n = ((data && data.matches) || []).filter(Boolean).length;
+    ledger.peopleEnriched += n;
+    ledger.estimatedCredits += n;
+  }
+}
+
+async function request(apiKey, method, path, body, { fetchImpl = fetch, query = null, ledger = null } = {}) {
   const maxAttempts = 4;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await pace();
@@ -38,7 +66,11 @@ async function request(apiKey, method, path, body, { fetchImpl = fetch, query = 
     };
     if (method !== 'GET') init.body = JSON.stringify(body || {});
     const res = await fetchImpl(`${BASE}${path}${toQuery(query)}`, init);
-    if (res.ok) return res.json();
+    if (res.ok) {
+      const data = await res.json();
+      record(ledger, path, data);
+      return data;
+    }
 
     const text = await res.text().catch(() => '');
     if (res.status === 401 || res.status === 403) {
@@ -262,4 +294,4 @@ async function collectCandidates(apiKey, org, project, opts = {}) {
   return out;
 }
 
-module.exports = { findOrganization, searchPeople, enrichPeople, collectCandidates, linkedInSlug, cleanCompanyUrl, mapOrganization, mapPerson, toQuery };
+module.exports = { findOrganization, searchPeople, enrichPeople, collectCandidates, linkedInSlug, cleanCompanyUrl, mapOrganization, mapPerson, toQuery, newLedger };
