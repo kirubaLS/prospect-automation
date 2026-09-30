@@ -1,8 +1,8 @@
 {
   "name": "Sharp SSDI",
   "description": "South India; education, healthcare, retail. ICP: IT, Operations, Procurement/Purchase, Administration, Finance - Priority 1 executives, then Priority 2 department heads, then Priority 3 managers/execution roles.",
-  "targetPerCompany": 8,
-  "maxCandidatesPerCompany": 24,
+  "targetPerCompany": 4,
+  "maxCandidatesPerCompany": 12,
   "prescreen": {
     "requireOrganizationFound": true,
     "minEmployees": 1,

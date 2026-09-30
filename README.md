@@ -17,7 +17,7 @@ COMPANY MATCH                            by website domain: none needed (People 
                                          by LinkedIn URL: Organization Enrichment, 1 credit
         ▼
 APOLLO PEOPLE SEARCH                     Priority 1 titles first, then Priority 2, then Priority 3 (exact titles, any
-                                         seniority), filtered by the person's location, until N per company (default 8);
+                                         seniority), filtered by the person's location, until N per company (default 4);
                                          plain keyword ICPs fall back to decision makers → managers → any decision maker
         ▼
 DOWNLOAD (Excel or CSV)                  Company, Status, Name, Designation, Location, LinkedIn URL, Activity (blank, for the

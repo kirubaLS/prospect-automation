@@ -83,7 +83,7 @@ function presets() {
           name: c.name || d.name,
           geography: (c.personLocations || []).join('; '),
           icp: (industries.length ? industries.join(', ') + '; ' : '') + (c.titlePriorities ? c.titlePriorities.map((g) => g.titles.join(', ')).join(' > ') : (c.titleKeywords || []).join(', ')),
-          peoplePerCompany: c.targetPerCompany || 8
+          peoplePerCompany: c.targetPerCompany || 4
         };
       });
   } catch (err) {
@@ -110,7 +110,7 @@ function publicJob(j) {
 function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label, resolve }) {
   if (runningId) throw new Error('another job is running - wait for it to finish or stop it');
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
-  const count = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 8));
+  const count = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 4));
   const locations = parseGeography(geography);
   const { industries, keywords, priorities } = parseIcp(icp);
   if (!keywords.length) throw new Error('ICP is empty - list the roles/functions to look for (e.g. "IT, Administration, Procurement, Finance")');
@@ -193,7 +193,7 @@ const server = http.createServer(async (req, res) => {
         filename: url.searchParams.get('filename') || 'companies.csv',
         geography: url.searchParams.get('geography') || '',
         icp: url.searchParams.get('icp') || '',
-        peoplePerCompany: url.searchParams.get('count') || '8',
+        peoplePerCompany: url.searchParams.get('count') || '4',
         label: url.searchParams.get('label') || '',
         resolve: url.searchParams.get('resolve') || (url.searchParams.get('enrich') === '0' ? 'none' : undefined)
       });
