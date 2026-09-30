@@ -23,15 +23,34 @@ const orgs = { organizations: [
 const P = (f, l, t, s, d, u) => ({ id: u, first_name: f, last_name: l, title: t, seniority: s, departments: d, linkedin_url: 'http://www.linkedin.com/in/' + u, city: 'Bengaluru', state: 'Karnataka', country: 'India', email: 'secret@example.com', phone_numbers: [{ sanitized_number: '+911234567890' }] });
 const dm = [P('Chytra', 'Anand', 'Founder & Chairperson', 'founder', ['c_suite'], 'chytra'), P('Siva', 'M', 'Head of Operations', 'head', ['operations'], 'siva'), P('Ravi', 'K', 'Consultant Dermatologist', 'director', [], 'ravi'), P('Priya', 'N', 'IT Head', 'head', ['information_technology'], 'priya')];
 const mg = [P('Anu', 'P', 'IT Manager', 'manager', ['information_technology'], 'anu'), P('Dev', 'S', 'Software Developer', 'entry', ['engineering'], 'dev'), P('Raj', 'B', 'Purchase Manager', 'manager', ['operations'], 'raj')];
+// Apollo's api_search returns a preview: masked last name, no LinkedIn URL.
+const preview = (p) => ({ id: p.id, first_name: p.first_name, last_name: p.last_name[0] + '.', title: p.title, seniority: p.seniority, departments: p.departments, has_email: true, has_phone: true });
+const all = [...dm, ...mg];
+const calls = { search: 0, enrich: 0, enrichIds: [] };
 const fetchImpl = async (url, init) => {
+  const u = new URL(url);
   const b = JSON.parse(init.body);
   let d;
-  if (url.includes('mixed_companies')) d = /ghost/i.test(b.q_organization_name) ? { organizations: [] } : orgs;
-  else if (b.organization_ids[0] === 'o3') d = { people: [], pagination: { total_entries: 0 } };
-  else {
-    const list = b.person_seniorities.includes('director') ? dm : mg;
-    const f = b.person_titles ? list.filter((p) => b.person_titles.some((t) => new RegExp('\\b' + t + '\\b', 'i').test(p.title))) : list;
-    d = { people: f, pagination: { total_entries: f.length } };
+  if (u.pathname.endsWith('/mixed_companies/search')) d = /ghost/i.test(b.q_organization_name) ? { organizations: [] } : orgs;
+  else if (u.pathname.endsWith('/people/bulk_match')) {
+    calls.enrich++;
+    assert.strictEqual(b.reveal_personal_emails, false); assert.strictEqual(b.reveal_phone_number, false);
+    calls.enrichIds.push(...b.details.map((x) => x.id));
+    d = { matches: b.details.map((x) => all.find((p) => p.id === x.id)) };
+  } else {
+    assert.ok(u.pathname.endsWith('/mixed_people/api_search'), 'people search must use api_search');
+    assert.deepStrictEqual(b, {}, 'api_search filters go in the query string, not the body');
+    calls.search++;
+    const orgId = u.searchParams.get('organization_ids[]');
+    const sen = u.searchParams.getAll('person_seniorities[]');
+    const titles = u.searchParams.getAll('person_titles[]');
+    assert.ok(u.searchParams.getAll('person_locations[]').includes('Tamil Nadu, India'));
+    if (orgId === 'o3') d = { people: [], pagination: { total_entries: 0 } };
+    else {
+      const list = sen.includes('director') ? dm : mg;
+      const f = titles.length ? list.filter((p) => titles.some((t) => new RegExp('\\b' + t + '\\b', 'i').test(p.title))) : list;
+      d = { people: f.map(preview), pagination: { total_entries: f.length } };
+    }
   }
   return { ok: true, status: 200, json: async () => d, text: async () => JSON.stringify(d) };
 };
@@ -47,6 +66,10 @@ const fetchImpl = async (url, init) => {
   const k = rows.filter((r) => r.companyStatus === 'Found');
   assert.deepStrictEqual(k.map((r) => r.name), ['Priya N', 'Anu P', 'Raj B', 'Chytra Anand', 'Siva M'], 'ICP matches first, then decision-maker fallback');
   assert.deepStrictEqual(k.map((r) => r.match), ['ICP match', 'ICP match', 'ICP match', 'Fallback (no ICP title)', 'Fallback (no ICP title)']);
+  assert.deepStrictEqual(k.map((r) => r.profileUrl), ['http://www.linkedin.com/in/priya', 'http://www.linkedin.com/in/anu', 'http://www.linkedin.com/in/raj', 'http://www.linkedin.com/in/chytra', 'http://www.linkedin.com/in/siva'], 'LinkedIn URLs come from enrichment');
+  assert.deepStrictEqual(k.map((r) => r.location), Array(5).fill('Bengaluru, Karnataka, India'));
+  assert.strictEqual(calls.enrich, 1, 'one bulk_match call for the 5 kept people');
+  assert.deepStrictEqual([...calls.enrichIds].sort(), ['anu', 'chytra', 'priya', 'raj', 'siva'], 'only kept people are enriched, never the excluded doctor/developer');
   assert.ok(!rows.some((r) => /Dermatologist|Developer/.test(r.title || '')), 'clinical/dev titles never written');
   assert.strictEqual(rows.find((r) => r.company === 'Ghost Co').companyStatus, 'Company not found');
   const empty = rows.find((r) => r.company === 'Empty Ltd');
@@ -55,7 +78,15 @@ const fetchImpl = async (url, init) => {
 
   const out = jobs.toCsv(rows);
   assert.ok(out.startsWith('Company,Company LinkedIn URL,Company Status,Name,Designation,Seniority,Function,LinkedIn URL,Location,Match,Rank,Connections 500+,Activity,Note'));
-  assert.ok(!/secret@example|1234567890|email|phone/i.test(out), 'no contact details in the CSV');
+  assert.ok(!/secret@example|1234567890|email|phone|has_email/i.test(out), 'no contact details in the CSV');
+
+  // enrich: false -> preview only, no bulk_match, masked names kept as-is.
+  const before = calls.enrich;
+  const r2 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, enrich: false }, fetchImpl });
+  assert.strictEqual(calls.enrich, before, 'no enrichment call when switched off');
+  const k2 = r2.rows.filter((r) => r.companyStatus === 'Found');
+  assert.strictEqual(k2[0].name, 'Priya N.');
+  assert.strictEqual(k2[0].profileUrl, '');
   assert.strictEqual(out.split('\r\n').filter(Boolean).length, 1 + 5 + 2);
   assert.ok(progress.length >= 3);
 

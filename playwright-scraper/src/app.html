@@ -113,6 +113,9 @@
 
     <label>People per company</label>
     <input type="number" id="count" value="8" min="1" max="25" style="max-width:120px">
+
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:600"><input type="checkbox" id="enrich" checked style="margin-top:4px"> <span>Fill in full name + LinkedIn URL <small>uses Apollo credits</small></span></label>
+    <div class="hint">Apollo's search only previews people (first name, masked surname, no LinkedIn URL on most plans). With this on, each person kept is enriched — at most “people per company” credits per company. Emails and phone numbers are never requested.</div>
   </section>
 
   <div style="display:grid; gap:16px">
@@ -170,6 +173,7 @@ $('theme').onclick = () => { const cur = document.documentElement.dataset.theme 
 
 // form persistence
 ['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
+{ const v = localStorage.getItem('form.enrich'); if (v !== null) $('enrich').checked = v === '1'; $('enrich').addEventListener('change', () => localStorage.setItem('form.enrich', $('enrich').checked ? '1' : '0')); }
 GEO_SHORTCUTS.forEach((g) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = g; c.onclick = () => { const cur = $('geography').value.trim(); $('geography').value = cur ? cur + '; ' + g : g; $('geography').dispatchEvent(new Event('input')); }; $('geochips').appendChild(c); });
 
 // presets: server (projects/) + browser-saved
@@ -241,7 +245,7 @@ async function startJob() {
   if (!selectedFile) { setMsg('Choose the companies file first.', 'err'); return; }
   if (!$('icp').value.trim()) { setMsg('Enter the ICP roles (after the semicolon).', 'err'); $('icp').focus(); return; }
   setMsg('Starting…');
-  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value });
+  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, enrich: $('enrich').checked ? '1' : '0' });
   try {
     const r = await fetch('/jobs?' + params, { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
@@ -263,7 +267,7 @@ function show(j) {
   $('stopbtn').disabled = !(j && j.status === 'running');
   if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
-  $('jobname').textContent = `${j.label} · ${j.params.peoplePerCompany}/company · ${j.params.locations.join(' | ') || 'anywhere'} · ${j.params.icpKeywords.join(', ')}`;
+  $('jobname').textContent = `${j.label} · ${j.params.peoplePerCompany}/company · ${j.params.locations.join(' | ') || 'anywhere'} · ${j.params.icpKeywords.join(', ')}${j.params.enrich === false ? ' · no enrichment' : ''}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');

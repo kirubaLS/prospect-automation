@@ -114,6 +114,8 @@ function titleMatches(title, patterns) {
 function sanitize(p, org, tier, icpHit) {
   // Explicitly whitelist fields: never emails, phones, or anything else.
   return {
+    apolloId: p.apolloId,
+    nameMasked: !!p.nameMasked,
     name: p.name,
     title: p.title,
     seniority: SENIORITY_LABEL[p.seniority] || p.seniority || '',
@@ -151,15 +153,25 @@ async function findPeople(apiKey, org, params, opts = {}) {
       opts
     );
     logger.info(`    ${tier.label}: ${people.length} returned (${total} in Apollo)`);
+    // api_search may omit the LinkedIn URL (preview plans), so dedupe on
+    // the Apollo id and let enrichment fill the URL in afterwards.
+    const keyOf = (p) => p.apolloId || p.profileUrl || `${p.name}|${p.title}`;
     const ranked = people
-      .filter((p) => p.name && p.profileUrl && !seen.has(p.profileUrl) && !ALWAYS_EXCLUDE.test(p.title || ''))
+      .filter((p) => p.name && !seen.has(keyOf(p)) && !ALWAYS_EXCLUDE.test(p.title || ''))
       .map((p) => ({ p, icp: titles.length ? titleMatches(p.title, titles) : false }))
       .sort((a, b) => Number(b.icp) - Number(a.icp) || (SENIORITY_RANK[a.p.seniority] ?? 9) - (SENIORITY_RANK[b.p.seniority] ?? 9));
     for (const { p, icp } of ranked) {
       if (out.length >= want) break;
-      seen.add(p.profileUrl);
+      seen.add(keyOf(p));
       out.push(sanitize(p, org, tier, icp));
     }
+  }
+  // Only the people being kept are enriched (credits), and only those whose
+  // preview lacked a LinkedIn URL or full name.
+  if (params.enrich && out.some((p) => !p.profileUrl || p.nameMasked)) {
+    const { people: full, requested, enriched } = await apollo.enrichPeople(apiKey, out, opts);
+    logger.info(`    enrichment: ${enriched}/${requested} filled in`);
+    return full;
   }
   return out;
 }
@@ -196,6 +208,7 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
   const opts = fetchImpl ? { fetchImpl } : {};
   // `rows` may be the caller's own array so partial results are downloadable mid-run.
   const state = { total: companies.length, done: 0, found: 0, notFound: 0, noPeople: 0, prospects: 0, errors: 0, current: '' };
+  params = { enrich: true, ...params };
 
   for (const company of companies) {
     if (shouldStop()) {

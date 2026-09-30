@@ -95,7 +95,7 @@ function publicJob(j) {
     id: j.id,
     label: j.label,
     filename: j.filename,
-    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries },
+    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, enrich: j.params.enrich },
     status: j.status,
     startedAt: j.startedAt,
     finishedAt: j.finishedAt,
@@ -105,7 +105,7 @@ function publicJob(j) {
   };
 }
 
-function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label }) {
+function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label, enrich = true }) {
   if (runningId) throw new Error('another job is running - wait for it to finish or stop it');
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
   const count = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 8));
@@ -119,7 +119,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
     label: label || filename,
     filename,
     paramsText: { geography, icp },
-    params: { locations, industries, icpKeywords: keywords, peoplePerCompany: count },
+    params: { locations, industries, icpKeywords: keywords, peoplePerCompany: count, enrich: !!enrich },
     status: 'running',
     startedAt: new Date().toISOString(),
     finishedAt: null,
@@ -131,7 +131,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
   runningId = id;
   while (jobs.size > MAX_JOBS_KEPT) jobs.delete(jobs.keys().next().value);
 
-  logger.info(`Job ${id} "${job.label}": ${count}/company, geography=[${locations.join(' | ') || 'any'}], ICP=[${keywords.join(', ')}]${industries.length ? `, industries=[${industries.join(', ')}]` : ''}`);
+  logger.info(`Job ${id} "${job.label}": ${count}/company, enrich=${!!enrich}, geography=[${locations.join(' | ') || 'any'}], ICP=[${keywords.join(', ')}]${industries.length ? `, industries=[${industries.join(', ')}]` : ''}`);
   keepAlive(true);
   runJob({
     apiKey: APOLLO_API_KEY,
@@ -190,7 +190,8 @@ const server = http.createServer(async (req, res) => {
         geography: url.searchParams.get('geography') || '',
         icp: url.searchParams.get('icp') || '',
         peoplePerCompany: url.searchParams.get('count') || '8',
-        label: url.searchParams.get('label') || ''
+        label: url.searchParams.get('label') || '',
+        enrich: url.searchParams.get('enrich') !== '0'
       });
       return send(202, { status: 'started', job: publicJob(job) });
     }

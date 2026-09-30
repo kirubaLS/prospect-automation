@@ -80,6 +80,7 @@ const mockFetch = (responses) => async (url, init) => {
   );
   assert.strictEqual(bySlugWords.organization.id, 'o1', 'falls back to searching by the slug words');
   assert.deepStrictEqual(calls, ['?originalsubdomain=in', 'kosmodermahealthcare']);
+  assert.strictEqual(apollo.toQuery({ organization_ids: ['o1'], person_titles: ['IT Head', 'CFO'], per_page: 8, person_locations: [] }), '?organization_ids%5B%5D=o1&person_titles%5B%5D=IT+Head&person_titles%5B%5D=CFO&per_page=8');
   const person = await apollo.findOrganization('k', { 'Company Name': 'X', 'LinkedIn URL': 'https://www.linkedin.com/in/some-person/' }, opts);
   assert.strictEqual(person.organization, null);
   assert.match(person.reason, /person profile/);
@@ -121,6 +122,11 @@ const mockFetch = (responses) => async (url, init) => {
     const people = ${people.toString()};
     global.fetch = async (url, init) => {
       const body = JSON.parse(init.body);
+      const u = new URL(url);
+      if (u.pathname.endsWith('/mixed_people/api_search')) {
+        if (Object.keys(body).length) throw new Error('api_search takes no JSON body');
+        body.person_seniorities = u.searchParams.getAll('person_seniorities[]');
+      }
       const data = url.includes('mixed_companies') ? companies(body) : people(body);
       return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
     };

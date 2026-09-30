@@ -11,11 +11,24 @@ async function pace() {
   lastCallAt = Date.now();
 }
 
-async function post(apiKey, path, body, { fetchImpl = fetch } = {}) {
+// Apollo's newer endpoints (mixed_people/api_search) take their filters as
+// URL query parameters on a POST; arrays use the key[]=value form.
+function toQuery(params) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v == null || v === '') continue;
+    if (Array.isArray(v)) v.forEach((x) => q.append(`${k}[]`, x));
+    else q.append(k, String(v));
+  }
+  const str = q.toString();
+  return str ? `?${str}` : '';
+}
+
+async function post(apiKey, path, body, { fetchImpl = fetch, query = null } = {}) {
   const maxAttempts = 4;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await pace();
-    const res = await fetchImpl(`${BASE}${path}`, {
+    const res = await fetchImpl(`${BASE}${path}${toQuery(query)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -110,10 +123,16 @@ async function findOrganization(apiKey, company, opts = {}) {
   };
 }
 
+// Explicit whitelist: emails, phone numbers and anything else Apollo
+// returns are dropped here and never reach the rest of the app.
 function mapPerson(p, org) {
+  const last = p.last_name || '';
   return {
     apolloId: p.id,
-    name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.name || '',
+    name: [p.first_name, last].filter(Boolean).join(' ') || p.name || '',
+    // api_search on some plans masks the last name ("S.") - flagged so the
+    // enrichment step knows this person still needs the full record.
+    nameMasked: !!last && /^\S\.?$/.test(last),
     title: p.title || '',
     headline: p.headline || '',
     seniority: p.seniority || '',
@@ -124,23 +143,64 @@ function mapPerson(p, org) {
   };
 }
 
-// One people search for one seniority tier. Titles and locations are
-// optional; Apollo treats person_titles as an OR list matched against the
-// current title.
+// One people search for one seniority tier via mixed_people/api_search
+// (the endpoint Apollo now requires for API callers; filters go in the
+// query string, no credits are consumed). Titles and locations are
+// optional; person_titles is an OR list matched against the current title.
+// On plans where this endpoint returns only a preview (masked last name,
+// no LinkedIn URL), enrichPeople() fills in the rest for selected people.
 async function searchPeople(apiKey, org, { seniorities, titles, locations, perPage = 25, page = 1 }, opts = {}) {
-  const body = {
+  const query = {
     organization_ids: [org.id],
     person_seniorities: seniorities,
     page,
     per_page: perPage
   };
-  if (titles && titles.length) body.person_titles = titles;
-  if (locations && locations.length) body.person_locations = locations;
+  if (titles && titles.length) query.person_titles = titles;
+  if (locations && locations.length) query.person_locations = locations;
 
-  const data = await post(apiKey, '/mixed_people/search', body, opts);
+  const data = await post(apiKey, '/mixed_people/api_search', {}, { ...opts, query });
   const people = (data.people || data.contacts || []).map((p) => mapPerson(p, org));
   const total = data.pagination ? data.pagination.total_entries : people.length;
   return { people, total };
+}
+
+// Fills in full name, LinkedIn URL and location for people whose search
+// preview lacked them, via Bulk People Enrichment (up to 10 ids per call).
+// This consumes Apollo credits, so callers only pass the people they will
+// actually keep. Emails and phone numbers are explicitly not requested,
+// and mapPerson drops them even if Apollo sends any anyway.
+async function enrichPeople(apiKey, people, opts = {}) {
+  const need = people.filter((p) => p.apolloId && (!p.profileUrl || p.nameMasked));
+  const byId = new Map();
+  for (let i = 0; i < need.length; i += 10) {
+    const batch = need.slice(i, i + 10);
+    const data = await post(
+      apiKey,
+      '/people/bulk_match',
+      { details: batch.map((p) => ({ id: p.apolloId })), reveal_personal_emails: false, reveal_phone_number: false },
+      opts
+    );
+    for (const m of data.matches || []) if (m && m.id) byId.set(m.id, m);
+  }
+  let enriched = 0;
+  const out = people.map((p) => {
+    const m = byId.get(p.apolloId);
+    if (!m) return p;
+    enriched++;
+    const full = mapPerson(m, { name: p.company });
+    return {
+      ...p,
+      name: full.name || p.name,
+      nameMasked: full.nameMasked,
+      title: p.title || full.title,
+      seniority: p.seniority || full.seniority,
+      departments: p.departments && p.departments.length ? p.departments : full.departments,
+      profileUrl: full.profileUrl || p.profileUrl,
+      location: full.location || p.location
+    };
+  });
+  return { people: out, requested: need.length, enriched };
 }
 
 // Walks the project's seniority tiers in order (decision makers first,
@@ -170,4 +230,4 @@ async function collectCandidates(apiKey, org, project, opts = {}) {
   return out;
 }
 
-module.exports = { findOrganization, searchPeople, collectCandidates, linkedInSlug, mapOrganization, mapPerson };
+module.exports = { findOrganization, searchPeople, enrichPeople, collectCandidates, linkedInSlug, mapOrganization, mapPerson, toQuery };

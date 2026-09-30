@@ -41,9 +41,18 @@ Free-tier behaviour you should know:
 - A redeploy or restart clears finished jobs. Download after each run.
 - There is no login; anyone with the URL can run jobs. Keep it internal
   (or put it behind a paid Render plan's access controls later).
-- Apollo's own plan decides the rate/volume: people search does not spend
-  credits, but the free Apollo plan caps API calls per hour/day. The app
-  paces itself at ~1 call/s and retries on 429.
+- Apollo's own plan decides the rate/volume. The people search itself
+  (`mixed_people/api_search`) spends no credits, but on most plans it only
+  previews people: first name, masked surname, no LinkedIn URL. The
+  **Fill in full name + LinkedIn URL** option on the page (on by default)
+  enriches just the people kept, via Bulk People Enrichment with emails and
+  phones switched off, which costs up to "people per company" credits per
+  company. Turn it off for a credit-free preview run. The app paces itself
+  at ~1 call/s and retries on 429.
+- The API key needs these Apollo scopes: Organization Search, People
+  Search (api_search) and, for the enrichment option, People Enrichment /
+  Bulk People Enrichment. Or set it as a master key; the app never calls
+  anything else and never writes emails or phone numbers.
 
 Per-project presets: `projects/<name>/config.json` (see `projects/sharp`)
 show up in the page's Preset dropdown; **Save as preset** on the page keeps
