@@ -31,9 +31,14 @@ const all = [...dm, ...mg];
 const calls = { search: 0, enrich: 0, enrichIds: [] };
 const fetchImpl = async (url, init) => {
   const u = new URL(url);
-  const b = JSON.parse(init.body);
+  const b = init.body ? JSON.parse(init.body) : {};
   let d;
-  if (u.pathname.endsWith('/mixed_companies/search')) d = /ghost/i.test(b.q_organization_name) ? { organizations: [] } : orgs;
+  if (u.pathname.endsWith('/organizations/enrich')) {
+    assert.strictEqual(init.method, 'GET');
+    const lu = u.searchParams.get('linkedin_url');
+    const o = orgs.organizations.find((x) => x.linkedin_url.endsWith('/' + lu.split('/').pop()));
+    d = { organization: o || null };
+  } else if (u.pathname.endsWith('/mixed_companies/search')) d = /ghost/i.test(u.searchParams.get('q_organization_name')) ? { organizations: [] } : orgs;
   else if (u.pathname.endsWith('/people/bulk_match')) {
     calls.enrich++;
     assert.strictEqual(b.reveal_personal_emails, false); assert.strictEqual(b.reveal_phone_number, false);

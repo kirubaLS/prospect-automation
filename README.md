@@ -49,10 +49,18 @@ Free-tier behaviour you should know:
   phones switched off, which costs up to "people per company" credits per
   company. Turn it off for a credit-free preview run. The app paces itself
   at ~1 call/s and retries on 429.
-- The API key needs these Apollo scopes: Organization Search, People
-  Search (api_search) and, for the enrichment option, People Enrichment /
-  Bulk People Enrichment. Or set it as a master key; the app never calls
+- The API key needs these Apollo scopes: **Organization Enrichment**
+  (`organizations/enrich`, the company lookup by LinkedIn URL),
+  **Organization Search** (`mixed_companies/search`, the fallback for rows
+  with no usable URL), **People API Search** (`mixed_people/api_search`) and,
+  for the enrichment option, **Bulk People Enrichment**
+  (`people/bulk_match`). Or set it as a master key; the app never calls
   anything else and never writes emails or phone numbers.
+- Credits per company, per Apollo's current pricing: 1 for the company
+  lookup (enrichment or one search page), 0 for the people searches, and
+  up to "people per company" for people enrichment. A 100-company batch at
+  8 people each can therefore use up to 900 credits; with the enrichment
+  option off, 100.
 
 Per-project presets: `projects/<name>/config.json` (see `projects/sharp`)
 show up in the page's Preset dropdown; **Save as preset** on the page keeps

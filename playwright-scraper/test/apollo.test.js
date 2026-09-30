@@ -54,32 +54,46 @@ const orgs = {
     { id: 'o2', name: 'Kosmoderma Skin, Hair & Body Clinics', linkedin_url: 'http://www.linkedin.com/company/other-kosmo', industry: 'retail', estimated_num_employees: 5, country: 'India' }
   ]
 };
+// Enrichment answers by LinkedIn URL from the same org list; search reads
+// q_organization_name from the query string.
 const mockFetch = (responses) => async (url, init) => {
+  const u = new URL(url);
+  if (u.pathname.endsWith('/organizations/enrich')) {
+    const want = apollo.linkedInSlug(u.searchParams.get('linkedin_url'));
+    const o = (responses.companies.organizations || []).find((x) => apollo.linkedInSlug(x.linkedin_url) === want);
+    const data = { organization: o || null };
+    return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+  }
   const key = url.includes('mixed_companies') ? 'companies' : 'people';
-  const body = JSON.parse(init.body);
+  const body = init.body ? JSON.parse(init.body) : {};
+  if (key === 'companies') body.q_organization_name = u.searchParams.get('q_organization_name');
   const data = typeof responses[key] === 'function' ? responses[key](body) : responses[key];
   return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
 };
 (async () => {
   const opts = { fetchImpl: mockFetch({ companies: orgs }) };
   const bySlug = await apollo.findOrganization('k', { 'Company Name': 'Kosmoderma Skin, Hair & Body Clinics', 'LinkedIn URL': 'https://www.linkedin.com/company/kosmodermahealthcare/' }, opts);
-  assert.strictEqual(bySlug.organization.id, 'o1', 'LinkedIn slug beats exact name match');
+  assert.strictEqual(bySlug.organization.id, 'o1', 'LinkedIn URL enrichment beats exact name match');
   assert.strictEqual(bySlug.matchedBy, 'linkedin');
   const byName = await apollo.findOrganization('k', { 'Company Name': 'Kosmoderma Skin, Hair & Body Clinics', 'LinkedIn URL': '' }, opts);
-  assert.strictEqual(byName.organization.id, 'o2');
+  assert.strictEqual(byName.organization.id, 'o2', 'no URL: exact name match via search');
   const none = await apollo.findOrganization('k', { 'Company Name': 'Kosmoderma', 'LinkedIn URL': 'https://www.linkedin.com/company/nope/' }, opts);
   assert.strictEqual(none.organization, null);
   assert.match(none.reason, /none matched/);
 
-  // Name search misses, slug-words search hits: the URL is the anchor.
+  // The URL is the anchor: a junk name and a URL with a query string still
+  // resolve through enrichment, with the query string stripped and a
+  // single call (no second search burning a credit).
   const calls = [];
-  const bySlugWords = await apollo.findOrganization(
+  const byUrl = await apollo.findOrganization(
     'k',
     { 'Company Name': '?originalSubdomain=in', 'LinkedIn URL': 'https://www.linkedin.com/company/kosmodermahealthcare/?originalSubdomain=in' },
-    { fetchImpl: async (url, init) => { const b = JSON.parse(init.body); calls.push(b.q_organization_name); const d = /kosmoderma/i.test(b.q_organization_name) ? orgs : { organizations: [{ id: 'x', name: 'Random', linkedin_url: 'http://www.linkedin.com/company/random' }] }; return { ok: true, status: 200, json: async () => d, text: async () => '' }; } }
+    { fetchImpl: async (url, init) => { calls.push(url); return mockFetch({ companies: orgs })(url, init); } }
   );
-  assert.strictEqual(bySlugWords.organization.id, 'o1', 'falls back to searching by the slug words');
-  assert.deepStrictEqual(calls, ['?originalsubdomain=in', 'kosmodermahealthcare']);
+  assert.strictEqual(byUrl.organization.id, 'o1');
+  assert.strictEqual(calls.length, 1);
+  assert.match(calls[0], /\/organizations\/enrich\?linkedin_url=https%3A%2F%2Fwww.linkedin.com%2Fcompany%2Fkosmodermahealthcare&name=/);
+  assert.strictEqual(apollo.cleanCompanyUrl('http://linkedin.com/company/Acme-Co/?originalSubdomain=fr'), 'https://www.linkedin.com/company/acme-co');
   assert.strictEqual(apollo.toQuery({ organization_ids: ['o1'], person_titles: ['IT Head', 'CFO'], per_page: 8, person_locations: [] }), '?organization_ids%5B%5D=o1&person_titles%5B%5D=IT+Head&person_titles%5B%5D=CFO&per_page=8');
   const person = await apollo.findOrganization('k', { 'Company Name': 'X', 'LinkedIn URL': 'https://www.linkedin.com/in/some-person/' }, opts);
   assert.strictEqual(person.organization, null);
@@ -121,12 +135,19 @@ const mockFetch = (responses) => async (url, init) => {
     const companies = ${companies.toString()};
     const people = ${people.toString()};
     global.fetch = async (url, init) => {
-      const body = JSON.parse(init.body);
+      const body = init.body ? JSON.parse(init.body) : {};
       const u = new URL(url);
+      if (u.pathname.endsWith('/organizations/enrich')) {
+        const want = u.searchParams.get('linkedin_url').split('/').pop();
+        const all = [...orgs.organizations, ...(companies({ q_organization_name: 'tiny' }).organizations)];
+        const data = { organization: all.find((o) => o.linkedin_url.endsWith('/' + want)) || null };
+        return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+      }
       if (u.pathname.endsWith('/mixed_people/api_search')) {
         if (Object.keys(body).length) throw new Error('api_search takes no JSON body');
         body.person_seniorities = u.searchParams.getAll('person_seniorities[]');
       }
+      if (u.pathname.endsWith('/mixed_companies/search')) body.q_organization_name = u.searchParams.get('q_organization_name');
       const data = url.includes('mixed_companies') ? companies(body) : people(body);
       return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
     };

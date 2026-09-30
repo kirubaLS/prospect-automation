@@ -24,19 +24,20 @@ function toQuery(params) {
   return str ? `?${str}` : '';
 }
 
-async function post(apiKey, path, body, { fetchImpl = fetch, query = null } = {}) {
+async function request(apiKey, method, path, body, { fetchImpl = fetch, query = null } = {}) {
   const maxAttempts = 4;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await pace();
-    const res = await fetchImpl(`${BASE}${path}${toQuery(query)}`, {
-      method: 'POST',
+    const init = {
+      method,
       headers: {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache',
         'X-Api-Key': apiKey
-      },
-      body: JSON.stringify(body)
-    });
+      }
+    };
+    if (method !== 'GET') init.body = JSON.stringify(body || {});
+    const res = await fetchImpl(`${BASE}${path}${toQuery(query)}`, init);
     if (res.ok) return res.json();
 
     const text = await res.text().catch(() => '');
@@ -53,6 +54,9 @@ async function post(apiKey, path, body, { fetchImpl = fetch, query = null } = {}
   }
   throw new Error(`Apollo ${path} failed after ${maxAttempts} attempts`);
 }
+
+const post = (apiKey, path, body, opts) => request(apiKey, 'POST', path, body, opts);
+const get = (apiKey, path, query, opts) => request(apiKey, 'GET', path, null, { ...opts, query });
 
 function linkedInSlug(url) {
   const m = String(url || '').match(/linkedin\.com\/(?:company|school|showcase)\/([^/?#]+)/i);
@@ -84,11 +88,19 @@ function slugWords(slug) {
   return s.replace(/[-_+]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// Company row (name + LinkedIn URL) -> Apollo organization. Matches on the
-// LinkedIn company slug first (exact), then website domain, then an exact
-// case-insensitive name; a fuzzy name hit alone is not trusted. Searches by
-// the given name first and, if that finds no slug match, by the slug's own
-// words (the file's name may be a brand or a typo; the URL is the anchor).
+function cleanCompanyUrl(url) {
+  const slug = linkedInSlug(url);
+  return slug ? `https://www.linkedin.com/company/${slug}` : null;
+}
+
+// Company row (name + LinkedIn URL) -> Apollo organization.
+//
+// With a company-page URL: Organization Enrichment, which matches on the
+// LinkedIn URL itself (1 credit per company) and returns industry, headcount
+// and HQ, which Organization Search does not. Without a usable URL:
+// Organization Search by name (1 credit per page), trusting only an exact
+// case-insensitive name match. A single search, never two, to keep the
+// credit cost predictable.
 async function findOrganization(apiKey, company, opts = {}) {
   const name = (company['Company Name'] || '').trim();
   const url = company['LinkedIn URL'] || '';
@@ -99,27 +111,37 @@ async function findOrganization(apiKey, company, opts = {}) {
   const wantDomain = company.Website ? domainOf(company.Website) : null;
   if (!name && !wantSlug) return { organization: null, reason: 'no company name or LinkedIn URL' };
 
-  const queries = [...new Set([name, slugWords(wantSlug)].map((q) => q.toLowerCase()).filter(Boolean))];
-  let seen = [];
-  for (const q of queries) {
-    const data = await post(apiKey, '/mixed_companies/search', { q_organization_name: q, page: 1, per_page: 10 }, opts);
-    const orgs = (data.organizations || data.accounts || []).map(mapOrganization);
-    seen = seen.concat(orgs);
-
-    const bySlug = wantSlug && orgs.find((o) => linkedInSlug(o.linkedinUrl) === wantSlug);
-    if (bySlug) return { organization: bySlug, matchedBy: 'linkedin' };
-    const byDomain = wantDomain && orgs.find((o) => domainOf(o.website) === wantDomain);
-    if (byDomain) return { organization: byDomain, matchedBy: 'domain' };
-    // A name match is trusted only when the row gives no LinkedIn URL to
-    // check it against, or when the org has no LinkedIn URL to contradict it.
-    const byName = name && orgs.find((o) => o.name.trim().toLowerCase() === name.toLowerCase() && (!wantSlug || !linkedInSlug(o.linkedinUrl)));
-    if (byName) return { organization: byName, matchedBy: 'name' };
+  if (wantSlug) {
+    const query = { linkedin_url: cleanCompanyUrl(url) };
+    if (name && name.toLowerCase() !== slugWords(wantSlug).toLowerCase()) query.name = name;
+    const data = await get(apiKey, '/organizations/enrich', query, opts);
+    const o = data && data.organization;
+    if (o && o.id) {
+      const org = mapOrganization(o);
+      const gotSlug = linkedInSlug(org.linkedinUrl);
+      // Apollo matched on the URL we sent; a different slug back means it
+      // fell through to a looser match, which is still usually right, so
+      // keep it but say so.
+      return { organization: org, matchedBy: !gotSlug || gotSlug === wantSlug ? 'linkedin' : `linkedin (Apollo returned ${org.linkedinUrl})` };
+    }
+    if (!name) return { organization: null, reason: `Apollo has no organization for ${cleanCompanyUrl(url)}` };
   }
 
-  if (seen.length === 0) return { organization: null, reason: `no Apollo organization matched "${queries.join('" / "')}"` };
+  const q = name || slugWords(wantSlug);
+  const data = await post(apiKey, '/mixed_companies/search', {}, { ...opts, query: { q_organization_name: q, page: 1, per_page: 10 } });
+  const orgs = (data.organizations || data.accounts || []).map(mapOrganization);
+  if (orgs.length === 0) return { organization: null, reason: `no Apollo organization matched "${q}"${wantSlug ? ` or ${cleanCompanyUrl(url)}` : ''}` };
+
+  const bySlug = wantSlug && orgs.find((o) => linkedInSlug(o.linkedinUrl) === wantSlug);
+  if (bySlug) return { organization: bySlug, matchedBy: 'linkedin' };
+  const byDomain = wantDomain && orgs.find((o) => domainOf(o.website) === wantDomain);
+  if (byDomain) return { organization: byDomain, matchedBy: 'domain' };
+  const byName = orgs.find((o) => o.name.trim().toLowerCase() === q.toLowerCase());
+  if (byName) return { organization: byName, matchedBy: 'name' };
+
   return {
     organization: null,
-    reason: `Apollo returned ${seen.length} candidate(s) for "${queries.join('" / "')}" but none matched the LinkedIn URL${name ? '/name' : ''} (closest: ${seen[0].name} ${seen[0].linkedinUrl})`
+    reason: `Apollo returned ${orgs.length} candidate(s) for "${q}" but none matched the LinkedIn URL/name (closest: ${orgs[0].name} ${orgs[0].linkedinUrl})`
   };
 }
 
@@ -233,4 +255,4 @@ async function collectCandidates(apiKey, org, project, opts = {}) {
   return out;
 }
 
-module.exports = { findOrganization, searchPeople, enrichPeople, collectCandidates, linkedInSlug, mapOrganization, mapPerson, toQuery };
+module.exports = { findOrganization, searchPeople, enrichPeople, collectCandidates, linkedInSlug, cleanCompanyUrl, mapOrganization, mapPerson, toQuery };
