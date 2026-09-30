@@ -71,7 +71,12 @@ Free-tier behaviour you should know:
     snippet the location; the app accepts a result only if the first name
     matches, the surname fits Apollo's mask, and the company or title
     appears. Costs 0 Apollo credits. Needs one of these on Render's
-    Environment tab:
+    Environment tab (tried in this order; a provider out of quota is
+    skipped for the rest of the job):
+    - `SERPER_API_KEY` — serper.dev, Google results through an API key;
+      2,500 free searches on signup, no card. Recommended first choice.
+    - `TAVILY_API_KEY` — tavily.com, 1,000 searches/month free, no card.
+      Fewer LinkedIn hits than Google-based providers.
     - `BRAVE_SEARCH_API_KEY` — Brave Search API, free plan 2,000
       queries/month at 1/second. Sign up at brave.com/search/api, choose
       the Free plan, create a key. (Brave may ask for a card; the free plan

@@ -21,7 +21,11 @@ services:
     envVars:
       - key: APOLLO_API_KEY
         sync: false
-      # Free LinkedIn-URL resolution (either or both; see README):
+      # Free LinkedIn-URL resolution (any one is enough; see README):
+      - key: SERPER_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
       - key: BRAVE_SEARCH_API_KEY
         sync: false
       - key: GOOGLE_CSE_API_KEY

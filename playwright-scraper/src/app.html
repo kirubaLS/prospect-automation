@@ -118,7 +118,7 @@
     <div id="resolve" style="display:grid;gap:6px;font-size:13.5px">
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="apollo" checked style="margin-top:3px"> <span><b>Apollo enrichment</b> <small>exact · 1 credit per person</small><br><span class="hint" style="margin:0">Apollo's own record for each person kept: full name, LinkedIn URL, location. Emails and phones are never requested.</span></span></label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="apollo+search" style="margin-top:3px"> <span><b>Apollo first, then free web search for the rest</b><br><span class="hint" style="margin:0">Exact where Apollo has the URL; anyone Apollo leaves blank goes to the web search below.</span></span></label>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="search" style="margin-top:3px"> <span><b>Free web search only</b> <small id="searchinfo">(Brave / Google key on the server)</small><br><span class="hint" style="margin:0">Apollo's free search gives first name, masked surname and title; a web search finds the profile and the app checks the surname against Apollo's mask before accepting it.</span></span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="search" style="margin-top:3px"> <span><b>Free web search only</b> <small id="searchinfo">(search key on the server)</small><br><span class="hint" style="margin:0">Apollo's free search gives first name, masked surname and title; a web search finds the profile and the app checks the surname against Apollo's mask before accepting it.</span></span></label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="none" style="margin-top:3px"> <span><b>Neither</b> <small>0 credits, preview only</small><br><span class="hint" style="margin:0">First name, masked surname, title. No URL.</span></span></label>
     </div>
   </section>
@@ -189,7 +189,7 @@ async function loadPresets() {
   const j = await r.json();
   $('keywarn').style.display = j.apolloKeySet ? 'none' : '';
   const sp = j.searchProviders || [];
-  $('searchinfo').textContent = sp.length ? `(${sp.join(' + ')} configured)` : '(not configured on the server - set BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX)';
+  $('searchinfo').textContent = sp.length ? `(${sp.join(' + ')} configured)` : '(not configured on the server - set SERPER_API_KEY, TAVILY_API_KEY, BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX)';
   document.querySelectorAll('input[name=resolve][value=search], input[name=resolve][value="apollo+search"]').forEach((r) => { r.disabled = !sp.length; if (!sp.length && r.checked) document.querySelector('input[name=resolve][value=apollo]').checked = true; });
   // With a search key on the server, free web search is the default unless this browser chose otherwise.
   if (sp.length && !localStorage.getItem('form.resolve')) document.querySelector('input[name=resolve][value=search]').checked = true;

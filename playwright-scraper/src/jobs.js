@@ -226,7 +226,7 @@ async function findPeople(apiKey, org, params, opts = {}) {
     logger.info(`    ${need.length} still without a URL after Apollo - trying web search`);
   }
   const providers = params.searchProviders || [];
-  if (!providers.length) throw new Error('no web search provider configured - set BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX on the server, or choose Apollo enrichment');
+  if (!providers.length) throw new Error('no web search provider configured - set SERPER_API_KEY, TAVILY_API_KEY, BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX on the server, or choose Apollo enrichment');
   let found = 0;
   for (const p of out) {
     if (p.profileUrl && !p.nameMasked) continue;

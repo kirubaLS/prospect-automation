@@ -8,9 +8,13 @@
 // and whose snippet usually opens with the location. The obfuscated
 // surname is used to verify the match before anything is accepted.
 //
-// Providers (official APIs, used within their terms, both with free tiers):
+// Providers (official APIs, used within their terms, all with free tiers):
+//   serper  SERPER_API_KEY                       Google results; 2,500 free on signup, no card
+//   tavily  TAVILY_API_KEY                       1,000 queries/month free, no card
 //   brave   BRAVE_SEARCH_API_KEY                 2,000 queries/month free
 //   google  GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX   100 queries/day free
+// They are tried in this order; one that runs out of quota is skipped for
+// the rest of the job.
 const logger = require('./logger');
 
 let lastCallAt = 0;
@@ -24,6 +28,8 @@ async function pace() {
 
 function providersFromEnv(env = process.env) {
   const out = [];
+  if (env.SERPER_API_KEY) out.push({ name: 'serper', key: env.SERPER_API_KEY });
+  if (env.TAVILY_API_KEY) out.push({ name: 'tavily', key: env.TAVILY_API_KEY });
   if (env.BRAVE_SEARCH_API_KEY) out.push({ name: 'brave', key: env.BRAVE_SEARCH_API_KEY });
   if (env.GOOGLE_CSE_API_KEY && env.GOOGLE_CSE_CX) out.push({ name: 'google', key: env.GOOGLE_CSE_API_KEY, cx: env.GOOGLE_CSE_CX });
   return out;
@@ -33,23 +39,35 @@ function providersFromEnv(env = process.env) {
 async function webSearch(provider, q, { fetchImpl = fetch } = {}) {
   await pace();
   let url;
-  let headers = { Accept: 'application/json' };
-  if (provider.name === 'brave') {
+  let init = { headers: { Accept: 'application/json' } };
+  if (provider.name === 'serper') {
+    url = 'https://google.serper.dev/search';
+    init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-KEY': provider.key }, body: JSON.stringify({ q, num: 10 }) };
+  } else if (provider.name === 'tavily') {
+    url = 'https://api.tavily.com/search';
+    init = { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.key}` }, body: JSON.stringify({ query: q, max_results: 10, include_domains: ['linkedin.com'], search_depth: 'basic' }) };
+  } else if (provider.name === 'brave') {
     url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10&safesearch=off`;
-    headers['X-Subscription-Token'] = provider.key;
+    init.headers['X-Subscription-Token'] = provider.key;
   } else if (provider.name === 'google') {
     url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(provider.key)}&cx=${encodeURIComponent(provider.cx)}&q=${encodeURIComponent(q)}&num=10`;
   } else {
     throw new Error(`unknown search provider ${provider.name}`);
   }
-  const res = await fetchImpl(url, { headers });
-  if (res.status === 429 || res.status === 402) {
+  const res = await fetchImpl(url, init);
+  if (res.status === 429 || res.status === 402 || res.status === 432 || res.status === 433 || (res.status === 400 && provider.name === 'serper' && /credit/i.test(await res.clone().text().catch(() => '')))) {
     const err = new Error(`${provider.name} search quota exhausted (${res.status})`);
     err.quota = true;
     throw err;
   }
   if (!res.ok) throw new Error(`${provider.name} search failed (${res.status}): ${(await res.text().catch(() => '')).slice(0, 200)}`);
   const data = await res.json();
+  if (provider.name === 'serper') {
+    return (data.organic || []).map((r) => ({ title: r.title || '', url: r.link || '', snippet: r.snippet || '' }));
+  }
+  if (provider.name === 'tavily') {
+    return (data.results || []).map((r) => ({ title: r.title || '', url: r.url || '', snippet: r.content || '' }));
+  }
   if (provider.name === 'brave') {
     return ((data.web && data.web.results) || []).map((r) => ({ title: r.title || '', url: r.url || '', snippet: r.description || '' }));
   }
