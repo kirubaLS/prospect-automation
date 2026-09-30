@@ -70,6 +70,19 @@ const mockFetch = (responses) => async (url, init) => {
   const none = await apollo.findOrganization('k', { 'Company Name': 'Kosmoderma', 'LinkedIn URL': 'https://www.linkedin.com/company/nope/' }, opts);
   assert.strictEqual(none.organization, null);
   assert.match(none.reason, /none matched/);
+
+  // Name search misses, slug-words search hits: the URL is the anchor.
+  const calls = [];
+  const bySlugWords = await apollo.findOrganization(
+    'k',
+    { 'Company Name': '?originalSubdomain=in', 'LinkedIn URL': 'https://www.linkedin.com/company/kosmodermahealthcare/?originalSubdomain=in' },
+    { fetchImpl: async (url, init) => { const b = JSON.parse(init.body); calls.push(b.q_organization_name); const d = /kosmoderma/i.test(b.q_organization_name) ? orgs : { organizations: [{ id: 'x', name: 'Random', linkedin_url: 'http://www.linkedin.com/company/random' }] }; return { ok: true, status: 200, json: async () => d, text: async () => '' }; } }
+  );
+  assert.strictEqual(bySlugWords.organization.id, 'o1', 'falls back to searching by the slug words');
+  assert.deepStrictEqual(calls, ['?originalsubdomain=in', 'kosmodermahealthcare']);
+  const person = await apollo.findOrganization('k', { 'Company Name': 'X', 'LinkedIn URL': 'https://www.linkedin.com/in/some-person/' }, opts);
+  assert.strictEqual(person.organization, null);
+  assert.match(person.reason, /person profile/);
   console.log('PASS: organization matching');
 
   // --- full project run with a mocked Apollo, via the CLI ---

@@ -49,11 +49,30 @@ function parseCompaniesFile(buffer, filename = '') {
       `No companies found in ${filename || 'file'} - need a "Company Name" and/or "LinkedIn URL" column (first sheet, header in row 1)`
     );
   }
-  // A row with only a URL still needs a display name for the sheet/log.
+  // A row with only a URL still needs a display name for the sheet/log:
+  // the slug of the company page, as words ("kosmoderma-healthcare" ->
+  // "kosmoderma healthcare"), never the query string.
   for (const c of companies) {
-    if (!c['Company Name']) c['Company Name'] = c['LinkedIn URL'].replace(/\/+$/, '').split('/').pop();
+    if (!c['Company Name']) c['Company Name'] = nameFromLinkedInUrl(c['LinkedIn URL']);
   }
   return companies;
+}
+
+// Strips query/hash, trailing slashes and the linkedin.com prefix, then
+// returns the last path segment as words. "https://www.linkedin.com/company/
+// acme-corp/?originalSubdomain=in" -> "acme corp".
+function nameFromLinkedInUrl(url) {
+  const path = String(url || '').replace(/[?#].*$/, '').replace(/\/+$/, '');
+  const slug = path.split('/').filter(Boolean).pop() || '';
+  let words = slug;
+  try { words = decodeURIComponent(slug); } catch { /* keep raw */ }
+  return words.replace(/[-_+]+/g, ' ').replace(/\s+/g, ' ').trim() || String(url || '').trim();
+}
+
+// "linkedin.com/in/..." is a person's profile, not a company page: Apollo
+// can never match it to an organization, so say so instead of searching.
+function isPersonProfileUrl(url) {
+  return /linkedin\.com\/in\//i.test(String(url || ''));
 }
 
 function toRow(p) {
@@ -120,4 +139,4 @@ function formatFromName(name = '') {
   return /\.xlsx?$/i.test(name) ? 'xlsx' : 'csv';
 }
 
-module.exports = { parseCompaniesFile, exportProspects, exportCompanies, formatFromName, PROSPECT_COLUMNS };
+module.exports = { parseCompaniesFile, exportProspects, exportCompanies, formatFromName, nameFromLinkedInUrl, isPersonProfileUrl, PROSPECT_COLUMNS };

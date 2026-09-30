@@ -13,6 +13,12 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scraper-test-'));
 const files = require('../src/files');
 const store = require('../src/filestore');
 
+assert.strictEqual(files.nameFromLinkedInUrl('https://www.linkedin.com/company/acme-corp/?originalSubdomain=in'), 'acme corp', 'query string never becomes the name');
+assert.strictEqual(files.nameFromLinkedInUrl('https://www.linkedin.com/company/kosmodermahealthcare/'), 'kosmodermahealthcare');
+assert.strictEqual(files.nameFromLinkedInUrl('linkedin.com/company/12345678'), '12345678');
+assert.ok(files.isPersonProfileUrl('https://www.linkedin.com/in/someone-04100/?originalSubdomain=fr'));
+assert.ok(!files.isPersonProfileUrl('https://www.linkedin.com/company/someone/'));
+
 (async () => {
   // CSV with unusual-but-reasonable headers and a blank line.
   const csv = Buffer.from(
@@ -40,7 +46,7 @@ const store = require('../src/filestore');
   );
   const xlsxParsed = files.parseCompaniesFile(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), 'companies.xlsx');
   assert.strictEqual(xlsxParsed.length, 2);
-  assert.strictEqual(xlsxParsed[1]['Company Name'], 'only-url-co', 'name derived from URL slug');
+  assert.strictEqual(xlsxParsed[1]['Company Name'], 'only url co', 'name derived from URL slug, as words');
 
   assert.throws(() => files.parseCompaniesFile(Buffer.from('foo,bar\n1,2\n'), 'x.csv'), /No companies found/);
 

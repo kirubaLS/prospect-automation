@@ -65,29 +65,48 @@ function mapOrganization(o) {
   };
 }
 
+function slugWords(slug) {
+  let s = slug || '';
+  try { s = decodeURIComponent(s); } catch { /* keep raw */ }
+  return s.replace(/[-_+]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 // Company row (name + LinkedIn URL) -> Apollo organization. Matches on the
 // LinkedIn company slug first (exact), then website domain, then an exact
-// case-insensitive name; a fuzzy name hit alone is not trusted.
+// case-insensitive name; a fuzzy name hit alone is not trusted. Searches by
+// the given name first and, if that finds no slug match, by the slug's own
+// words (the file's name may be a brand or a typo; the URL is the anchor).
 async function findOrganization(apiKey, company, opts = {}) {
   const name = (company['Company Name'] || '').trim();
-  const wantSlug = linkedInSlug(company['LinkedIn URL']);
+  const url = company['LinkedIn URL'] || '';
+  if (/linkedin\.com\/in\//i.test(url)) {
+    return { organization: null, reason: 'the LinkedIn URL is a person profile (linkedin.com/in/...), not a company page (linkedin.com/company/...)' };
+  }
+  const wantSlug = linkedInSlug(url);
   const wantDomain = company.Website ? domainOf(company.Website) : null;
   if (!name && !wantSlug) return { organization: null, reason: 'no company name or LinkedIn URL' };
 
-  const data = await post(apiKey, '/mixed_companies/search', { q_organization_name: name || wantSlug, page: 1, per_page: 10 }, opts);
-  const orgs = (data.organizations || data.accounts || []).map(mapOrganization);
-  if (orgs.length === 0) return { organization: null, reason: 'no Apollo organization matched the name' };
+  const queries = [...new Set([name, slugWords(wantSlug)].map((q) => q.toLowerCase()).filter(Boolean))];
+  let seen = [];
+  for (const q of queries) {
+    const data = await post(apiKey, '/mixed_companies/search', { q_organization_name: q, page: 1, per_page: 10 }, opts);
+    const orgs = (data.organizations || data.accounts || []).map(mapOrganization);
+    seen = seen.concat(orgs);
 
-  const bySlug = wantSlug && orgs.find((o) => linkedInSlug(o.linkedinUrl) === wantSlug);
-  if (bySlug) return { organization: bySlug, matchedBy: 'linkedin' };
-  const byDomain = wantDomain && orgs.find((o) => domainOf(o.website) === wantDomain);
-  if (byDomain) return { organization: byDomain, matchedBy: 'domain' };
-  const byName = orgs.find((o) => o.name.trim().toLowerCase() === name.toLowerCase());
-  if (byName) return { organization: byName, matchedBy: 'name' };
+    const bySlug = wantSlug && orgs.find((o) => linkedInSlug(o.linkedinUrl) === wantSlug);
+    if (bySlug) return { organization: bySlug, matchedBy: 'linkedin' };
+    const byDomain = wantDomain && orgs.find((o) => domainOf(o.website) === wantDomain);
+    if (byDomain) return { organization: byDomain, matchedBy: 'domain' };
+    // A name match is trusted only when the row gives no LinkedIn URL to
+    // check it against, or when the org has no LinkedIn URL to contradict it.
+    const byName = name && orgs.find((o) => o.name.trim().toLowerCase() === name.toLowerCase() && (!wantSlug || !linkedInSlug(o.linkedinUrl)));
+    if (byName) return { organization: byName, matchedBy: 'name' };
+  }
 
+  if (seen.length === 0) return { organization: null, reason: `no Apollo organization matched "${queries.join('" / "')}"` };
   return {
     organization: null,
-    reason: `Apollo returned ${orgs.length} candidate(s) but none matched the LinkedIn URL/name (closest: ${orgs[0].name} ${orgs[0].linkedinUrl})`
+    reason: `Apollo returned ${seen.length} candidate(s) for "${queries.join('" / "')}" but none matched the LinkedIn URL${name ? '/name' : ''} (closest: ${seen[0].name} ${seen[0].linkedinUrl})`
   };
 }
 
