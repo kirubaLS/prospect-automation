@@ -191,6 +191,8 @@ async function loadPresets() {
   const sp = j.searchProviders || [];
   $('searchinfo').textContent = sp.length ? `(${sp.join(' + ')} configured)` : '(not configured on the server - set BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX)';
   document.querySelectorAll('input[name=resolve][value=search], input[name=resolve][value="apollo+search"]').forEach((r) => { r.disabled = !sp.length; if (!sp.length && r.checked) document.querySelector('input[name=resolve][value=apollo]').checked = true; });
+  // With a search key on the server, free web search is the default unless this browser chose otherwise.
+  if (sp.length && !localStorage.getItem('form.resolve')) document.querySelector('input[name=resolve][value=search]').checked = true;
   presets = [...j.presets.map((p) => ({ ...p, source: 'server' })), ...localPresets().map((p) => ({ ...p, source: 'mine' }))];
   const sel = $('preset');
   const cur = sel.value;
