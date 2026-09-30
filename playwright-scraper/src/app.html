@@ -196,13 +196,35 @@ async function loadPresets() {
   const cur = sel.value;
   sel.innerHTML = '<option value="">— choose —</option>' + presets.map((p, i) => `<option value="${i}">${p.name}${p.source === 'mine' ? ' (saved)' : ''}</option>`).join('');
   sel.value = cur;
+  // If the preset in use was changed on the server (a git push of
+  // projects/<name>/config.json), refresh the form with the new values
+  // instead of keeping what this browser remembered.
+  const usedSlug = localStorage.getItem('form.presetSlug');
+  const used = usedSlug && presets.find((p) => p.slug === usedSlug && p.source === 'server');
+  if (used) {
+    sel.value = String(presets.indexOf(used));
+    const snap = localStorage.getItem('form.presetSnapshot');
+    const now = JSON.stringify([used.geography, used.icp, used.peoplePerCompany]);
+    if (snap !== now) { applyPreset(used, true); setMsg(`Preset “${used.name}” was updated on the server — settings refreshed.`, 'ok'); }
+  }
+}
+function applyPreset(p, force) {
+  $('geography').value = p.geography || ''; $('icp').value = p.icp || ''; $('count').value = p.peoplePerCompany || 8;
+  if (!$('label').value || force) $('label').value = $('label').value || p.name;
+  ['geography', 'icp', 'count', 'label'].forEach((id) => $(id).dispatchEvent(new Event('input')));
+  if (p.source === 'server') { localStorage.setItem('form.presetSlug', p.slug); localStorage.setItem('form.presetSnapshot', JSON.stringify([p.geography, p.icp, p.peoplePerCompany])); }
+  else { localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); }
 }
 $('preset').addEventListener('change', () => {
-  const p = presets[$('preset').value]; if (!p) return;
-  $('geography').value = p.geography || ''; $('icp').value = p.icp || ''; $('count').value = p.peoplePerCompany || 8;
-  if (!$('label').value) $('label').value = p.name;
-  ['geography', 'icp', 'count', 'label'].forEach((id) => $(id).dispatchEvent(new Event('input')));
+  const p = presets[$('preset').value];
+  if (!p) { localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); return; }
+  applyPreset(p);
 });
+// Typing over a preset's ICP/geography means it is no longer "the preset".
+['geography', 'icp', 'count'].forEach((id) => $(id).addEventListener('input', () => {
+  const p = presets[$('preset').value];
+  if (p && (String($('geography').value) !== String(p.geography || '') || String($('icp').value) !== String(p.icp || '') || String($('count').value) !== String(p.peoplePerCompany || 8))) { $('preset').value = ''; localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); }
+}));
 function savePreset() {
   const name = prompt('Preset name (e.g. the client name):', $('label').value || '');
   if (!name) return;
