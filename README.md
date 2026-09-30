@@ -11,14 +11,16 @@ n8n, no OpenAI: it fits Render's free tier (≈100 MB RAM).
 ```
 SETUP (per project, typed on the page)   geography of the person · ICP (industries; roles) · people per company
         ▼
-COMPANY LIST (upload)                    CSV / .xlsx with a "LinkedIn URL" column (company page URLs)
+COMPANY LIST (upload)                    CSV / .xlsx with a "Website" column (best, 0 credits) and/or a "LinkedIn URL" column
         ▼
-COMPANY PRE-SCREEN                       matched in Apollo on the LinkedIn slug; industry noted vs ICP
+COMPANY MATCH                            by website domain: none needed (People Search filters by employer domain);
+                                         by LinkedIn URL: Organization Enrichment, 1 credit
         ▼
 APOLLO PEOPLE SEARCH                     decision makers with ICP titles → managers with ICP titles → any decision maker,
                                          filtered by the person's location; up to N per company (default 8)
         ▼
-DOWNLOAD (Excel or CSV)                  one row per person; "Company not found" / "No people found" row otherwise
+DOWNLOAD (Excel or CSV)                  Company, Status, Name, Designation, Location, LinkedIn URL, Activity (blank, for the
+                                         researcher), Note; "Company not found" / "No people found" row otherwise
 ```
 
 ## Deploy on Render (free, no card)
@@ -56,11 +58,16 @@ Free-tier behaviour you should know:
   for the enrichment option, **Bulk People Enrichment**
   (`people/bulk_match`). Or set it as a master key; the app never calls
   anything else and never writes emails or phone numbers.
-- Credits per company, per Apollo's current pricing: 1 for the company
-  lookup (enrichment or one search page), 0 for the people searches, and
-  up to "people per company" for people enrichment. A 100-company batch at
-  8 people each can therefore use up to 900 credits; with the enrichment
-  option off, 100.
+- Credits per company, per Apollo's current pricing: 0 for the company
+  when the row has a website domain (1 when only a LinkedIn URL is given),
+  0 for the people searches, and up to "people per company" for people
+  enrichment, which is what supplies the full name and LinkedIn URL. A
+  100-company batch at 8 people each with websites can therefore use up
+  to 800 credits; with the enrichment option off, 0, but then names are
+  masked ("Sm***h") and there is no LinkedIn URL.
+- LinkedIn activity is not available from Apollo or any data API. The
+  Activity column is left blank for the researcher to fill from the
+  profile.
 
 Per-project presets: `projects/<name>/config.json` (see `projects/sharp`)
 show up in the page's Preset dropdown; **Save as preset** on the page keeps

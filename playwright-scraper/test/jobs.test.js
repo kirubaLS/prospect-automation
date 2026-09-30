@@ -86,7 +86,8 @@ const fetchImpl = async (url, init) => {
   assert.match(empty.note, /Industry "retail" not in ICP list/);
 
   const out = jobs.toCsv(rows);
-  assert.ok(out.startsWith('Company,Company LinkedIn URL,Company Status,Name,Designation,Seniority,Function,LinkedIn URL,Location,Match,Rank,Connections 500+,Activity,Note'));
+  assert.ok(out.startsWith('Company,Company Status,Name,Designation,Location,LinkedIn URL,Activity,Note,Company Website,Company LinkedIn URL\r\n'), 'only the requested columns: ' + out.split('\r\n')[0]);
+  assert.ok(!/Seniority|Function|Match|Rank|Industry|Employees|HQ/.test(out.split('\r\n')[0]), 'no extra columns');
   assert.ok(!/secret@example|1234567890|email|phone|has_email/i.test(out), 'no contact details in the CSV');
 
   // enrich: false -> preview only, no bulk_match, masked names kept as-is.
@@ -113,5 +114,25 @@ const fetchImpl = async (url, init) => {
   assert.strictEqual(x.extension, 'xlsx');
   assert.ok(x.buffer.length > 1000);
   assert.strictEqual(jobs.exportRows(rows, 'csv').buffer.toString('utf8'), out);
+
+  // Website column: people searched by employer domain, zero company-lookup calls.
+  const lookups = [];
+  const domainFetch = async (url, init) => {
+    const u = new URL(url);
+    if (u.pathname.endsWith('/organizations/enrich') || u.pathname.endsWith('/mixed_companies/search')) lookups.push(u.pathname);
+    if (u.pathname.endsWith('/mixed_people/api_search')) {
+      assert.deepStrictEqual(u.searchParams.getAll('q_organization_domains_list[]'), ['kosmoderma.com']);
+      assert.strictEqual(u.searchParams.get('organization_ids[]'), null);
+    }
+    return fetchImpl(url, init);
+  };
+  const csvDomain = Buffer.from('Company Name,Website,LinkedIn URL\nKosmoderma,https://www.kosmoderma.com/about,https://www.linkedin.com/company/kosmodermahealthcare/\n');
+  const r3 = await jobs.runJob({ apiKey: 'k', fileBuffer: csvDomain, filename: 'c.csv', params, fetchImpl: domainFetch });
+  assert.deepStrictEqual(lookups, [], 'no company lookup when a website domain is present');
+  const k3 = r3.rows.filter((r) => r.companyStatus === 'Found');
+  assert.strictEqual(k3.length, 5);
+  assert.strictEqual(k3[0].company, 'Kosmoderma');
+  assert.strictEqual(k3[0].companyWebsite, 'https://www.kosmoderma.com/about');
+  assert.strictEqual(k3[0].profileUrl, 'http://www.linkedin.com/in/priya');
   console.log('PASS: job run against mocked Apollo');
 })().catch((e) => { console.error('FAIL:', e.stack || e.message); process.exit(1); });

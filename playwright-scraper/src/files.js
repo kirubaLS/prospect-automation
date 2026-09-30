@@ -3,7 +3,8 @@ const XLSX = require('xlsx');
 // Accepts the header spellings people actually use in a companies file.
 const COMPANY_HEADER_ALIASES = {
   'Company Name': ['company name', 'company', 'name', 'account', 'account name', 'organisation', 'organization'],
-  'LinkedIn URL': ['linkedin url', 'linkedin', 'url', 'company url', 'linkedin company url', 'link', 'website'],
+  'LinkedIn URL': ['linkedin url', 'linkedin', 'url', 'company url', 'linkedin company url', 'link'],
+  Website: ['website', 'web', 'site', 'domain', 'company website', 'company domain', 'website url', 'homepage'],
   Status: ['status', 'state'],
   Error: ['error', 'notes', 'note']
 };
@@ -35,27 +36,44 @@ function parseCompaniesFile(buffer, filename = '') {
 
   const companies = rows
     .map((row) => {
-      const out = { 'Company Name': '', 'LinkedIn URL': '', Status: '', Error: '' };
+      const out = { 'Company Name': '', 'LinkedIn URL': '', Website: '', Status: '', Error: '' };
       for (const [key, value] of Object.entries(row)) {
         const canon = canonicalHeader(key);
         if (canon in out && value !== '' && out[canon] === '') out[canon] = String(value).trim();
       }
       return out;
     })
-    .filter((c) => c['Company Name'] || c['LinkedIn URL']);
+    .map((c) => {
+      // A website pasted into the URL column, or a LinkedIn URL pasted
+      // into the website column, goes where it belongs.
+      if (c['LinkedIn URL'] && !/linkedin\.com/i.test(c['LinkedIn URL']) && !c.Website) { c.Website = c['LinkedIn URL']; c['LinkedIn URL'] = ''; }
+      if (c.Website && /linkedin\.com/i.test(c.Website) && !c['LinkedIn URL']) { c['LinkedIn URL'] = c.Website; c.Website = ''; }
+      c.Domain = domainOf(c.Website);
+      return c;
+    })
+    .filter((c) => c['Company Name'] || c['LinkedIn URL'] || c.Domain);
 
   if (companies.length === 0) {
     throw new Error(
-      `No companies found in ${filename || 'file'} - need a "Company Name" and/or "LinkedIn URL" column (first sheet, header in row 1)`
+      `No companies found in ${filename || 'file'} - need a "Company Name", "Website" and/or "LinkedIn URL" column (first sheet, header in row 1)`
     );
   }
   // A row with only a URL still needs a display name for the sheet/log:
   // the slug of the company page, as words ("kosmoderma-healthcare" ->
   // "kosmoderma healthcare"), never the query string.
   for (const c of companies) {
-    if (!c['Company Name']) c['Company Name'] = nameFromLinkedInUrl(c['LinkedIn URL']);
+    if (!c['Company Name']) c['Company Name'] = c['LinkedIn URL'] ? nameFromLinkedInUrl(c['LinkedIn URL']) : c.Domain;
   }
   return companies;
+}
+
+// "https://www.acme.co.in/about?x=1" / "acme.co.in" / "info@acme.co.in" -> "acme.co.in"
+function domainOf(value) {
+  let v = String(value || '').trim().toLowerCase();
+  if (!v) return '';
+  if (v.includes('@')) v = v.split('@').pop();
+  v = v.replace(/^[a-z]+:\/\//, '').replace(/^www\./, '').split(/[/?#]/)[0];
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(v) ? v : '';
 }
 
 // Strips query/hash, trailing slashes and the linkedin.com prefix, then
@@ -139,4 +157,4 @@ function formatFromName(name = '') {
   return /\.xlsx?$/i.test(name) ? 'xlsx' : 'csv';
 }
 
-module.exports = { parseCompaniesFile, exportProspects, exportCompanies, formatFromName, nameFromLinkedInUrl, isPersonProfileUrl, PROSPECT_COLUMNS };
+module.exports = { parseCompaniesFile, exportProspects, exportCompanies, formatFromName, nameFromLinkedInUrl, isPersonProfileUrl, domainOf, PROSPECT_COLUMNS };

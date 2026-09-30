@@ -124,7 +124,7 @@
       <div class="drop" id="drop">
         <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none">
         <div><b>Drop the CSV / Excel here</b> or click to choose</div>
-        <div class="hint">A column with each company's LinkedIn page URL (<code>linkedin.com/company/…</code>). Company name optional.</div>
+        <div class="hint">Best: a <b>Website</b> column (e.g. <code>acme.com</code>) — people are searched by employer domain with no company lookup, 0 credits. Otherwise a <b>LinkedIn URL</b> column (<code>linkedin.com/company/…</code>), 1 credit per company. Company name optional.</div>
       </div>
       <div class="preview" id="preview"></div>
       <div class="row">
@@ -146,7 +146,7 @@
         <a class="btn secondary" id="dl" href="#" style="display:none">⬇ Download CSV</a>
         <span class="hint">Same columns in both. Results live on the server only while it runs — download when a job finishes.</span>
       </div>
-      <div class="scroll" style="margin-top:12px"><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Seniority</th><th>Location</th><th>Match</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="7" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
+      <div class="scroll" style="margin-top:12px"><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="5" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
     </section>
   </div>
 
@@ -210,7 +210,7 @@ drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
 drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); };
 fileInput.onchange = () => { if (fileInput.files[0]) setFile(fileInput.files[0]); };
-$('tpl').href = 'data:text/csv;charset=utf-8,' + encodeURIComponent('Company Name,LinkedIn URL\r\nExample Company,https://www.linkedin.com/company/example/\r\n');
+$('tpl').href = 'data:text/csv;charset=utf-8,' + encodeURIComponent('Company Name,Website,LinkedIn URL\r\nExample Company,example.com,https://www.linkedin.com/company/example/\r\n');
 
 function parseCsv(text) {
   const rows = []; let row = [], cell = '', inQ = false;
@@ -231,9 +231,11 @@ async function setFile(f) {
   if (/\.csv$/i.test(f.name)) {
     const rows = parseCsv(await f.text());
     const head = rows[0] || [], body = rows.slice(1);
+    const webCol = head.findIndex((h) => /website|domain|site|web/i.test(h));
     const urlCol = head.findIndex((h) => /linkedin|url|link/i.test(h));
     const bad = urlCol >= 0 ? body.filter((r) => !/linkedin\.com\/(company|school|showcase)\//i.test(r[urlCol] || '')).length : body.length;
-    $('preview').innerHTML = `<div><b>${f.name}</b> · ${body.length} companies · ${kb} KB` + (urlCol < 0 ? ' · <span style="color:var(--bad)">no LinkedIn URL column found</span>' : bad ? ` · <span style="color:var(--warn)">${bad} row(s) without a company page URL (will be looked up by name)</span>` : ' · URLs look good') + `</div>` +
+    const note = webCol >= 0 ? ' · Website column found: 0-credit company lookup' : urlCol < 0 ? ' · <span style="color:var(--bad)">no Website or LinkedIn URL column found</span>' : bad ? ` · <span style="color:var(--warn)">${bad} row(s) without a company page URL (will be looked up by name)</span>` : ' · URLs look good (1 credit per company; add a Website column for 0)';
+    $('preview').innerHTML = `<div><b>${f.name}</b> · ${body.length} companies · ${kb} KB` + note + `</div>` +
       `<table><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body.slice(0, 5).map((r) => `<tr>${head.map((_, i) => `<td>${r[i] || ''}</td>`).join('')}</tr>`).join('')}</tbody></table>` + (body.length > 5 ? `<div class="hint">… and ${body.length - 5} more</div>` : '');
   } else {
     $('preview').innerHTML = `<div><b>${f.name}</b> · ${kb} KB · Excel file (first sheet will be used)</div>`;
@@ -280,7 +282,7 @@ let rowsBusy = false;
 async function loadRows(j) {
   if (!j || rowsBusy) return;
   if (rowsJob !== j.id) { rowsJob = j.id; rowsLoaded = 0; $('rows').querySelector('tbody').innerHTML = ''; $('rows').querySelector('tbody').dataset.lastCo = ''; }
-  if (j.rows <= rowsLoaded) { if (!rowsLoaded) $('rows').querySelector('tbody').innerHTML = '<tr><td colspan="7" class="empty">' + (j.status === 'running' ? 'Waiting for the first company…' : 'No rows.') + '</td></tr>'; return; }
+  if (j.rows <= rowsLoaded) { if (!rowsLoaded) $('rows').querySelector('tbody').innerHTML = '<tr><td colspan="5" class="empty">' + (j.status === 'running' ? 'Waiting for the first company…' : 'No rows.') + '</td></tr>'; return; }
   rowsBusy = true;
   let d;
   try {
@@ -296,10 +298,10 @@ async function loadRows(j) {
     if (x.company !== lastCo) {
       lastCo = x.company;
       const cls = x.companyStatus === 'Found' ? 's-found' : x.companyStatus === 'Company not found' ? 's-nf' : 's-np';
-      tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="7"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`);
+      tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="5"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`);
     }
     if (x.companyStatus === 'Found') {
-      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.seniority)}</td><td>${esc(x.location)}</td><td class="muted">${esc(x.match)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td></tr>`);
+      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : '<span class="muted">needs enrichment</span>'}</td></tr>`);
     }
   }
   tb.dataset.lastCo = lastCo;

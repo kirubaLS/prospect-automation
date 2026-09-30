@@ -18,6 +18,19 @@ assert.strictEqual(files.nameFromLinkedInUrl('https://www.linkedin.com/company/k
 assert.strictEqual(files.nameFromLinkedInUrl('linkedin.com/company/12345678'), '12345678');
 assert.ok(files.isPersonProfileUrl('https://www.linkedin.com/in/someone-04100/?originalSubdomain=fr'));
 assert.ok(!files.isPersonProfileUrl('https://www.linkedin.com/company/someone/'));
+assert.strictEqual(files.domainOf('https://www.Acme.co.in/about?x=1'), 'acme.co.in');
+assert.strictEqual(files.domainOf('acme.com'), 'acme.com');
+assert.strictEqual(files.domainOf('info@acme.com'), 'acme.com');
+assert.strictEqual(files.domainOf('not a domain'), '');
+{
+  const p = files.parseCompaniesFile(Buffer.from('Company,Website\nAcme,acme.com\nBeta,https://www.linkedin.com/company/beta/\n'), 'x.csv');
+  assert.strictEqual(p[0].Domain, 'acme.com');
+  assert.strictEqual(p[1]['LinkedIn URL'], 'https://www.linkedin.com/company/beta/', 'LinkedIn URL in the website column is moved over');
+  assert.strictEqual(p[1].Domain, '');
+  const q = files.parseCompaniesFile(Buffer.from('LinkedIn URL\nacme.com\n'), 'y.csv');
+  assert.strictEqual(q[0].Domain, 'acme.com', 'website in the URL column is moved over');
+  assert.strictEqual(q[0]['Company Name'], 'acme.com');
+}
 
 (async () => {
   // CSV with unusual-but-reasonable headers and a blank line.

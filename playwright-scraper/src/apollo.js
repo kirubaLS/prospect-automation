@@ -162,7 +162,7 @@ function mapPerson(p, org) {
     departments: p.departments || [],
     profileUrl: p.linkedin_url || '',
     location: [p.city, p.state, p.country].filter(Boolean).join(', '),
-    company: (p.organization && p.organization.name) || org.name
+    company: (p.organization && p.organization.name) || org.name || ''
   };
 }
 
@@ -172,13 +172,17 @@ function mapPerson(p, org) {
 // optional; person_titles is an OR list matched against the current title.
 // On plans where this endpoint returns only a preview (masked last name,
 // no LinkedIn URL), enrichPeople() fills in the rest for selected people.
+// `org` is either a matched Apollo organization ({id, name}) or a domain
+// stand-in ({domain, name}); by domain no company lookup call is needed.
 async function searchPeople(apiKey, org, { seniorities, titles, locations, perPage = 25, page = 1 }, opts = {}) {
   const query = {
-    organization_ids: [org.id],
     person_seniorities: seniorities,
     page,
     per_page: perPage
   };
+  if (org.id) query.organization_ids = [org.id];
+  else if (org.domain) query.q_organization_domains_list = [org.domain];
+  else throw new Error('searchPeople needs an organization id or a domain');
   if (titles && titles.length) query.person_titles = titles;
   if (locations && locations.length) query.person_locations = locations;
 

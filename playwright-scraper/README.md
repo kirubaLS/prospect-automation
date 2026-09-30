@@ -46,10 +46,13 @@ Run as a web app (Render): `npm run app` serves a one-page UI — upload
 the companies file (CSV or Excel), type the person geography (shortcuts:
 South India, US, APAC…) and the ICP ("Industries; roles"), set people per
 company (default 8, max 25), run, download **Excel or CSV** with the same
-columns: one row per person (Company, Name, Designation, Seniority,
-Function, LinkedIn URL, Location, Match, Rank, plus blank Connections 500+
-/ Activity columns for the researcher) and a `Company not found` /
-`No people found` row for every company that produced nothing. No emails
+columns: one row per person (Company, Company Status, Name, Designation,
+Location, LinkedIn URL, a blank Activity column for the researcher, Note,
+and the company's website / LinkedIn URL from the input) and a
+`Company not found` / `No people found` row for every company that
+produced nothing. A **Website** column in the input is preferred: people
+are then searched by employer domain with no company lookup call (0
+credits); a LinkedIn company URL costs 1 credit per company. No emails
 or phones are ever written. `projects/*/config.json` appear as presets that
 prefill the form, and **Save as preset** keeps your own geography/ICP
 combos in the browser. The page shows a preview of the uploaded file (and

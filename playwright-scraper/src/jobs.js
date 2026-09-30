@@ -115,6 +115,7 @@ function sanitize(p, org, tier, icpHit) {
   // Explicitly whitelist fields: never emails, phones, or anything else.
   return {
     apolloId: p.apolloId,
+    apolloOrgName: p.company && p.company !== org.name ? p.company : '',
     nameMasked: !!p.nameMasked,
     name: p.name,
     title: p.title,
@@ -191,6 +192,7 @@ function companyRow(company, status, note, org) {
   return {
     company: (org && org.name) || company['Company Name'] || '',
     companyUrl: company['LinkedIn URL'] || '',
+    companyWebsite: company.Website || '',
     companyStatus: status,
     note: note || '',
     apolloOrg: org ? org.name : '',
@@ -215,11 +217,20 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
       logger.warn('Stop requested');
       break;
     }
-    const name = company['Company Name'] || company['LinkedIn URL'];
+    const name = company['Company Name'] || company['LinkedIn URL'] || company.Domain;
     state.current = name;
     onProgress(state);
     try {
-      const { organization: org, matchedBy, reason } = await apollo.findOrganization(apiKey, company, opts);
+      // A website domain lets People Search filter by employer directly, so
+      // the company lookup (1 credit) is skipped entirely. The LinkedIn
+      // URL / name route is used only when the row has no domain.
+      let org, matchedBy, reason;
+      if (company.Domain) {
+        org = { id: null, domain: company.Domain, name: company['Company Name'] || company.Domain, industry: '', employees: null };
+        matchedBy = 'domain';
+      } else {
+        ({ organization: org, matchedBy, reason } = await apollo.findOrganization(apiKey, company, opts));
+      }
       if (!org) {
         logger.warn(`[${name}] not found: ${reason}`);
         rows.push({ ...companyRow(company, 'Company not found', reason), name: 'Company not found' });
@@ -231,9 +242,11 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
             ? `Industry "${org.industry}" not in ICP list`
             : '';
         const people = await findPeople(apiKey, org, params, opts);
+        // By domain the company's own name comes back on each person.
+        if (!org.id && people.length && people[0].apolloOrgName && !company['Company Name']) org.name = people[0].apolloOrgName;
         if (!people.length) {
-          rows.push({ ...companyRow(company, 'No people found', [industryNote, 'no one matched geography/ICP in Apollo'].filter(Boolean).join('; '), org), name: 'No people found' });
-          state.noPeople++;
+          rows.push({ ...companyRow(company, org.id ? 'No people found' : 'Company not found', [industryNote, org.id ? 'no one matched geography/ICP in Apollo' : `Apollo has no people for ${org.domain} matching the geography/ICP (or no such company)`].filter(Boolean).join('; '), org), name: org.id ? 'No people found' : 'Company not found' });
+          if (org.id) state.noPeople++; else state.notFound++;
         } else {
           people.forEach((p, i) => rows.push({ ...companyRow(company, 'Found', industryNote, org), ...p, rank: i + 1 }));
           state.found++;
@@ -257,10 +270,13 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
   return { rows, state, params };
 }
 
+// Exactly what the researchers asked for: who, their designation, where
+// they are, the profile link; Activity is left blank for them to fill from
+// the profile (no data API has it). Company Status / Note explain rows
+// with nothing found. Nothing else, and never emails or phone numbers.
 const OUTPUT_COLUMNS = [
-  ['Company', 'company'], ['Company LinkedIn URL', 'companyUrl'], ['Company Status', 'companyStatus'], ['Name', 'name'], ['Designation', 'title'],
-  ['Seniority', 'seniority'], ['Function', 'function'], ['LinkedIn URL', 'profileUrl'], ['Location', 'location'], ['Match', 'match'], ['Rank', 'rank'],
-  ['Connections 500+', '_manual'], ['Activity', '_manual'], ['Note', 'note'], ['Apollo Org', 'apolloOrg'], ['Industry', 'industry'], ['Employees', 'employees'], ['HQ', 'hq']
+  ['Company', 'company'], ['Company Status', 'companyStatus'], ['Name', 'name'], ['Designation', 'title'], ['Location', 'location'],
+  ['LinkedIn URL', 'profileUrl'], ['Activity', '_manual'], ['Note', 'note'], ['Company Website', 'companyWebsite'], ['Company LinkedIn URL', 'companyUrl']
 ];
 
 function csvEscape(v) {
