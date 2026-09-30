@@ -231,7 +231,11 @@ async function findPeople(apiKey, org, params, opts = {}) {
   for (const p of out) {
     if (p.profileUrl && !p.nameMasked) continue;
     try {
-      const hit = await websearch.findProfile({ firstName: p.firstName, lastMasked: p.lastMasked, title: p.title, company: p.apolloOrgName || p.company || org.name }, providers, opts);
+      const hit = await websearch.findProfile(
+        { apolloId: p.apolloId, firstName: p.firstName, lastMasked: p.lastMasked, title: p.title, company: p.apolloOrgName || p.company || org.name },
+        providers,
+        { ...opts, gl: websearch.countryCode(params.locations), counter: opts.ledger }
+      );
       if (hit) {
         found++;
         p.name = hit.fullName || p.name;
@@ -352,7 +356,7 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
     onProgress(state);
   }
   state.current = '';
-  logger.info(`Apollo calls: ${ledger.peopleSearch} people searches (0 credits), ${ledger.orgEnrich} company enrichments, ${ledger.orgSearch} company searches, ${ledger.peopleEnrich} enrichment batches (${ledger.peopleEnriched} people) - about ${ledger.estimatedCredits} credits`);
+  logger.info(`Apollo calls: ${ledger.peopleSearch} people searches (0 credits), ${ledger.orgEnrich} company enrichments, ${ledger.orgSearch} company searches, ${ledger.peopleEnrich} enrichment batches (${ledger.peopleEnriched} people) - about ${ledger.estimatedCredits} credits; ${ledger.webSearches || 0} web search queries`);
   return { rows, state, params };
 }
 

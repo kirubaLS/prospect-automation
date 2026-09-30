@@ -36,21 +36,25 @@ function providersFromEnv(env = process.env) {
 }
 
 // Normalised {title, url, snippet} list from either provider.
-async function webSearch(provider, q, { fetchImpl = fetch } = {}) {
+async function webSearch(provider, q, opts = {}) {
+  const { fetchImpl = fetch } = opts;
+  if (opts.counter) opts.counter.webSearches = (opts.counter.webSearches || 0) + 1;
   await pace();
   let url;
   let init = { headers: { Accept: 'application/json' } };
   if (provider.name === 'serper') {
     url = 'https://google.serper.dev/search';
-    init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-KEY': provider.key }, body: JSON.stringify({ q, num: 10 }) };
+    const body = { q, num: 10 };
+    if (opts.gl) body.gl = opts.gl;
+    init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-KEY': provider.key }, body: JSON.stringify(body) };
   } else if (provider.name === 'tavily') {
     url = 'https://api.tavily.com/search';
     init = { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.key}` }, body: JSON.stringify({ query: q, max_results: 10, include_domains: ['linkedin.com'], search_depth: 'basic' }) };
   } else if (provider.name === 'brave') {
-    url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10&safesearch=off`;
+    url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10&safesearch=off${opts.gl ? `&country=${opts.gl}` : ''}`;
     init.headers['X-Subscription-Token'] = provider.key;
   } else if (provider.name === 'google') {
-    url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(provider.key)}&cx=${encodeURIComponent(provider.cx)}&q=${encodeURIComponent(q)}&num=10`;
+    url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(provider.key)}&cx=${encodeURIComponent(provider.cx)}&q=${encodeURIComponent(q)}&num=10${opts.gl ? `&gl=${opts.gl}` : ''}`;
   } else {
     throw new Error(`unknown search provider ${provider.name}`);
   }
@@ -109,8 +113,26 @@ function parseLocation(snippet) {
   return m ? m[1].trim() : '';
 }
 
+const STOP = ['the', 'and', 'ltd', 'limited', 'pvt', 'private', 'inc', 'llc', 'llp', 'group', 'company', 'co', 'of', 'at', 'in', 'for'];
 function significantWords(s) {
-  return norm(s).split(' ').filter((w) => w.length >= 3 && !['the', 'and', 'ltd', 'limited', 'pvt', 'private', 'inc', 'llc', 'llp', 'group', 'company', 'co'].includes(w));
+  // Two-letter words are kept because IT, HR, GM, VP, MD carry meaning here.
+  return norm(s).split(' ').filter((w) => w.length >= 2 && !STOP.includes(w));
+}
+// "Kosmoderma Skin, Hair & Body Clinics" -> "Kosmoderma Skin": the first
+// two distinctive words identify the company without over-restricting.
+function shortCompany(name) {
+  const words = String(name || '').replace(/[|,()]/g, ' ').split(/\s+/).filter((w) => w && !STOP.includes(w.toLowerCase()));
+  return words.slice(0, 2).join(' ');
+}
+// Serper/Google country code from the job's person locations ("Tamil Nadu,
+// India" -> "in"), so the search is run against that country's index.
+const COUNTRY_CODES = { india: 'in', 'united states': 'us', usa: 'us', us: 'us', 'united kingdom': 'gb', uk: 'gb', 'united arab emirates': 'ae', uae: 'ae', singapore: 'sg', australia: 'au', canada: 'ca', germany: 'de', france: 'fr', netherlands: 'nl', 'saudi arabia': 'sa', qatar: 'qa', malaysia: 'my', indonesia: 'id', philippines: 'ph', japan: 'jp', 'south africa': 'za', ireland: 'ie', spain: 'es', italy: 'it' };
+function countryCode(locations) {
+  for (const loc of locations || []) {
+    const last = String(loc).split(',').pop().trim().toLowerCase();
+    if (COUNTRY_CODES[last]) return COUNTRY_CODES[last];
+  }
+  return null;
 }
 
 // Scores one search result against what Apollo told us. Returns null when
@@ -139,39 +161,70 @@ function scoreResult(r, person) {
   return { score, fullName: parsed.name.trim(), profileUrl: r.url.split('?')[0], location: parseLocation(r.snippet), titleSeen: parsed.title };
 }
 
+// Three queries, strict to loose; the search stops at the first one that
+// yields a verified match, so most people cost a single query.
+function buildQueries(person) {
+  const first = `"${person.firstName}"`;
+  const title = String(person.title || '').replace(/[|"]/g, ' ').replace(/\s+/g, ' ').trim();
+  const company = String(person.company || '').replace(/["]/g, '').trim();
+  const short = shortCompany(company);
+  const qs = [];
+  if (title && company) qs.push(`${first} "${title}" "${company}" site:linkedin.com/in`);
+  if (title && short) qs.push(`${first} ${title} "${short}" site:linkedin.com/in`);
+  if (short) qs.push(`${first} "${short}" linkedin`);
+  else if (title) qs.push(`${first} "${title}" site:linkedin.com/in`);
+  return [...new Set(qs)];
+}
 function buildQuery(person) {
-  const parts = [`"${person.firstName}"`];
-  if (person.title) parts.push(`"${person.title}"`);
-  if (person.company) parts.push(`"${person.company}"`);
-  parts.push('site:linkedin.com/in');
-  return parts.join(' ');
+  return buildQueries(person)[0] || '';
 }
 
-// person: { firstName, lastMasked, title, company }
+// People already resolved in this process are not searched again (a rerun
+// of the same file costs no queries for them).
+const cache = new Map();
+const CACHE_MAX = 5000;
+
+// person: { firstName, lastMasked, title, company, apolloId }
+// opts: { fetchImpl, gl, counter }
 // Returns { profileUrl, fullName, location, provider } or null.
 async function findProfile(person, providers, opts = {}) {
   if (!person.firstName) return null;
-  const q = buildQuery(person);
-  for (const provider of providers) {
-    if (provider.exhausted) continue;
-    let results;
-    try {
-      results = await webSearch(provider, q, opts);
-    } catch (err) {
-      if (err.quota) {
-        provider.exhausted = true;
-        logger.warn(`${provider.name}: ${err.message} - trying the next provider`);
-        continue;
+  const cacheKey = person.apolloId || `${person.firstName}|${person.lastMasked}|${person.title}|${person.company}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+  const queries = buildQueries(person);
+  let searchedOk = false;
+  for (const q of queries) {
+    for (const provider of providers) {
+      if (provider.exhausted) continue;
+      let results;
+      try {
+        results = await webSearch(provider, q, opts);
+      } catch (err) {
+        if (err.quota) {
+          provider.exhausted = true;
+          logger.warn(`${provider.name}: ${err.message} - trying the next provider`);
+          continue;
+        }
+        throw err;
       }
-      throw err;
+      searchedOk = true;
+      const best = results.map((r) => scoreResult(r, person)).filter(Boolean).sort((a, b) => b.score - a.score)[0];
+      if (best && best.score >= 4) {
+        const hit = { ...best, provider: provider.name, query: q };
+        if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
+        cache.set(cacheKey, hit);
+        return hit;
+      }
+      break; // this query searched fine but found nothing - try the next, looser query
     }
-    const best = results.map((r) => scoreResult(r, person)).filter(Boolean).sort((a, b) => b.score - a.score)[0];
-    if (best && best.score >= 4) return { ...best, provider: provider.name };
-    return null; // searched fine, just no confident match - do not spend a second provider's quota
   }
-  const err = new Error('all web search providers are out of quota');
-  err.quota = true;
-  throw err;
+  if (!searchedOk) {
+    const err = new Error('all web search providers are out of quota');
+    err.quota = true;
+    throw err;
+  }
+  return null;
 }
 
-module.exports = { findProfile, providersFromEnv, webSearch, scoreResult, parseTitle, parseLocation, maskedToRegex, buildQuery };
+module.exports = { findProfile, providersFromEnv, webSearch, scoreResult, parseTitle, parseLocation, maskedToRegex, buildQuery, buildQueries, countryCode, shortCompany, _cache: cache };

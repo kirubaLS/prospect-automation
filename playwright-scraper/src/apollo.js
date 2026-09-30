@@ -36,7 +36,7 @@ const LEDGER_KEYS = {
   '/people/bulk_match': 'peopleEnrich'
 };
 function newLedger() {
-  return { peopleSearch: 0, orgSearch: 0, orgEnrich: 0, peopleEnrich: 0, peopleEnriched: 0, estimatedCredits: 0 };
+  return { peopleSearch: 0, orgSearch: 0, orgEnrich: 0, peopleEnrich: 0, peopleEnriched: 0, estimatedCredits: 0, webSearches: 0 };
 }
 function record(ledger, path, data) {
   if (!ledger) return;

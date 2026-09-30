@@ -72,7 +72,7 @@ const fetchImpl = async (url, init) => {
 
   assert.deepStrictEqual({ total: state.total, found: state.found, notFound: state.notFound, noPeople: state.noPeople, prospects: state.prospects }, { total: 3, found: 1, notFound: 1, noPeople: 1, prospects: 5 });
   // LinkedIn-URL path: 1 credit per company found via enrichment (2 orgs found, Ghost not), plus 5 enriched people.
-  assert.deepStrictEqual({ ...state.apollo }, { peopleSearch: 6, orgSearch: 1, orgEnrich: 3, peopleEnrich: 1, peopleEnriched: 5, estimatedCredits: 8 });
+  assert.deepStrictEqual({ ...state.apollo }, { peopleSearch: 6, orgSearch: 1, orgEnrich: 3, peopleEnrich: 1, peopleEnriched: 5, estimatedCredits: 8, webSearches: 0 });
   const k = rows.filter((r) => r.companyStatus === 'Found');
   assert.deepStrictEqual(k.map((r) => r.name), ['Priya N', 'Anu P', 'Raj B', 'Chytra Anand', 'Siva M'], 'ICP matches first, then decision-maker fallback');
   assert.deepStrictEqual(k.map((r) => r.match), ['ICP match', 'ICP match', 'ICP match', 'Fallback (no ICP title)', 'Fallback (no ICP title)']);
@@ -95,6 +95,7 @@ const fetchImpl = async (url, init) => {
 
   // resolve: 'search' -> Apollo preview + web search resolves URL/name/location, no bulk_match.
   const web = require('../src/websearch');
+  web._cache.clear();
   const searchCalls = [];
   const searchFetch = async (url, init) => {
     const u = new URL(url);
@@ -102,7 +103,7 @@ const fetchImpl = async (url, init) => {
       searchCalls.push(u.searchParams.get('q'));
       assert.strictEqual(init.headers['X-Subscription-Token'], 'brave-key');
       const q = u.searchParams.get('q');
-      const m = q.match(/^"([^"]+)" "([^"]+)" "([^"]+)"/);
+      const m = q.match(/^"([^"]+)"/);
       const first = m[1];
       const person = all.find((p) => p.first_name === first);
       const results = person ? [
@@ -120,6 +121,7 @@ const fetchImpl = async (url, init) => {
   const k4 = r4.rows.filter((r) => r.companyStatus === 'Found');
   assert.strictEqual(searchCalls.length, 5, 'one web search per kept person');
   assert.match(searchCalls[0], /^"Priya" "IT Head" "Kosmoderma Healthcare" site:linkedin\.com\/in$/);
+  assert.strictEqual(r4.state.apollo.webSearches, 5);
   assert.deepStrictEqual(k4.map((r) => r.name), ['Priya NxyzN', 'Anu PxyzP', 'Raj BxyzB', 'Chytra Anxyzd', 'Siva MxyzM'], 'surname verified against the mask (Na***d style) and the wrong-surname result rejected');
   assert.deepStrictEqual(k4.map((r) => r.profileUrl), ['https://in.linkedin.com/in/priya-real', 'https://in.linkedin.com/in/anu-real', 'https://in.linkedin.com/in/raj-real', 'https://in.linkedin.com/in/chytra-real', 'https://in.linkedin.com/in/siva-real']);
   assert.deepStrictEqual([...new Set(k4.map((r) => r.location))], ['Bengaluru, Karnataka, India'], 'location parsed from the snippet');
@@ -131,6 +133,7 @@ const fetchImpl = async (url, init) => {
     if (new URL(url).hostname === 'api.search.brave.com' && ++n > 2) return { ok: false, status: 429, json: async () => ({}), text: async () => 'quota' };
     return searchFetch(url, init);
   };
+  web._cache.clear();
   const r5 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'search', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: quotaFetch });
   const k5 = r5.rows.filter((r) => r.companyStatus === 'Found');
   assert.strictEqual(k5.filter((r) => r.profileUrl).length, 2);
@@ -148,7 +151,7 @@ const fetchImpl = async (url, init) => {
     }
     return searchFetch(url, init);
   };
-  searchCalls.length = 0;
+  searchCalls.length = 0; web._cache.clear();
   const r6 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'apollo+search', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: partialEnrich });
   const k6 = r6.rows.filter((r) => r.companyStatus === 'Found');
   assert.deepStrictEqual(k6.map((r) => [r.name, r.resolvedBy]), [['Priya N', 'apollo'], ['Anu P', 'apollo'], ['Raj BxyzB', 'brave'], ['Chytra Anand', 'apollo'], ['Siva MxyzM', 'brave']], 'Apollo exact first, web search only for the two Apollo lacked');
@@ -221,7 +224,7 @@ const fetchImpl = async (url, init) => {
   const csvDomain = Buffer.from('Company Name,Website,LinkedIn URL\nKosmoderma,https://www.kosmoderma.com/about,https://www.linkedin.com/company/kosmodermahealthcare/\n');
   const r3 = await jobs.runJob({ apiKey: 'k', fileBuffer: csvDomain, filename: 'c.csv', params, fetchImpl: domainFetch });
   assert.deepStrictEqual(lookups, [], 'no company lookup when a website domain is present');
-  assert.deepStrictEqual({ ...r3.state.apollo }, { peopleSearch: 3, orgSearch: 0, orgEnrich: 0, peopleEnrich: 1, peopleEnriched: 5, estimatedCredits: 5 }, 'ledger: domain path costs only the enrichment');
+  assert.deepStrictEqual({ ...r3.state.apollo }, { peopleSearch: 3, orgSearch: 0, orgEnrich: 0, peopleEnrich: 1, peopleEnriched: 5, estimatedCredits: 5, webSearches: 0 }, 'ledger: domain path costs only the enrichment');
   const r3b = await jobs.runJob({ apiKey: 'k', fileBuffer: csvDomain, filename: 'c.csv', params: { ...params, resolve: 'none' }, fetchImpl: domainFetch });
   assert.strictEqual(r3b.state.apollo.estimatedCredits, 0, 'domain path + no resolution = 0 credits');
   assert.strictEqual(r3b.state.apollo.peopleSearch, 3);
