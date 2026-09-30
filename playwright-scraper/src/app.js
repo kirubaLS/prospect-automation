@@ -114,8 +114,8 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
   const locations = parseGeography(geography);
   const { industries, keywords } = parseIcp(icp);
   if (!keywords.length) throw new Error('ICP is empty - list the roles/functions to look for (e.g. "IT, Administration, Procurement, Finance")');
-  resolve = ['search', 'apollo', 'none'].includes(resolve) ? resolve : SEARCH_PROVIDERS.length ? 'search' : 'apollo';
-  if (resolve === 'search' && !SEARCH_PROVIDERS.length) throw new Error('web search is not configured on the server (BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX) - choose Apollo enrichment or none');
+  resolve = ['search', 'apollo', 'apollo+search', 'none'].includes(resolve) ? resolve : 'apollo';
+  if ((resolve === 'search' || resolve === 'apollo+search') && !SEARCH_PROVIDERS.length) throw new Error('web search is not configured on the server (BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX) - choose Apollo enrichment or none');
 
   const id = crypto.randomBytes(6).toString('hex');
   const job = {

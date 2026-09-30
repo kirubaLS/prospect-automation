@@ -116,8 +116,9 @@
 
     <label>LinkedIn URL + full name via</label>
     <div id="resolve" style="display:grid;gap:6px;font-size:13.5px">
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="search" checked style="margin-top:3px"> <span><b>Free web search</b> <small id="searchinfo">(Brave / Google key on the server)</small><br><span class="hint" style="margin:0">Apollo's free search gives first name, masked surname and title; a web search finds the profile and the app checks the surname against Apollo's mask before accepting it.</span></span></label>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="apollo" style="margin-top:3px"> <span><b>Apollo enrichment</b> <small>1 credit per person</small><br><span class="hint" style="margin:0">Exact, but costs up to “people per company” credits per company. Emails and phones are never requested.</span></span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="apollo" checked style="margin-top:3px"> <span><b>Apollo enrichment</b> <small>exact · 1 credit per person</small><br><span class="hint" style="margin:0">Apollo's own record for each person kept: full name, LinkedIn URL, location. Emails and phones are never requested.</span></span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="apollo+search" style="margin-top:3px"> <span><b>Apollo first, then free web search for the rest</b><br><span class="hint" style="margin:0">Exact where Apollo has the URL; anyone Apollo leaves blank goes to the web search below.</span></span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="search" style="margin-top:3px"> <span><b>Free web search only</b> <small id="searchinfo">(Brave / Google key on the server)</small><br><span class="hint" style="margin:0">Apollo's free search gives first name, masked surname and title; a web search finds the profile and the app checks the surname against Apollo's mask before accepting it.</span></span></label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="none" style="margin-top:3px"> <span><b>Neither</b> <small>0 credits, preview only</small><br><span class="hint" style="margin:0">First name, masked surname, title. No URL.</span></span></label>
     </div>
   </section>
@@ -178,7 +179,7 @@ $('theme').onclick = () => { const cur = document.documentElement.dataset.theme 
 // form persistence
 ['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
 { const v = localStorage.getItem('form.resolve'); if (v) { const r = document.querySelector(`input[name=resolve][value=${v}]`); if (r) r.checked = true; } document.querySelectorAll('input[name=resolve]').forEach((r) => r.addEventListener('change', () => localStorage.setItem('form.resolve', r.value))); }
-const resolveValue = () => (document.querySelector('input[name=resolve]:checked') || {}).value || 'search';
+const resolveValue = () => (document.querySelector('input[name=resolve]:checked') || {}).value || 'apollo';
 GEO_SHORTCUTS.forEach((g) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = g; c.onclick = () => { const cur = $('geography').value.trim(); $('geography').value = cur ? cur + '; ' + g : g; $('geography').dispatchEvent(new Event('input')); }; $('geochips').appendChild(c); });
 
 // presets: server (projects/) + browser-saved
@@ -189,9 +190,7 @@ async function loadPresets() {
   $('keywarn').style.display = j.apolloKeySet ? 'none' : '';
   const sp = j.searchProviders || [];
   $('searchinfo').textContent = sp.length ? `(${sp.join(' + ')} configured)` : '(not configured on the server - set BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX)';
-  const sr = document.querySelector('input[name=resolve][value=search]');
-  sr.disabled = !sp.length;
-  if (!sp.length && sr.checked && !localStorage.getItem('form.resolve')) document.querySelector('input[name=resolve][value=apollo]').checked = true;
+  document.querySelectorAll('input[name=resolve][value=search], input[name=resolve][value="apollo+search"]').forEach((r) => { r.disabled = !sp.length; if (!sp.length && r.checked) document.querySelector('input[name=resolve][value=apollo]').checked = true; });
   presets = [...j.presets.map((p) => ({ ...p, source: 'server' })), ...localPresets().map((p) => ({ ...p, source: 'mine' }))];
   const sel = $('preset');
   const cur = sel.value;
@@ -279,7 +278,7 @@ function show(j) {
   $('stopbtn').disabled = !(j && j.status === 'running');
   if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
-  $('jobname').innerHTML = `${esc(j.label)} · ${j.params.peoplePerCompany}/company · ${j.params.locations.join(' | ') || 'anywhere'} · ${j.params.icpKeywords.join(', ')}${j.params.resolve === 'search' ? ' · web search' : j.params.resolve === 'apollo' ? ' · Apollo enrichment' : ' · preview only'}${j.params.searchExhausted ? ' · <b>search quota ran out</b>' : ''}`;
+  $('jobname').innerHTML = `${esc(j.label)} · ${j.params.peoplePerCompany}/company · ${j.params.locations.join(' | ') || 'anywhere'} · ${j.params.icpKeywords.join(', ')}${j.params.resolve === 'search' ? ' · web search' : j.params.resolve === 'apollo' ? ' · Apollo enrichment' : j.params.resolve === 'apollo+search' ? ' · Apollo, then web search' : ' · preview only'}${j.params.searchExhausted ? ' · <b>search quota ran out</b>' : ''}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');

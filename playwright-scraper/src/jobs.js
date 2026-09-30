@@ -146,7 +146,7 @@ async function findPeople(apiKey, org, params, opts = {}) {
     { label: 'Decision makers · any title', seniorities: DECISION_MAKERS, titles: [], fallback: true }
   ];
   const seen = new Set();
-  const out = [];
+  let out = [];
   for (const tier of tiers) {
     if (out.length >= want) break;
     if (!titles.length && tier.titles.length) continue;
@@ -176,12 +176,20 @@ async function findPeople(apiKey, org, params, opts = {}) {
   //             obfuscated surname
   //   apollo  - Apollo Bulk People Enrichment, 1 credit per person
   //   none    - leave the preview as is
-  const need = out.filter((p) => !p.profileUrl || p.nameMasked);
+  //   apollo+search - Apollo first (exact), web search only for anyone
+  //             Apollo left without a URL
+  let need = out.filter((p) => !p.profileUrl || p.nameMasked);
   if (!need.length || params.resolve === 'none') return out;
-  if (params.resolve === 'apollo') {
+  if (params.resolve === 'apollo' || params.resolve === 'apollo+search') {
     const { people: full, requested, enriched } = await apollo.enrichPeople(apiKey, out, opts);
     logger.info(`    enrichment: ${enriched}/${requested} filled in`);
-    return full.map((p) => ({ ...p, seniority: SENIORITY_LABEL[p.seniority] || p.seniority || '', function: p.function || (p.departments || []).join(', ') }));
+    out = full.map((p) => ({ ...p, seniority: SENIORITY_LABEL[p.seniority] || p.seniority || '', function: p.function || (p.departments || []).join(', '), resolvedBy: p.profileUrl && !p.nameMasked ? 'apollo' : p.resolvedBy }));
+    need = out.filter((p) => !p.profileUrl || p.nameMasked);
+    if (params.resolve === 'apollo' || !need.length) {
+      for (const p of need) p.note = 'Apollo enrichment returned no LinkedIn URL for this person';
+      return out;
+    }
+    logger.info(`    ${need.length} still without a URL after Apollo - trying web search`);
   }
   const providers = params.searchProviders || [];
   if (!providers.length) throw new Error('no web search provider configured - set BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX on the server, or choose Apollo enrichment');

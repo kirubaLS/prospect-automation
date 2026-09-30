@@ -135,6 +135,24 @@ const fetchImpl = async (url, init) => {
   assert.ok(k5.slice(2).every((r) => /quota/.test(r.note)), 'unresolved people carry the quota note');
   assert.strictEqual(r5.params.searchExhausted, true);
 
+  // resolve: 'apollo+search' -> Apollo fills what it can; only the rest go to web search.
+  const partialEnrich = async (url, init) => {
+    const u = new URL(url);
+    if (u.pathname.endsWith('/people/bulk_match')) {
+      const b = JSON.parse(init.body);
+      // Apollo knows everyone except Raj and Siva
+      const d = { matches: b.details.map((x) => ['raj', 'siva'].includes(x.id) ? null : all.find((p) => p.id === x.id)) };
+      return { ok: true, status: 200, json: async () => d, text: async () => '' };
+    }
+    return searchFetch(url, init);
+  };
+  searchCalls.length = 0;
+  const r6 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'apollo+search', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: partialEnrich });
+  const k6 = r6.rows.filter((r) => r.companyStatus === 'Found');
+  assert.deepStrictEqual(k6.map((r) => [r.name, r.resolvedBy]), [['Priya N', 'apollo'], ['Anu P', 'apollo'], ['Raj BxyzB', 'brave'], ['Chytra Anand', 'apollo'], ['Siva MxyzM', 'brave']], 'Apollo exact first, web search only for the two Apollo lacked');
+  assert.strictEqual(searchCalls.length, 2, 'web search queries only for people Apollo left blank');
+  assert.ok(k6.every((r) => r.profileUrl));
+
   // resolve: 'none' -> preview only, no bulk_match, masked names kept as-is.
   const before = calls.enrich;
   const r2 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'none' }, fetchImpl });

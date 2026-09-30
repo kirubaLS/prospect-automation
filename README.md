@@ -61,7 +61,10 @@ Free-tier behaviour you should know:
 - **Getting the LinkedIn URL and full name for free.** Apollo's free
   People API Search returns only a preview per person: first name, masked
   surname ("Na***n"), title. The page offers three ways to complete it:
-  - **Free web search** (default when configured): one query per person
+  - **Apollo enrichment** (default): exact, 1 credit per person kept.
+  - **Apollo first, then free web search**: exact where Apollo has the URL;
+    only the people Apollo leaves blank go to the web search.
+  - **Free web search**: one query per person
     such as `"Priya" "IT Head" "Kosmoderma" site:linkedin.com/in` through
     an official search API. The result title gives the full name and the
     snippet the location; the app accepts a result only if the first name
@@ -80,7 +83,6 @@ Free-tier behaviour you should know:
     Set both and the app falls over to Google when Brave's month runs out.
     People it cannot match confidently keep the masked name and get the
     note "LinkedIn URL not found by web search".
-  - **Apollo enrichment**: exact, 1 credit per person kept.
   - **Neither**: preview only, 0 credits, no URL.
 - Credits per company, per Apollo's current pricing: 0 for the company
   when the row has a website domain (1 when only a LinkedIn URL is given),
