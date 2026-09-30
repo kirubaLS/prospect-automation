@@ -255,7 +255,10 @@ async function findPeople(apiKey, org, params, opts = {}) {
         for (const q of out) if (q !== p && (!q.profileUrl || q.nameMasked) && !q.note) q.note = p.note;
         break;
       }
-      throw err;
+      // One person's search failing (network blip, odd response) must not
+      // fail the company: note it and carry on with the next person.
+      logger.warn(`    web search failed for ${p.name}: ${err.message}`);
+      p.note = `web search failed: ${err.message}`;
     }
   }
   logger.info(`    web search: ${found}/${need.length} profiles resolved`);

@@ -140,6 +140,20 @@ const fetchImpl = async (url, init) => {
   assert.ok(k5.slice(2).every((r) => /quota/.test(r.note)), 'unresolved people carry the quota note');
   assert.strictEqual(r5.params.searchExhausted, true);
 
+  // a broken search response for one person is a note, not a company error.
+  let calls2 = 0;
+  const flaky = async (url, init) => {
+    if (new URL(url).hostname === 'api.search.brave.com' && ++calls2 === 2) return { ok: true, status: 200, json: async () => { throw new Error('bad json'); }, text: async () => '' };
+    return searchFetch(url, init);
+  };
+  web._cache.clear();
+  const r5b = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'search', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: flaky });
+  const k5b = r5b.rows.filter((r) => r.companyStatus === 'Found');
+  assert.strictEqual(k5b.length, 5, 'company still Found');
+  assert.strictEqual(k5b.filter((r) => r.profileUrl).length, 5, 'the failed query is retried with the next, looser query');
+  assert.strictEqual(r5b.state.apollo.webSearches, 6);
+  assert.strictEqual(r5b.state.errors, 0);
+
   // resolve: 'apollo+search' -> Apollo fills what it can; only the rest go to web search.
   const partialEnrich = async (url, init) => {
     const u = new URL(url);

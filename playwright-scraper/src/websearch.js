@@ -65,7 +65,7 @@ async function webSearch(provider, q, opts = {}) {
     throw err;
   }
   if (!res.ok) throw new Error(`${provider.name} search failed (${res.status}): ${(await res.text().catch(() => '')).slice(0, 200)}`);
-  const data = await res.json();
+  const data = (await res.json().catch(() => null)) || {};
   if (provider.name === 'serper') {
     return (data.organic || []).map((r) => ({ title: r.title || '', url: r.link || '', snippet: r.snippet || '' }));
   }

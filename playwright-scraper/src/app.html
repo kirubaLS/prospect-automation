@@ -81,46 +81,62 @@
   details summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
   .jobs td a { margin-right: 8px; }
   .empty { padding: 28px; text-align: center; color: var(--ink-2); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  header { background: linear-gradient(90deg, var(--surface), color-mix(in srgb, var(--accent) 8%, var(--surface))); }
+  .brand::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--accent); margin-right: 9px; vertical-align: 1px; }
+  .card h2 { font-size: 16px; }
+  label { margin-top: 14px; }
+  .hint { line-height: 1.4; }
+  .sum { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+  .sum span { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
+  .sum span b { color: var(--ink); font-weight: 600; }
 </style>
 </head>
 <body>
 <header><div class="wrap">
-  <div class="brand">Prospecting <small>company URLs → decision makers, via Apollo</small></div>
+  <div class="brand">Prospecting <small>companies in → decision makers out</small></div>
   <div class="row" style="margin:0"><span id="keywarn" class="pill" style="display:none">no Apollo key on server</span><button class="toggle" id="theme" title="Toggle dark mode">◐</button></div>
 </div></header>
 
 <main class="wrap">
   <section class="card" id="setup">
-    <h2><span class="step">1</span> Project settings</h2>
+    <h2><span class="step">1</span> Project</h2>
 
-    <label>Preset <small>fills the settings from a saved project</small></label>
+    <label>Preset</label>
     <div class="row" style="margin-top:0">
-      <select id="preset" style="flex:1"><option value="">— choose —</option></select>
-      <button class="btn secondary sm" onclick="savePreset()" title="Save the current settings as a preset in this browser">Save as preset</button>
+      <select id="preset" style="flex:1"><option value="">— choose a client —</option></select>
+      <button class="btn secondary sm" onclick="savePreset()" title="Save the current settings in this browser">Save</button>
     </div>
 
-    <label>Project / batch name <small>becomes the download file name</small></label>
+    <label>Batch name</label>
     <input type="text" id="label" placeholder="e.g. Sharp – batch 3">
 
-    <label>Geography of the person <small>one per line or separated by ;</small></label>
-    <textarea id="geography" placeholder="South India"></textarea>
+    <label>Geography of the person</label>
+    <textarea id="geography" placeholder="South India" style="min-height:44px"></textarea>
     <div class="chips" id="geochips"></div>
-    <div class="hint">Leave empty for anywhere. Custom entries use Apollo's form, e.g. <code>Karnataka, India</code>.</div>
+    <div class="hint">Empty = anywhere.</div>
 
-    <label>ICP <small>industries; roles</small></label>
-    <textarea id="icp" placeholder="Education, Healthcare, Retail; CIO, CTO, COO, CFO > Head of IT, Head of Procurement > IT Manager, Purchase Executive" style="min-height:96px"></textarea>
-    <div class="hint">Before “;” = industries (noted in the output, companies are not skipped). After “;” = titles to look for. Separate priority groups with “&gt;”: <code>CIO, CTO, COO &gt; Head of IT, IT Head &gt; IT Manager</code> — Priority 1 titles are searched first, then Priority 2, then 3, until “people per company” is reached. Without “&gt;”: decision makers with these roles → managers → any decision maker.</div>
+    <label>ICP <small>industries; titles</small></label>
+    <textarea id="icp" placeholder="Healthcare; CIO, COO > Head of IT > IT Manager" style="min-height:64px"></textarea>
+    <div class="hint">Use <code>&gt;</code> between priority groups — Priority 1 is searched first.</div>
+    <div id="icpsum" class="hint"></div>
 
-    <label>People per company</label>
-    <input type="number" id="count" value="4" min="1" max="25" style="max-width:120px">
-
-    <label>LinkedIn URL + full name via</label>
-    <div id="resolve" style="display:grid;gap:6px;font-size:13.5px">
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="apollo" checked style="margin-top:3px"> <span><b>Apollo enrichment</b> <small>exact · 1 credit per person</small><br><span class="hint" style="margin:0">Apollo's own record for each person kept: full name, LinkedIn URL, location. Emails and phones are never requested.</span></span></label>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="apollo+search" style="margin-top:3px"> <span><b>Apollo first, then free web search for the rest</b><br><span class="hint" style="margin:0">Exact where Apollo has the URL; anyone Apollo leaves blank goes to the web search below.</span></span></label>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="search" style="margin-top:3px"> <span><b>Free web search only</b> <small id="searchinfo">(search key on the server)</small><br><span class="hint" style="margin:0">Apollo's free search gives first name, masked surname and title; a web search finds the profile and the app checks the surname against Apollo's mask before accepting it.</span></span></label>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="none" style="margin-top:3px"> <span><b>Neither</b> <small>0 credits, preview only</small><br><span class="hint" style="margin:0">First name, masked surname, title. No URL.</span></span></label>
+    <div class="grid2">
+      <div>
+        <label>People per company</label>
+        <input type="number" id="count" value="4" min="1" max="25">
+      </div>
+      <div>
+        <label>LinkedIn URL via</label>
+        <select id="resolve">
+          <option value="search">Free web search</option>
+          <option value="apollo+search">Apollo, then web search</option>
+          <option value="apollo">Apollo enrichment · credits</option>
+          <option value="none">None · preview only</option>
+        </select>
+      </div>
     </div>
+    <div class="hint" id="searchinfo"></div>
   </section>
 
   <div style="display:grid; gap:16px">
@@ -129,12 +145,12 @@
       <div class="drop" id="drop">
         <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none">
         <div><b>Drop the CSV / Excel here</b> or click to choose</div>
-        <div class="hint">Best: a <b>Website</b> column (e.g. <code>acme.com</code>) — people are searched by employer domain with no company lookup call (0 credits for the company step). Otherwise a <b>LinkedIn URL</b> column (<code>linkedin.com/company/…</code>), 1 credit per company. Company name optional. Getting each person's LinkedIn URL is a separate step, chosen under project settings: Apollo enrichment costs 1 credit per person; web search costs none.</div>
+        <div class="hint">Columns: <b>Website</b> (best, free) or <b>LinkedIn URL</b> (1 credit/company). Company name optional.</div>
       </div>
       <div class="preview" id="preview"></div>
       <div class="row">
         <button class="btn" id="runbtn" onclick="startJob()">▶ Run</button>
-        <button class="btn secondary" id="stopbtn" onclick="stopJob()" disabled>Stop after current company</button>
+        <button class="btn secondary" id="stopbtn" onclick="stopJob()" disabled>Stop</button>
         <a class="btn secondary sm" id="tpl" href="#" download="companies-template.csv">Template CSV</a>
       </div>
       <div class="msg" id="msg"></div>
@@ -149,7 +165,7 @@
       <div class="row">
         <a class="btn" id="dlx" href="#" style="display:none">⬇ Download Excel</a>
         <a class="btn secondary" id="dl" href="#" style="display:none">⬇ Download CSV</a>
-        <span class="hint">Same columns in both. Results live on the server only while it runs — download when a job finishes.</span>
+        <span class="hint">Download when the job finishes — results are not kept after a restart.</span>
       </div>
       <div class="scroll" style="margin-top:12px"><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="5" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
     </section>
@@ -178,8 +194,8 @@ $('theme').onclick = () => { const cur = document.documentElement.dataset.theme 
 
 // form persistence
 ['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
-{ const v = localStorage.getItem('form.resolve'); if (v) { const r = document.querySelector(`input[name=resolve][value=${v}]`); if (r) r.checked = true; } document.querySelectorAll('input[name=resolve]').forEach((r) => r.addEventListener('change', () => localStorage.setItem('form.resolve', r.value))); }
-const resolveValue = () => (document.querySelector('input[name=resolve]:checked') || {}).value || 'apollo';
+{ const v = localStorage.getItem('form.resolve'); if (v) $('resolve').value = v; $('resolve').addEventListener('change', () => localStorage.setItem('form.resolve', $('resolve').value)); }
+const resolveValue = () => $('resolve').value || 'search';
 GEO_SHORTCUTS.forEach((g) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = g; c.onclick = () => { const cur = $('geography').value.trim(); $('geography').value = cur ? cur + '; ' + g : g; $('geography').dispatchEvent(new Event('input')); }; $('geochips').appendChild(c); });
 
 // presets: server (projects/) + browser-saved
@@ -189,10 +205,10 @@ async function loadPresets() {
   const j = await r.json();
   $('keywarn').style.display = j.apolloKeySet ? 'none' : '';
   const sp = j.searchProviders || [];
-  $('searchinfo').textContent = sp.length ? `(${sp.join(' + ')} configured)` : '(not configured on the server - set SERPER_API_KEY, TAVILY_API_KEY, BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX)';
-  document.querySelectorAll('input[name=resolve][value=search], input[name=resolve][value="apollo+search"]').forEach((r) => { r.disabled = !sp.length; if (!sp.length && r.checked) document.querySelector('input[name=resolve][value=apollo]').checked = true; });
-  // With a search key on the server, free web search is the default unless this browser chose otherwise.
-  if (sp.length && !localStorage.getItem('form.resolve')) document.querySelector('input[name=resolve][value=search]').checked = true;
+  $('searchinfo').textContent = sp.length ? `Web search: ${sp.join(', ')} · 0 credits` : 'Web search not set up on the server — Apollo enrichment will be used (1 credit per person).';
+  ['search', 'apollo+search'].forEach((v) => { const o = $('resolve').querySelector(`option[value="${v}"]`); o.disabled = !sp.length; });
+  if (!sp.length && ['search', 'apollo+search'].includes($('resolve').value)) $('resolve').value = 'apollo';
+  if (sp.length && !localStorage.getItem('form.resolve')) $('resolve').value = 'search';
   presets = [...j.presets.map((p) => ({ ...p, source: 'server' })), ...localPresets().map((p) => ({ ...p, source: 'mine' }))];
   const sel = $('preset');
   const cur = sel.value;
@@ -214,6 +230,7 @@ function applyPreset(p, force) {
   $('geography').value = p.geography || ''; $('icp').value = p.icp || ''; $('count').value = p.peoplePerCompany || 8;
   if (!$('label').value || force) $('label').value = $('label').value || p.name;
   ['geography', 'icp', 'count', 'label'].forEach((id) => $(id).dispatchEvent(new Event('input')));
+  icpSummary();
   if (p.source === 'server') { localStorage.setItem('form.presetSlug', p.slug); localStorage.setItem('form.presetSnapshot', JSON.stringify([p.geography, p.icp, p.peoplePerCompany])); }
   else { localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); }
 }
@@ -286,7 +303,7 @@ async function startJob() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return setMsg('Error: ' + (j.error || r.status), 'err');
     currentId = j.job.id; localStorage.setItem('currentJob', currentId); rowsLoaded = 0; rowsJob = null;
-    setMsg(`Started — geography: ${j.job.params.locations.join(' | ') || 'anywhere'}; roles: ${j.job.params.icpKeywords.join(', ')}.`, 'ok');
+    setMsg('Started — ' + summary(j.job.params), 'ok');
     selectedFile = null; fileInput.value = ''; $('preview').innerHTML = '';
     $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) { setMsg('Request failed: ' + e.message + ' — is the server awake?', 'err'); }
@@ -302,13 +319,13 @@ function show(j) {
   $('stopbtn').disabled = !(j && j.status === 'running');
   if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
-  $('jobname').innerHTML = `${esc(j.label)} · ${j.params.peoplePerCompany}/company · ${esc(j.params.locations.join(' | ') || 'anywhere')} · ${j.params.priorities ? j.params.priorities.map((g, i) => `P${i + 1}: ${esc(g.slice(0, 3).join(', '))}${g.length > 3 ? '…' : ''}`).join(' → ') : esc(j.params.icpKeywords.join(', '))}${j.params.resolve === 'search' ? ' · web search' : j.params.resolve === 'apollo' ? ' · Apollo enrichment' : j.params.resolve === 'apollo+search' ? ' · Apollo, then web search' : ' · preview only'}${j.params.searchExhausted ? ' · <b>search quota ran out</b>' : ''}`;
+  $('jobname').innerHTML = `<b>${esc(j.label)}</b> · ${summary(j.params)}${j.params.searchExhausted ? ' · <b style="color:var(--warn)">search quota ran out</b>' : ''}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
   const a = p.apollo;
   $('current').textContent = (j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`))
-    + (a ? ` · Apollo: ${a.peopleSearch} people searches (0 credits), ${a.orgEnrich} company lookups by LinkedIn URL (${a.orgEnrich} cr), ${a.orgSearch} company name searches (${a.orgSearch} cr), ${a.peopleEnriched} people enriched (${a.peopleEnriched} cr) — about ${a.estimatedCredits} credits · ${a.webSearches || 0} web search queries (free)` : '');
+    + (a ? ` · Apollo credits ≈ ${a.estimatedCredits} · web searches ${a.webSearches || 0}` : '');
   $('dl').style.display = 'inline-flex'; $('dl').href = '/jobs/' + j.id + '/download?format=csv';
   $('dlx').style.display = 'inline-flex'; $('dlx').href = '/jobs/' + j.id + '/download?format=xlsx';
 }
@@ -343,6 +360,25 @@ async function loadRows(j) {
   rowsLoaded = d.from + d.rows.length;
   if (rowsLoaded < d.total) loadRows(j);
 }
+function geoLabel(locs) {
+  if (!locs || !locs.length) return 'anywhere';
+  const countries = [...new Set(locs.map((l) => l.split(',').pop().trim()))];
+  if (locs.length === 1) return locs[0];
+  return countries.length === 1 ? `${countries[0]} · ${locs.length} regions` : `${locs.length} locations`;
+}
+function summary(p) {
+  const icp = p.priorities ? `${p.priorities.length} priority groups · ${p.priorities.flat().length} titles` : `${(p.icpKeywords || []).length} titles`;
+  const via = { search: 'web search', apollo: 'Apollo enrichment', 'apollo+search': 'Apollo + web search', none: 'preview only' }[p.resolve] || '';
+  return `${p.peoplePerCompany}/company · ${esc(geoLabel(p.locations))} · ${icp}${p.industries && p.industries.length ? ` · ${p.industries.length} industries` : ''}${via ? ' · ' + via : ''}`;
+}
+function icpSummary() {
+  const raw = $('icp').value;
+  const people = raw.includes(';') ? raw.split(';').slice(1).join(';') : raw;
+  const groups = people.split(/\s*>\s*/).map((g) => g.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean)).filter((g) => g.length);
+  const n = groups.reduce((a, g) => a + g.length, 0);
+  $('icpsum').textContent = !n ? '' : groups.length > 1 ? groups.map((g, i) => `P${i + 1}: ${g.length}`).join(' · ') + ` · ${n} titles` : `${n} titles, no priorities`;
+}
+$('icp').addEventListener('input', icpSummary); setTimeout(icpSummary, 0);
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 async function refresh() {
