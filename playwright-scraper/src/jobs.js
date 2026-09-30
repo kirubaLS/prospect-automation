@@ -5,6 +5,7 @@
 const XLSX = require('xlsx');
 const logger = require('./logger');
 const apollo = require('./apollo');
+const websearch = require('./websearch');
 const { parseCompaniesFile } = require('./files');
 
 // Friendly geography names -> Apollo person_locations values.
@@ -116,6 +117,8 @@ function sanitize(p, org, tier, icpHit) {
   return {
     apolloId: p.apolloId,
     apolloOrgName: p.company && p.company !== org.name ? p.company : '',
+    firstName: p.firstName || '',
+    lastMasked: p.lastMasked || '',
     nameMasked: !!p.nameMasked,
     name: p.name,
     title: p.title,
@@ -167,13 +170,49 @@ async function findPeople(apiKey, org, params, opts = {}) {
       out.push(sanitize(p, org, tier, icp));
     }
   }
-  // Only the people being kept are enriched (credits), and only those whose
-  // preview lacked a LinkedIn URL or full name.
-  if (params.enrich && out.some((p) => !p.profileUrl || p.nameMasked)) {
+  // Only the people being kept are resolved, and only those whose preview
+  // lacked a LinkedIn URL or full name:
+  //   search  - web search API (Brave / Google), free, verified against the
+  //             obfuscated surname
+  //   apollo  - Apollo Bulk People Enrichment, 1 credit per person
+  //   none    - leave the preview as is
+  const need = out.filter((p) => !p.profileUrl || p.nameMasked);
+  if (!need.length || params.resolve === 'none') return out;
+  if (params.resolve === 'apollo') {
     const { people: full, requested, enriched } = await apollo.enrichPeople(apiKey, out, opts);
     logger.info(`    enrichment: ${enriched}/${requested} filled in`);
     return full.map((p) => ({ ...p, seniority: SENIORITY_LABEL[p.seniority] || p.seniority || '', function: p.function || (p.departments || []).join(', ') }));
   }
+  const providers = params.searchProviders || [];
+  if (!providers.length) throw new Error('no web search provider configured - set BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX on the server, or choose Apollo enrichment');
+  let found = 0;
+  for (const p of out) {
+    if (p.profileUrl && !p.nameMasked) continue;
+    try {
+      const hit = await websearch.findProfile({ firstName: p.firstName, lastMasked: p.lastMasked, title: p.title, company: p.apolloOrgName || p.company || org.name }, providers, opts);
+      if (hit) {
+        found++;
+        p.name = hit.fullName || p.name;
+        p.nameMasked = false;
+        p.profileUrl = hit.profileUrl;
+        if (hit.location) p.location = hit.location;
+        p.resolvedBy = hit.provider;
+      } else {
+        p.note = 'LinkedIn URL not found by web search';
+      }
+    } catch (err) {
+      if (err.quota) {
+        logger.warn(`    ${err.message}`);
+        p.note = 'web search quota exhausted - rerun later or use Apollo enrichment';
+        params.searchExhausted = true;
+        // keep going so the remaining people are still listed (masked)
+        for (const q of out) if (q !== p && (!q.profileUrl || q.nameMasked) && !q.note) q.note = p.note;
+        break;
+      }
+      throw err;
+    }
+  }
+  logger.info(`    web search: ${found}/${need.length} profiles resolved`);
   return out;
 }
 
@@ -210,7 +249,9 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
   const opts = fetchImpl ? { fetchImpl } : {};
   // `rows` may be the caller's own array so partial results are downloadable mid-run.
   const state = { total: companies.length, done: 0, found: 0, notFound: 0, noPeople: 0, prospects: 0, errors: 0, current: '' };
-  params = { enrich: true, ...params };
+  params = { resolve: 'search', ...params };
+  if (params.enrich === false && !('resolve' in (arguments[0].params || {}))) params.resolve = 'none';
+  if (params.enrich === true && !('resolve' in (arguments[0].params || {}))) params.resolve = 'apollo';
 
   for (const company of companies) {
     if (shouldStop()) {
@@ -248,7 +289,7 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
           rows.push({ ...companyRow(company, org.id ? 'No people found' : 'Company not found', [industryNote, org.id ? 'no one matched geography/ICP in Apollo' : `Apollo has no people for ${org.domain} matching the geography/ICP (or no such company)`].filter(Boolean).join('; '), org), name: org.id ? 'No people found' : 'Company not found' });
           if (org.id) state.noPeople++; else state.notFound++;
         } else {
-          people.forEach((p, i) => rows.push({ ...companyRow(company, 'Found', industryNote, org), ...p, rank: i + 1 }));
+          people.forEach((p, i) => rows.push({ ...companyRow(company, 'Found', industryNote, org), ...p, note: [p.note, industryNote].filter(Boolean).join('; '), rank: i + 1 }));
           state.found++;
           state.prospects += people.length;
           logger.info(`[${name}] ${people.length} people: ${people.map((p) => `${p.name} (${p.title})`).join('; ')}`);

@@ -114,8 +114,12 @@
     <label>People per company</label>
     <input type="number" id="count" value="8" min="1" max="25" style="max-width:120px">
 
-    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:600"><input type="checkbox" id="enrich" checked style="margin-top:4px"> <span>Fill in full name + LinkedIn URL <small>uses Apollo credits</small></span></label>
-    <div class="hint">Apollo's search only previews people (first name, masked surname, no LinkedIn URL on most plans). With this on, each person kept is enriched — at most “people per company” credits per company. Emails and phone numbers are never requested.</div>
+    <label>LinkedIn URL + full name via</label>
+    <div id="resolve" style="display:grid;gap:6px;font-size:13.5px">
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="search" checked style="margin-top:3px"> <span><b>Free web search</b> <small id="searchinfo">(Brave / Google key on the server)</small><br><span class="hint" style="margin:0">Apollo's free search gives first name, masked surname and title; a web search finds the profile and the app checks the surname against Apollo's mask before accepting it.</span></span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="apollo" style="margin-top:3px"> <span><b>Apollo enrichment</b> <small>1 credit per person</small><br><span class="hint" style="margin:0">Exact, but costs up to “people per company” credits per company. Emails and phones are never requested.</span></span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0"><input type="radio" name="resolve" value="none" style="margin-top:3px"> <span><b>Neither</b> <small>0 credits, preview only</small><br><span class="hint" style="margin:0">First name, masked surname, title. No URL.</span></span></label>
+    </div>
   </section>
 
   <div style="display:grid; gap:16px">
@@ -173,7 +177,8 @@ $('theme').onclick = () => { const cur = document.documentElement.dataset.theme 
 
 // form persistence
 ['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
-{ const v = localStorage.getItem('form.enrich'); if (v !== null) $('enrich').checked = v === '1'; $('enrich').addEventListener('change', () => localStorage.setItem('form.enrich', $('enrich').checked ? '1' : '0')); }
+{ const v = localStorage.getItem('form.resolve'); if (v) { const r = document.querySelector(`input[name=resolve][value=${v}]`); if (r) r.checked = true; } document.querySelectorAll('input[name=resolve]').forEach((r) => r.addEventListener('change', () => localStorage.setItem('form.resolve', r.value))); }
+const resolveValue = () => (document.querySelector('input[name=resolve]:checked') || {}).value || 'search';
 GEO_SHORTCUTS.forEach((g) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = g; c.onclick = () => { const cur = $('geography').value.trim(); $('geography').value = cur ? cur + '; ' + g : g; $('geography').dispatchEvent(new Event('input')); }; $('geochips').appendChild(c); });
 
 // presets: server (projects/) + browser-saved
@@ -182,6 +187,11 @@ async function loadPresets() {
   const r = await fetch('/presets');
   const j = await r.json();
   $('keywarn').style.display = j.apolloKeySet ? 'none' : '';
+  const sp = j.searchProviders || [];
+  $('searchinfo').textContent = sp.length ? `(${sp.join(' + ')} configured)` : '(not configured on the server - set BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX)';
+  const sr = document.querySelector('input[name=resolve][value=search]');
+  sr.disabled = !sp.length;
+  if (!sp.length && sr.checked && !localStorage.getItem('form.resolve')) document.querySelector('input[name=resolve][value=apollo]').checked = true;
   presets = [...j.presets.map((p) => ({ ...p, source: 'server' })), ...localPresets().map((p) => ({ ...p, source: 'mine' }))];
   const sel = $('preset');
   const cur = sel.value;
@@ -247,7 +257,7 @@ async function startJob() {
   if (!selectedFile) { setMsg('Choose the companies file first.', 'err'); return; }
   if (!$('icp').value.trim()) { setMsg('Enter the ICP roles (after the semicolon).', 'err'); $('icp').focus(); return; }
   setMsg('Starting…');
-  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, enrich: $('enrich').checked ? '1' : '0' });
+  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue() });
   try {
     const r = await fetch('/jobs?' + params, { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
@@ -269,7 +279,7 @@ function show(j) {
   $('stopbtn').disabled = !(j && j.status === 'running');
   if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
-  $('jobname').textContent = `${j.label} · ${j.params.peoplePerCompany}/company · ${j.params.locations.join(' | ') || 'anywhere'} · ${j.params.icpKeywords.join(', ')}${j.params.enrich === false ? ' · no enrichment' : ''}`;
+  $('jobname').innerHTML = `${esc(j.label)} · ${j.params.peoplePerCompany}/company · ${j.params.locations.join(' | ') || 'anywhere'} · ${j.params.icpKeywords.join(', ')}${j.params.resolve === 'search' ? ' · web search' : j.params.resolve === 'apollo' ? ' · Apollo enrichment' : ' · preview only'}${j.params.searchExhausted ? ' · <b>search quota ran out</b>' : ''}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
@@ -301,7 +311,7 @@ async function loadRows(j) {
       tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="5"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`);
     }
     if (x.companyStatus === 'Found') {
-      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : '<span class="muted">needs enrichment</span>'}</td></tr>`);
+      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : `<span class="muted">${esc(x.note || 'not resolved')}</span>`}</td></tr>`);
     }
   }
   tb.dataset.lastCo = lastCo;

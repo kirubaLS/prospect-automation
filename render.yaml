@@ -21,6 +21,13 @@ services:
     envVars:
       - key: APOLLO_API_KEY
         sync: false
+      # Free LinkedIn-URL resolution (either or both; see README):
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: GOOGLE_CSE_API_KEY
+        sync: false
+      - key: GOOGLE_CSE_CX
+        sync: false
       - key: NODE_OPTIONS
         value: "--max-old-space-size=400"
       - key: PROJECTS_DIR

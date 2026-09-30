@@ -51,20 +51,41 @@ Free-tier behaviour you should know:
   phones switched off, which costs up to "people per company" credits per
   company. Turn it off for a credit-free preview run. The app paces itself
   at ~1 call/s and retries on 429.
-- The API key needs these Apollo scopes: **Organization Enrichment**
-  (`organizations/enrich`, the company lookup by LinkedIn URL),
-  **Organization Search** (`mixed_companies/search`, the fallback for rows
-  with no usable URL), **People API Search** (`mixed_people/api_search`) and,
-  for the enrichment option, **Bulk People Enrichment**
-  (`people/bulk_match`). Or set it as a master key; the app never calls
-  anything else and never writes emails or phone numbers.
+- The Apollo key needs these scopes: **People API Search**
+  (`mixed_people/api_search`); **Organization Enrichment**
+  (`organizations/enrich`) and **Organization Search**
+  (`mixed_companies/search`) only for rows with a LinkedIn URL but no
+  website; **Bulk People Enrichment** (`people/bulk_match`) only for the
+  Apollo-enrichment option. Or set it as a master key; the app never
+  calls anything else and never writes emails or phone numbers.
+- **Getting the LinkedIn URL and full name for free.** Apollo's free
+  People API Search returns only a preview per person: first name, masked
+  surname ("Na***n"), title. The page offers three ways to complete it:
+  - **Free web search** (default when configured): one query per person
+    such as `"Priya" "IT Head" "Kosmoderma" site:linkedin.com/in` through
+    an official search API. The result title gives the full name and the
+    snippet the location; the app accepts a result only if the first name
+    matches, the surname fits Apollo's mask, and the company or title
+    appears. Costs 0 Apollo credits. Needs one of these on Render's
+    Environment tab:
+    - `BRAVE_SEARCH_API_KEY` — Brave Search API, free plan 2,000
+      queries/month at 1/second. Sign up at brave.com/search/api, choose
+      the Free plan, create a key. (Brave may ask for a card; the free plan
+      is not charged.)
+    - `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_CX` — Google Programmable Search,
+      free 100 queries/day. Create a search engine at
+      programmablesearchengine.google.com with "Search the entire web"
+      on; its ID is the CX. Then in Google Cloud console enable the
+      "Custom Search API" and create an API key.
+    Set both and the app falls over to Google when Brave's month runs out.
+    People it cannot match confidently keep the masked name and get the
+    note "LinkedIn URL not found by web search".
+  - **Apollo enrichment**: exact, 1 credit per person kept.
+  - **Neither**: preview only, 0 credits, no URL.
 - Credits per company, per Apollo's current pricing: 0 for the company
   when the row has a website domain (1 when only a LinkedIn URL is given),
-  0 for the people searches, and up to "people per company" for people
-  enrichment, which is what supplies the full name and LinkedIn URL. A
-  100-company batch at 8 people each with websites can therefore use up
-  to 800 credits; with the enrichment option off, 0, but then names are
-  masked ("Sm***h") and there is no LinkedIn URL.
+  0 for the people searches, 0 with web-search resolution, or up to
+  "people per company" with Apollo enrichment.
 - LinkedIn activity is not available from Apollo or any data API. The
   Activity column is left blank for the researcher to fill from the
   profile.

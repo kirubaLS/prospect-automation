@@ -13,6 +13,7 @@ const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
 const { runJob, exportRows, parseGeography, parseIcp } = require('./jobs');
+const { providersFromEnv } = require('./websearch');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY || null;
@@ -20,6 +21,7 @@ const PROJECTS_DIR = process.env.PROJECTS_DIR || path.resolve(__dirname, '..', '
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_JOBS_KEPT = 20;
 const MAX_PEOPLE_PER_COMPANY = 25;
+const SEARCH_PROVIDERS = providersFromEnv();
 // Render's free tier spins a web service down after 15 idle minutes, which
 // would kill a job mid-run if the browser tab polling /jobs is closed. While
 // a job runs, hit our own public URL every few minutes so it counts as
@@ -95,7 +97,7 @@ function publicJob(j) {
     id: j.id,
     label: j.label,
     filename: j.filename,
-    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, enrich: j.params.enrich },
+    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, resolve: j.params.resolve, searchExhausted: !!j.params.searchExhausted },
     status: j.status,
     startedAt: j.startedAt,
     finishedAt: j.finishedAt,
@@ -105,13 +107,15 @@ function publicJob(j) {
   };
 }
 
-function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label, enrich = true }) {
+function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label, resolve }) {
   if (runningId) throw new Error('another job is running - wait for it to finish or stop it');
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
   const count = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 8));
   const locations = parseGeography(geography);
   const { industries, keywords } = parseIcp(icp);
   if (!keywords.length) throw new Error('ICP is empty - list the roles/functions to look for (e.g. "IT, Administration, Procurement, Finance")');
+  resolve = ['search', 'apollo', 'none'].includes(resolve) ? resolve : SEARCH_PROVIDERS.length ? 'search' : 'apollo';
+  if (resolve === 'search' && !SEARCH_PROVIDERS.length) throw new Error('web search is not configured on the server (BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX) - choose Apollo enrichment or none');
 
   const id = crypto.randomBytes(6).toString('hex');
   const job = {
@@ -119,7 +123,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
     label: label || filename,
     filename,
     paramsText: { geography, icp },
-    params: { locations, industries, icpKeywords: keywords, peoplePerCompany: count, enrich: !!enrich },
+    params: { locations, industries, icpKeywords: keywords, peoplePerCompany: count, resolve, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
     status: 'running',
     startedAt: new Date().toISOString(),
     finishedAt: null,
@@ -131,7 +135,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
   runningId = id;
   while (jobs.size > MAX_JOBS_KEPT) jobs.delete(jobs.keys().next().value);
 
-  logger.info(`Job ${id} "${job.label}": ${count}/company, enrich=${!!enrich}, geography=[${locations.join(' | ') || 'any'}], ICP=[${keywords.join(', ')}]${industries.length ? `, industries=[${industries.join(', ')}]` : ''}`);
+  logger.info(`Job ${id} "${job.label}": ${count}/company, resolve=${resolve}, geography=[${locations.join(' | ') || 'any'}], ICP=[${keywords.join(', ')}]${industries.length ? `, industries=[${industries.join(', ')}]` : ''}`);
   keepAlive(true);
   runJob({
     apiKey: APOLLO_API_KEY,
@@ -175,7 +179,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, presets: presets() });
+    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, searchProviders: SEARCH_PROVIDERS.map((p) => p.name), presets: presets() });
 
     if (url.pathname === '/jobs' && req.method === 'GET') {
       return send(200, { running: runningId, jobs: [...jobs.values()].reverse().map(publicJob) });
@@ -191,7 +195,7 @@ const server = http.createServer(async (req, res) => {
         icp: url.searchParams.get('icp') || '',
         peoplePerCompany: url.searchParams.get('count') || '8',
         label: url.searchParams.get('label') || '',
-        enrich: url.searchParams.get('enrich') !== '0'
+        resolve: url.searchParams.get('resolve') || (url.searchParams.get('enrich') === '0' ? 'none' : undefined)
       });
       return send(202, { status: 'started', job: publicJob(job) });
     }
@@ -229,7 +233,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR})`);
+  logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR}; web search: ${SEARCH_PROVIDERS.map((p) => p.name).join(', ') || 'none configured'})`);
   if (!APOLLO_API_KEY) logger.warn('APOLLO_API_KEY is not set - runs will fail until it is');
 });
 

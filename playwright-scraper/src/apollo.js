@@ -155,6 +155,8 @@ function mapPerson(p, org) {
   return {
     apolloId: p.id,
     name: [p.first_name, last].filter(Boolean).join(' ') || p.name || '',
+    firstName: p.first_name || '',
+    lastMasked: masked ? p.last_name_obfuscated : '',
     nameMasked: masked,
     title: p.title || '',
     headline: p.headline || '',

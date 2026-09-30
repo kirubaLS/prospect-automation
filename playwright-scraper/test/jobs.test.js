@@ -67,6 +67,7 @@ const fetchImpl = async (url, init) => {
   const params = { ...jobs.parseIcp('Healthcare; IT, Administration, Procurement, Finance, Purchasing'), locations: jobs.parseGeography('South India'), peoplePerCompany: 8 };
   params.icpKeywords = params.keywords;
   const progress = [];
+  params.resolve = 'apollo';
   const { rows, state } = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params, fetchImpl, onProgress: (s) => progress.push(s.done) });
 
   assert.deepStrictEqual({ total: state.total, found: state.found, notFound: state.notFound, noPeople: state.noPeople, prospects: state.prospects }, { total: 3, found: 1, notFound: 1, noPeople: 1, prospects: 5 });
@@ -90,9 +91,53 @@ const fetchImpl = async (url, init) => {
   assert.ok(!/Seniority|Function|Match|Rank|Industry|Employees|HQ/.test(out.split('\r\n')[0]), 'no extra columns');
   assert.ok(!/secret@example|1234567890|email|phone|has_email/i.test(out), 'no contact details in the CSV');
 
-  // enrich: false -> preview only, no bulk_match, masked names kept as-is.
+  // resolve: 'search' -> Apollo preview + web search resolves URL/name/location, no bulk_match.
+  const web = require('../src/websearch');
+  const searchCalls = [];
+  const searchFetch = async (url, init) => {
+    const u = new URL(url);
+    if (u.hostname === 'api.search.brave.com') {
+      searchCalls.push(u.searchParams.get('q'));
+      assert.strictEqual(init.headers['X-Subscription-Token'], 'brave-key');
+      const q = u.searchParams.get('q');
+      const m = q.match(/^"([^"]+)" "([^"]+)" "([^"]+)"/);
+      const first = m[1];
+      const person = all.find((p) => p.first_name === first);
+      const results = person ? [
+        { title: `${person.first_name} Wrong - ${person.title} - Another Company | LinkedIn`, url: 'https://www.linkedin.com/in/wrong', description: 'Mumbai, Maharashtra, India · Another Company' },
+        { title: `${person.first_name} ${person.last_name.slice(0, 2)}xyz${person.last_name.slice(-1)} - ${person.title} - Kosmoderma Healthcare | LinkedIn`, url: `https://in.linkedin.com/in/${person.id}-real?trk=1`, description: `Bengaluru, Karnataka, India · ${person.title} · Kosmoderma Healthcare. Experience: ...` }
+      ] : [];
+      const d = { web: { results } };
+      return { ok: true, status: 200, json: async () => d, text: async () => '' };
+    }
+    return fetchImpl(url, init);
+  };
+  const before3 = calls.enrich;
+  const r4 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'search', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: searchFetch });
+  assert.strictEqual(calls.enrich, before3, 'no Apollo enrichment in search mode');
+  const k4 = r4.rows.filter((r) => r.companyStatus === 'Found');
+  assert.strictEqual(searchCalls.length, 5, 'one web search per kept person');
+  assert.match(searchCalls[0], /^"Priya" "IT Head" "Kosmoderma Healthcare" site:linkedin\.com\/in$/);
+  assert.deepStrictEqual(k4.map((r) => r.name), ['Priya NxyzN', 'Anu PxyzP', 'Raj BxyzB', 'Chytra Anxyzd', 'Siva MxyzM'], 'surname verified against the mask (Na***d style) and the wrong-surname result rejected');
+  assert.deepStrictEqual(k4.map((r) => r.profileUrl), ['https://in.linkedin.com/in/priya-real', 'https://in.linkedin.com/in/anu-real', 'https://in.linkedin.com/in/raj-real', 'https://in.linkedin.com/in/chytra-real', 'https://in.linkedin.com/in/siva-real']);
+  assert.deepStrictEqual([...new Set(k4.map((r) => r.location))], ['Bengaluru, Karnataka, India'], 'location parsed from the snippet');
+  assert.ok(k4.every((r) => r.resolvedBy === 'brave'));
+
+  // quota exhausted mid-run: remaining people stay listed with a note, job continues.
+  let n = 0;
+  const quotaFetch = async (url, init) => {
+    if (new URL(url).hostname === 'api.search.brave.com' && ++n > 2) return { ok: false, status: 429, json: async () => ({}), text: async () => 'quota' };
+    return searchFetch(url, init);
+  };
+  const r5 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'search', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: quotaFetch });
+  const k5 = r5.rows.filter((r) => r.companyStatus === 'Found');
+  assert.strictEqual(k5.filter((r) => r.profileUrl).length, 2);
+  assert.ok(k5.slice(2).every((r) => /quota/.test(r.note)), 'unresolved people carry the quota note');
+  assert.strictEqual(r5.params.searchExhausted, true);
+
+  // resolve: 'none' -> preview only, no bulk_match, masked names kept as-is.
   const before = calls.enrich;
-  const r2 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, enrich: false }, fetchImpl });
+  const r2 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'none' }, fetchImpl });
   assert.strictEqual(calls.enrich, before, 'no enrichment call when switched off');
   const k2 = r2.rows.filter((r) => r.companyStatus === 'Found');
   assert.strictEqual(k2[0].name, 'Priya N***N');
