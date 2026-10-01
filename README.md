@@ -127,7 +127,7 @@ Free-tier behaviour you should know:
   the 90-day window.
 
 Per-project presets: `projects/<name>/config.json` (see `projects/sharp`
-and `projects/reach24`, whose `titlePriorities` hold each client's
+, `projects/reach24` and `projects/scikiq`, whose `titlePriorities` hold each client's
 Priority 1/2/3 designation lists) show up in the page's Preset dropdown; **Save as preset** on the page keeps
 a geography/ICP combo in that browser without a git push.
 
