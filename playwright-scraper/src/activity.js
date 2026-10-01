@@ -156,24 +156,40 @@ function classify({ activities = [], connections = null, now = Date.now(), profi
   return { label: 'LOW', reason: `${conn}; no posts, reposts, comments or reactions found on ${checked}`, proof: page, lastActivity: '', counts, connections };
 }
 
-// One person -> activity record. Actor failures are recorded, not thrown.
+// One person -> activity record. Actors run one after another and stop as
+// soon as the label is decided, so most people cost a single actor run:
+//   posts -> HIGH (recent post) or MEDIUM (older post / repost)
+//   comments -> MEDIUM
+//   reactions -> MEDIUM
+//   profile (connection count) -> MEDIUM (500+) or LOW
+// Actor failures are recorded on the record, never thrown.
 async function checkPerson(cfg, person, opts = {}) {
   const username = usernameOf(person.profileUrl);
-  if (!username) return { label: '', reason: 'no LinkedIn URL', proof: '', lastActivity: '', connections: null, counts: {}, errors: ['no LinkedIn URL'] };
+  if (!username) return { label: '', reason: 'no LinkedIn URL', proof: '', lastActivity: '', connections: null, counts: {}, checked: [], errors: ['no LinkedIn URL'] };
   const input = { username, profile_url: person.profileUrl, page_number: 1, limit: cfg.maxItems, max_results: cfg.maxItems };
   const errors = [];
-  const safe = (p, name) => p.catch((err) => { errors.push(`${name}: ${err.message}`); return null; });
-  const [posts, comments, profile, reactions] = await Promise.all([
-    safe(runActor(cfg, cfg.actors.posts, input, opts), 'posts'),
-    safe(runActor(cfg, cfg.actors.comments, input, opts), 'comments'),
-    safe(runActor(cfg, cfg.actors.profile, input, opts), 'profile'),
-    safe(runActor(cfg, cfg.actors.reactions, input, opts), 'reactions')
-  ]);
-  const activities = [...summarizePosts(posts, username), ...summarizeComments(comments), ...summarizeReactions(reactions)];
+  const checked = [];
+  const run = async (key) => {
+    checked.push(key);
+    try { return await runActor(cfg, cfg.actors[key], input, opts); } catch (err) { errors.push(`${key}: ${err.message}`); return null; }
+  };
+  const finish = (activities, connections) => {
+    const result = classify({ activities, connections, now: opts.now, profileUrl: person.profileUrl });
+    result.checked = checked;
+    if (errors.length) result.errors = errors;
+    if (errors.length === checked.length && !activities.length && connections == null) { result.label = ''; result.reason = 'check failed: ' + errors.join('; '); }
+    return result;
+  };
+
+  const posts = summarizePosts(await run('posts'), username);
+  if (posts.length) return finish(posts, null);
+  const comments = summarizeComments(await run('comments'));
+  if (comments.length) return finish(comments, null);
+  const reactions = summarizeReactions(await run('reactions'));
+  if (reactions.length) return finish(reactions, null);
+  const profile = await run('profile');
   const connections = profile && profile.length ? connectionsOf(profile[0]) : null;
-  const result = classify({ activities, connections, now: opts.now, profileUrl: person.profileUrl });
-  if (errors.length) { result.errors = errors; if (!activities.length && connections == null) { result.label = ''; result.reason = 'check failed: ' + errors.join('; '); } }
-  return result;
+  return finish([], connections);
 }
 
 // Runs the check over `people` (objects with profileUrl), a few at a time.

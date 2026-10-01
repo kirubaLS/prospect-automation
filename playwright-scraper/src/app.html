@@ -192,7 +192,7 @@
           <button class="btn" id="actbtn" onclick="startActivity()">Check activity</button>
           <button class="btn secondary" id="actstop" onclick="stopActivity()" disabled>Stop</button>
           <a class="btn secondary sm" id="dlx3" href="#">⬇ Excel</a>
-          <span class="hint" id="acthint">HIGH = posted in last 90 days · MEDIUM = any other activity (older post, repost, comment, reaction) or 500+ connections · LOW = nothing.</span>
+          <span class="hint" id="acthint">Posts → comments → reactions → connections, stopping at the first hit. HIGH = posted in last 90 days · MEDIUM = any other activity or 500+ connections · LOW = nothing.</span>
         </div>
         <div class="stats" id="actstats"></div>
         <div class="msg" id="actmsg"></div>
@@ -455,7 +455,7 @@ async function loadActivity() {
   const a = d.activity, p = (a && a.progress) || {};
   $('actbtn').disabled = !apifyOn || (a && a.status === 'running');
   $('actstop').disabled = !(a && a.status === 'running');
-  $('acthint').textContent = apifyOn ? 'HIGH = posted in last 90 days · MEDIUM = any other activity (older post, repost, comment, reaction) or 500+ connections · LOW = nothing.' : 'Set the four Apify tokens on the server to enable.';
+  $('acthint').textContent = apifyOn ? 'Posts → comments → reactions → connections, stopping at the first hit. HIGH = posted in last 90 days · MEDIUM = any other activity or 500+ connections · LOW = nothing.' : 'Set the four Apify tokens on the server to enable.';
   $('actstats').innerHTML = a ? [['People', p.total], ['Checked', p.done], ['HIGH', p.high], ['MEDIUM', p.medium], ['LOW', p.low], ['Failed', p.failed]].map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('') : '';
   if (a && a.status !== 'running') $('actmsg').textContent = a.status === 'done' ? 'Done — download Excel to get the Activity columns.' : a.status === 'failed' ? 'Failed: ' + a.error : 'Stopped.';
   const tb = $('actrows').querySelector('tbody');
