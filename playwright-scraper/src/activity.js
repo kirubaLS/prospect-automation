@@ -13,13 +13,22 @@ const APIFY = 'https://api.apify.com/v2';
 const WINDOW_DAYS = 90;
 const CONNECTIONS_MEDIUM = 500;
 
+// One Apify token per process (APIFY_POSTS_TOKEN, APIFY_COMMENTS_TOKEN,
+// APIFY_REACTIONS_TOKEN, APIFY_PROFILE_TOKEN); APIFY_TOKEN fills in for any
+// that is not set. A token is only ever sent to its own actor.
 function configFromEnv(env = process.env) {
+  const fallback = env.APIFY_TOKEN || null;
+  const actors = {
+    posts: { id: env.APIFY_POSTS_ACTOR || 'apimaestro~linkedin-profile-posts', token: env.APIFY_POSTS_TOKEN || fallback },
+    comments: { id: env.APIFY_COMMENTS_ACTOR || 'apimaestro~linkedin-profile-comments', token: env.APIFY_COMMENTS_TOKEN || fallback },
+    reactions: { id: env.APIFY_REACTIONS_ACTOR || 'apimaestro~linkedin-profile-reactions', token: env.APIFY_REACTIONS_TOKEN || fallback },
+    profile: { id: env.APIFY_PROFILE_ACTOR || 'apimaestro~linkedin-profile-detail', token: env.APIFY_PROFILE_TOKEN || fallback }
+  };
+  const configured = Object.values(actors).every((a) => !!a.token);
   return {
-    token: env.APIFY_TOKEN || null,
-    postsActor: env.APIFY_POSTS_ACTOR || 'apimaestro~linkedin-profile-posts',
-    commentsActor: env.APIFY_COMMENTS_ACTOR || 'apimaestro~linkedin-profile-comments',
-    profileActor: env.APIFY_PROFILE_ACTOR || 'apimaestro~linkedin-profile-detail',
-    reactionsActor: env.APIFY_REACTIONS_ACTOR || 'apimaestro~linkedin-profile-reactions',
+    actors,
+    configured,
+    missing: Object.entries(actors).filter(([, a]) => !a.token).map(([k]) => `APIFY_${k.toUpperCase()}_TOKEN`),
     timeoutSecs: parseInt(env.APIFY_TIMEOUT_SECS || '150', 10)
   };
 }
@@ -31,16 +40,17 @@ function usernameOf(profileUrl) {
 }
 
 // Runs an actor synchronously and returns its dataset items.
-async function runActor(cfg, actorId, input, { fetchImpl = fetch } = {}) {
-  const url = `${APIFY}/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?timeout=${cfg.timeoutSecs}&clean=true`;
+async function runActor(cfg, actor, input, { fetchImpl = fetch } = {}) {
+  if (!actor.token) throw new Error(`no Apify token for ${actor.id}`);
+  const url = `${APIFY}/acts/${encodeURIComponent(actor.id)}/run-sync-get-dataset-items?timeout=${cfg.timeoutSecs}&clean=true`;
   const res = await fetchImpl(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${actor.token}` },
     body: JSON.stringify(input)
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    const err = new Error(`Apify ${actorId} ${res.status}: ${text.slice(0, 200)}`);
+    const err = new Error(`Apify ${actor.id} ${res.status}: ${text.slice(0, 200)}`);
     err.status = res.status;
     throw err;
   }
@@ -134,10 +144,10 @@ async function checkPerson(cfg, person, opts = {}) {
   const errors = [];
   const safe = (p, name) => p.catch((err) => { errors.push(`${name}: ${err.message}`); return null; });
   const [posts, comments, profile, reactions] = await Promise.all([
-    safe(runActor(cfg, cfg.postsActor, input, opts), 'posts'),
-    safe(runActor(cfg, cfg.commentsActor, input, opts), 'comments'),
-    safe(runActor(cfg, cfg.profileActor, input, opts), 'profile'),
-    safe(runActor(cfg, cfg.reactionsActor, input, opts), 'reactions')
+    safe(runActor(cfg, cfg.actors.posts, input, opts), 'posts'),
+    safe(runActor(cfg, cfg.actors.comments, input, opts), 'comments'),
+    safe(runActor(cfg, cfg.actors.profile, input, opts), 'profile'),
+    safe(runActor(cfg, cfg.actors.reactions, input, opts), 'reactions')
   ]);
   const activities = [...summarizePosts(posts, username), ...summarizeComments(comments), ...summarizeReactions(reactions)];
   const connections = profile && profile.length ? connectionsOf(profile[0]) : null;
@@ -148,7 +158,7 @@ async function checkPerson(cfg, person, opts = {}) {
 
 // Runs the check over `people` (objects with profileUrl), a few at a time.
 async function runActivityCheck(cfg, people, { onProgress = () => {}, shouldStop = () => false, concurrency = 2, fetchImpl, now } = {}) {
-  if (!cfg.token) throw new Error('APIFY_TOKEN is not set on the server');
+  if (!cfg.configured) throw new Error(`Apify tokens missing on the server: ${cfg.missing.join(', ')} (or set APIFY_TOKEN for all)`);
   const results = new Array(people.length);
   let next = 0;
   const state = { total: people.length, done: 0, high: 0, medium: 0, low: 0, failed: 0 };

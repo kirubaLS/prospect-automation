@@ -105,8 +105,11 @@ Free-tier behaviour you should know:
     link), or 500+ connections with nothing recent.
   - **LOW** — none of the above.
   The Excel gains Activity, Activity Proof, Last Activity and Connections.
-  Needs `APIFY_TOKEN` on Render (console.apify.com → Settings →
-  Integrations). Actor ids default to apimaestro's LinkedIn actors
+  Needs one Apify token per process on Render: `APIFY_POSTS_TOKEN`,
+  `APIFY_COMMENTS_TOKEN`, `APIFY_REACTIONS_TOKEN`, `APIFY_PROFILE_TOKEN`
+  (console.apify.com → Settings → API & Integrations → create a token for
+  each, named after its process; a token is only ever sent to its own
+  actor). `APIFY_TOKEN` fills in for any that is not set. Actor ids default to apimaestro's LinkedIn actors
   (`apimaestro~linkedin-profile-posts`, `~linkedin-profile-comments`,
   `~linkedin-profile-reactions`, `~linkedin-profile-detail`) and can be
   overridden with `APIFY_POSTS_ACTOR`, `APIFY_COMMENTS_ACTOR`,

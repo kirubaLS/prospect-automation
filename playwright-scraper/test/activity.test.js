@@ -48,7 +48,9 @@ r = a.classify({ activities: [], connections: null, now }); assert.strictEqual(r
   const calls = [];
   const fetchImpl = async (url, init) => {
     const u = new URL(url); calls.push(u.pathname);
-    assert.strictEqual(init.headers.Authorization, 'Bearer tok');
+    const act = decodeURIComponent(u.pathname.split('/')[3]);
+    const expectTok = act.endsWith('posts') ? 'Bearer t-posts' : act.endsWith('comments') ? 'Bearer t-comments' : act.endsWith('reactions') ? 'Bearer t-reactions' : 'Bearer t-profile';
+    assert.strictEqual(init.headers.Authorization, expectTok, 'each actor gets only its own token');
     const body = JSON.parse(init.body); assert.strictEqual(body.username, 'kingshuk');
     const actor = decodeURIComponent(u.pathname.split('/')[3]);
     let d;
@@ -58,7 +60,11 @@ r = a.classify({ activities: [], connections: null, now }); assert.strictEqual(r
     else return { ok: false, status: 500, text: async () => 'actor crashed' };
     return { ok: true, status: 201, json: async () => d, text: async () => '' };
   };
-  const cfg = { ...a.configFromEnv({ APIFY_TOKEN: 'tok' }) };
+  const cfg = a.configFromEnv({ APIFY_POSTS_TOKEN: 't-posts', APIFY_COMMENTS_TOKEN: 't-comments', APIFY_REACTIONS_TOKEN: 't-reactions', APIFY_PROFILE_TOKEN: 't-profile' });
+  assert.strictEqual(cfg.configured, true);
+  const partial = a.configFromEnv({ APIFY_POSTS_TOKEN: 'x' });
+  assert.strictEqual(partial.configured, false); assert.deepStrictEqual(partial.missing, ['APIFY_COMMENTS_TOKEN', 'APIFY_REACTIONS_TOKEN', 'APIFY_PROFILE_TOKEN']);
+  assert.strictEqual(a.configFromEnv({ APIFY_TOKEN: 'one' }).configured, true, 'a single token still works as fallback');
   const res = await a.checkPerson(cfg, { name: 'Kingshuk Hazra', profileUrl: 'https://www.linkedin.com/in/kingshuk' }, { fetchImpl, now });
   assert.strictEqual(res.label, 'HIGH'); assert.strictEqual(res.connections, 1839); assert.deepStrictEqual(res.errors, ['reactions: Apify apimaestro~linkedin-profile-reactions 500: actor crashed']);
   assert.strictEqual(calls.length, 4);
@@ -66,6 +72,6 @@ r = a.classify({ activities: [], connections: null, now }); assert.strictEqual(r
   assert.strictEqual(noUrl.label, '');
   const { results, state } = await a.runActivityCheck(cfg, [{ name: 'A', profileUrl: 'https://www.linkedin.com/in/kingshuk' }, { name: 'B', profileUrl: 'https://www.linkedin.com/in/kingshuk' }], { fetchImpl, now });
   assert.deepStrictEqual(results.map((x) => x.label), ['HIGH', 'HIGH']); assert.strictEqual(state.high, 2);
-  await assert.rejects(a.runActivityCheck({ ...cfg, token: null }, [], {}), /APIFY_TOKEN/);
+  await assert.rejects(a.runActivityCheck(partial, [], {}), /APIFY_COMMENTS_TOKEN/);
   console.log('PASS: linkedin activity labels');
 })().catch((e) => { console.error('FAIL:', e.stack || e.message); process.exit(1); });

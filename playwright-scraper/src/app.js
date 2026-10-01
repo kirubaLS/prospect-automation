@@ -184,7 +184,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, searchProviders: SEARCH_PROVIDERS.map((p) => p.name), apify: !!APIFY.token, presets: presets() });
+    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, searchProviders: SEARCH_PROVIDERS.map((p) => p.name), apify: APIFY.configured, presets: presets() });
 
     if (url.pathname === '/jobs' && req.method === 'GET') {
       return send(200, { running: runningId, jobs: [...jobs.values()].reverse().map(publicJob) });
@@ -219,7 +219,7 @@ const server = http.createServer(async (req, res) => {
     if (m[2] === 'activity') {
       if (req.method === 'POST') {
         if (!job.params.activityCheck) return send(400, { error: 'the LinkedIn activity check is not enabled for this project (set "activityCheck": true in its config.json)' });
-        if (!APIFY.token) return send(400, { error: 'APIFY_TOKEN is not set on the server' });
+        if (!APIFY.configured) return send(400, { error: `Apify tokens missing on the server: ${APIFY.missing.join(', ')}` });
         if (job.status === 'running') return send(409, { error: 'wait for the job to finish' });
         if (activityRunning) return send(409, { error: 'an activity check is already running' });
         const people = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl);
@@ -227,7 +227,7 @@ const server = http.createServer(async (req, res) => {
         job.activity = { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, progress: { total: people.length, done: 0, high: 0, medium: 0, low: 0, failed: 0 }, stopRequested: false };
         activityRunning = job.id;
         keepAlive(true);
-        logger.info(`Activity check for job ${job.id}: ${people.length} people via Apify (${APIFY.postsActor}, ${APIFY.commentsActor}, ${APIFY.profileActor})`);
+        logger.info(`Activity check for job ${job.id}: ${people.length} people via Apify (${Object.values(APIFY.actors).map((a) => a.id).join(', ')})`);
         activity.runActivityCheck(APIFY, people, { onProgress: (st) => { job.activity.progress = { ...st }; }, shouldStop: () => job.activity.stopRequested })
           .then(({ results, state }) => {
             people.forEach((r, i) => {
@@ -270,7 +270,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR}; web search: ${SEARCH_PROVIDERS.map((p) => p.name).join(', ') || 'none configured'}; Apify activity: ${APIFY.token ? 'configured' : 'not configured'})`);
+  logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR}; web search: ${SEARCH_PROVIDERS.map((p) => p.name).join(', ') || 'none configured'}; Apify activity: ${APIFY.configured ? 'configured' : 'missing ' + APIFY.missing.join(', ')})`);
   if (!APOLLO_API_KEY) logger.warn('APOLLO_API_KEY is not set - runs will fail until it is');
 });
 

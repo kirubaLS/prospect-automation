@@ -423,7 +423,7 @@ async function loadActivity() {
   const a = d.activity, p = (a && a.progress) || {};
   $('actbtn').disabled = !apifyOn || (a && a.status === 'running');
   $('actstop').disabled = !(a && a.status === 'running');
-  $('acthint').textContent = apifyOn ? 'HIGH = posted in last 90 days · MEDIUM = repost/comment/reaction in 90 days or 500+ connections · LOW = none.' : 'Set APIFY_TOKEN on the server to enable.';
+  $('acthint').textContent = apifyOn ? 'HIGH = posted in last 90 days · MEDIUM = repost/comment/reaction in 90 days or 500+ connections · LOW = none.' : 'Set the four Apify tokens on the server to enable.';
   $('actstats').innerHTML = a ? [['People', p.total], ['Checked', p.done], ['HIGH', p.high], ['MEDIUM', p.medium], ['LOW', p.low], ['Failed', p.failed]].map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('') : '';
   if (a && a.status !== 'running') $('actmsg').textContent = a.status === 'done' ? 'Done — download Excel to get the Activity columns.' : a.status === 'failed' ? 'Failed: ' + a.error : 'Stopped.';
   const tb = $('actrows').querySelector('tbody');

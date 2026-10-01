@@ -32,8 +32,14 @@ services:
         sync: false
       - key: GOOGLE_CSE_CX
         sync: false
-      # LinkedIn activity check (Activity tab) through your Apify account:
-      - key: APIFY_TOKEN
+      # LinkedIn activity check (Activity tab): one Apify token per process.
+      - key: APIFY_POSTS_TOKEN
+        sync: false
+      - key: APIFY_COMMENTS_TOKEN
+        sync: false
+      - key: APIFY_REACTIONS_TOKEN
+        sync: false
+      - key: APIFY_PROFILE_TOKEN
         sync: false
       - key: NODE_OPTIONS
         value: "--max-old-space-size=400"
