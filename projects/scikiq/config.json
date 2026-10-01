@@ -1,6 +1,6 @@
 {
   "name": "Scikiq",
-  "description": "India. Priority 1 Chief Data Officer / data governance, 2 MD / CEO, 3 COO / Director / Head of Operations, 4 CFO / Director Finance / Head of Finance, 5 CTO / CIO / Head of IT. LinkedIn activity check on.",
+  "description": "India. Priority 1 Chief Data Officer / data governance / Chief Compliance Officer, 2 MD / CEO, 3 COO / Director / Head of Operations, 4 CFO / Director Finance / Head of Finance, 5 CTO / CIO / Head of IT. LinkedIn activity check on.",
   "targetPerCompany": 4,
   "maxCandidatesPerCompany": 12,
   "activityCheck": true,
@@ -18,7 +18,7 @@
   ],
   "titlePriorities": [
     {
-      "label": "Priority 1 - Chief Data Officer / data governance",
+      "label": "Priority 1 - Chief Data Officer / data governance / Chief Compliance Officer",
       "titles": [
         "Chief Data Officer",
         "CDO",
@@ -35,7 +35,15 @@
         "VP Data",
         "Vice President Data",
         "Head of Analytics",
-        "Chief Digital & Data Officer"
+        "Chief Digital & Data Officer",
+        "Chief Compliance Officer",
+        "CCO",
+        "Head of Compliance",
+        "Compliance Head",
+        "Director Compliance",
+        "Director of Compliance",
+        "Chief Risk & Compliance Officer",
+        "Chief Risk and Compliance Officer"
       ]
     },
     {
@@ -153,6 +161,14 @@
     "Vice President Data",
     "Head of Analytics",
     "Chief Digital & Data Officer",
+    "Chief Compliance Officer",
+    "CCO",
+    "Head of Compliance",
+    "Compliance Head",
+    "Director Compliance",
+    "Director of Compliance",
+    "Chief Risk & Compliance Officer",
+    "Chief Risk and Compliance Officer",
     "Managing Director",
     "MD",
     "Chief Executive Officer",
@@ -236,7 +252,17 @@
           "Chief Digital & Data Officer",
           "Data Governance",
           "Data (&|and) Analytics",
-          "Head.*\\bData\\b"
+          "Head.*\\bData\\b",
+          "Chief Compliance Officer",
+          "\\bCCO\\b",
+          "Head of Compliance",
+          "Compliance Head",
+          "Director Compliance",
+          "Director of Compliance",
+          "Chief Risk & Compliance Officer",
+          "Chief Risk and Compliance Officer",
+          "Head.*Compliance",
+          "Compliance.*(Head|Director)"
         ]
       },
       {
