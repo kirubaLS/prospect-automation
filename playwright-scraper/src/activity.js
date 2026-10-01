@@ -1,11 +1,12 @@
 // LinkedIn activity check through Apify actors (the researcher's own Apify
-// account, APIFY_TOKEN). For each person with a profile URL it runs, in
-// parallel: a posts actor, a comments actor and a profile-details actor
-// (connection count), then labels:
+// account). For each person with a profile URL it runs, in parallel: a
+// posts actor, a comments actor, a reactions actor and a profile-details
+// actor (connection count), then labels:
 //   HIGH    an original post within the last 90 days (proof: post URL + date)
-//   MEDIUM  a repost, comment or reaction within 90 days, or 500+ connections
-//           with nothing recent (proof: the activity link, or "500+ connections")
-//   LOW     nothing of the above
+//   MEDIUM  any other activity at all - an older post, or a repost, comment
+//           or reaction at any time (proof: its link) - whatever the
+//           connection count; or 500+ connections with nothing found
+//   LOW     nothing found and fewer than 500 connections
 // Actor ids are overridable; the defaults are apimaestro's LinkedIn actors.
 const logger = require('./logger');
 
@@ -130,16 +131,18 @@ function toCount(v) {
 
 function classify({ activities = [], connections = null, now = Date.now() }) {
   const cutoff = now - WINDOW_DAYS * 86400000;
-  const recent = activities.filter((a) => a.ts >= cutoff).sort((a, b) => b.ts - a.ts);
-  const last = activities.slice().sort((a, b) => b.ts - a.ts)[0] || null;
+  const sorted = activities.slice().sort((a, b) => b.ts - a.ts);
+  const last = sorted[0] || null;
   const counts = { posts: 0, reposts: 0, comments: 0, reactions: 0 };
-  for (const a of recent) counts[a.kind === 'post' ? 'posts' : a.kind === 'repost' ? 'reposts' : a.kind === 'comment' ? 'comments' : 'reactions']++;
-  const post = recent.find((a) => a.kind === 'post');
-  if (post) return { label: 'HIGH', reason: `posted on ${fmtDate(post.ts)}`, proof: post.url, lastActivity: fmtDate(recent[0].ts), counts, connections };
-  const other = recent[0];
-  if (other) return { label: 'MEDIUM', reason: `${other.kind === 'reaction' ? (other.text || 'reacted') : other.kind} on ${fmtDate(other.ts)}`, proof: other.url, lastActivity: fmtDate(other.ts), counts, connections };
-  if (connections != null && connections >= CONNECTIONS_MEDIUM) return { label: 'MEDIUM', reason: `${connections}+ connections, no activity in ${WINDOW_DAYS} days`, proof: '', lastActivity: fmtDate(last && last.ts), counts, connections };
-  return { label: 'LOW', reason: last ? `last activity ${fmtDate(last.ts)}` : 'no posts, reposts or comments found', proof: '', lastActivity: fmtDate(last && last.ts), counts, connections };
+  for (const a of sorted) counts[a.kind === 'post' ? 'posts' : a.kind === 'repost' ? 'reposts' : a.kind === 'comment' ? 'comments' : 'reactions']++;
+  const recentPost = sorted.find((a) => a.kind === 'post' && a.ts >= cutoff);
+  if (recentPost) return { label: 'HIGH', reason: `posted on ${fmtDate(recentPost.ts)}`, proof: recentPost.url, lastActivity: fmtDate(last.ts), counts, connections };
+  if (last) {
+    const what = last.kind === 'post' ? 'older post' : last.kind === 'reaction' ? (last.text || 'reacted') : last.kind;
+    return { label: 'MEDIUM', reason: `${what} on ${fmtDate(last.ts)}`, proof: last.url, lastActivity: fmtDate(last.ts), counts, connections };
+  }
+  if (connections != null && connections >= CONNECTIONS_MEDIUM) return { label: 'MEDIUM', reason: `${connections}+ connections, no activity found`, proof: '', lastActivity: '', counts, connections };
+  return { label: 'LOW', reason: connections != null ? `${connections} connections, no activity found` : 'no activity found', proof: '', lastActivity: '', counts, connections };
 }
 
 // One person -> activity record. Actor failures are recorded, not thrown.

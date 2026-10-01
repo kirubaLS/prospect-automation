@@ -31,16 +31,20 @@ assert.strictEqual(comments[0].kind, 'comment'); assert.ok(comments[0].url.inclu
 const reactions = a.summarizeReactions([{ action: 'Komala Maran celebrates this', post_url: 'https://www.linkedin.com/posts/anurag_x', timestamps: { date: '2026-09-18 11:46:11', timestamp: now - 13 * day } }]);
 assert.strictEqual(reactions[0].kind, 'reaction'); assert.strictEqual(reactions[0].text, 'Komala Maran celebrates this');
 
-// labels
+// labels: 90-day window applies to HIGH only; any other activity at any age is MEDIUM.
 let r = a.classify({ activities: posts, connections: 300, now });
 assert.strictEqual(r.label, 'HIGH'); assert.strictEqual(r.proof, 'https://www.linkedin.com/posts/activity-1'); assert.match(r.reason, /posted on 2026-09-30/);
 r = a.classify({ activities: [posts[1]], connections: 100, now });
 assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /repost on 2026-09-26/); assert.strictEqual(r.proof, 'https://www.linkedin.com/posts/activity-2');
 r = a.classify({ activities: comments, connections: 100, now }); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /comment/);
 r = a.classify({ activities: reactions, connections: null, now }); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /celebrates this on 2026-09-18/);
-r = a.classify({ activities: [posts[2]], connections: 1839, now }); // only an old post
-assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /1839\+ connections, no activity in 90 days/); assert.strictEqual(r.lastActivity, '2025-08-27');
-r = a.classify({ activities: [posts[2]], connections: 120, now }); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /last activity 2025-08-27/);
+r = a.classify({ activities: [posts[2]], connections: 120, now }); // post older than 90 days, few connections
+assert.strictEqual(r.label, 'MEDIUM', 'an old post is still activity'); assert.match(r.reason, /older post on 2025-08-27/); assert.strictEqual(r.proof, 'https://www.linkedin.com/posts/activity-old');
+const oldComment = a.summarizeComments([{ comment_text: 'x', created_at: { timestamp: now - 400 * day }, comment_link: 'https://www.linkedin.com/feed/update/old' }]);
+r = a.classify({ activities: oldComment, connections: 50, now }); assert.strictEqual(r.label, 'MEDIUM', 'a comment from a year ago, under 500 connections, is MEDIUM');
+r = a.classify({ activities: [], connections: 1839, now }); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /1839\+ connections, no activity found/);
+r = a.classify({ activities: [], connections: 500, now }); assert.strictEqual(r.label, 'MEDIUM');
+r = a.classify({ activities: [], connections: 499, now }); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /499 connections, no activity found/);
 r = a.classify({ activities: [], connections: null, now }); assert.strictEqual(r.label, 'LOW');
 
 (async () => {

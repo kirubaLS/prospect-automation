@@ -101,9 +101,10 @@ Free-tier behaviour you should know:
   comments, reactions and profile details (connection count), then labels:
   - **HIGH** — an original post within the last 90 days; proof = post URL
     and date.
-  - **MEDIUM** — a repost, comment or reaction within 90 days (proof = its
-    link), or 500+ connections with nothing recent.
-  - **LOW** — none of the above.
+  - **MEDIUM** — any other activity at all: an older post, or a repost,
+    comment or reaction at any time (proof = its link), whatever the
+    connection count; or 500+ connections with nothing found.
+  - **LOW** — nothing found and fewer than 500 connections.
   The Excel gains Activity, Activity Proof, Last Activity and Connections.
   Needs one Apify token per process on Render: `APIFY_POSTS_TOKEN`,
   `APIFY_COMMENTS_TOKEN`, `APIFY_REACTIONS_TOKEN`, `APIFY_PROFILE_TOKEN`
