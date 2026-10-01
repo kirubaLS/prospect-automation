@@ -369,7 +369,7 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
 // with nothing found. Nothing else, and never emails or phone numbers.
 const OUTPUT_COLUMNS = [
   ['Company', 'company'], ['Company Status', 'companyStatus'], ['Name', 'name'], ['Designation', 'title'], ['Location', 'location'],
-  ['LinkedIn URL', 'profileUrl'], ['Activity', 'activity'], ['Activity Proof', 'activityProof'], ['Last Activity', 'activityDate'], ['Connections', 'connections'],
+  ['LinkedIn URL', 'profileUrl'], ['Activity', 'activity'], ['Activity Proof', 'activityProof'], ['Activity Note', 'activityReason'], ['Last Activity', 'activityDate'], ['Connections', 'connections'],
   ['Note', 'note'], ['Company Website', 'companyWebsite'], ['Company LinkedIn URL', 'companyUrl']
 ];
 

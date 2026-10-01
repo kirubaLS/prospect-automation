@@ -105,7 +105,10 @@ Free-tier behaviour you should know:
     comment or reaction at any time (proof = its link), whatever the
     connection count; or 500+ connections with nothing found.
   - **LOW** — nothing found and fewer than 500 connections.
-  The Excel gains Activity, Activity Proof, Last Activity and Connections.
+  Every label has a proof: the activity link where there is one, otherwise
+  the person's LinkedIn recent-activity page, with a note giving the
+  connection count and the date checked. The Excel gains Activity,
+  Activity Proof, Activity Note, Last Activity and Connections.
   Needs one Apify token per process on Render: `APIFY_POSTS_TOKEN`,
   `APIFY_COMMENTS_TOKEN`, `APIFY_REACTIONS_TOKEN`, `APIFY_PROFILE_TOKEN`
   (console.apify.com → Settings → API & Integrations → create a token for

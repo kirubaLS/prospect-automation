@@ -129,20 +129,31 @@ function toCount(v) {
   return m ? parseInt(m[1], 10) : null;
 }
 
-function classify({ activities = [], connections = null, now = Date.now() }) {
+function activityPage(profileUrl) {
+  const u = usernameOf(profileUrl);
+  return u ? `https://www.linkedin.com/in/${encodeURIComponent(u)}/recent-activity/all/` : String(profileUrl || '');
+}
+
+// Every label gets a proof: the activity link when there is one, otherwise
+// the person's recent-activity page (where "nothing found" and the
+// connection count can be verified), plus a note with the date checked.
+function classify({ activities = [], connections = null, now = Date.now(), profileUrl = '' }) {
   const cutoff = now - WINDOW_DAYS * 86400000;
+  const checked = fmtDate(now);
+  const page = activityPage(profileUrl);
   const sorted = activities.slice().sort((a, b) => b.ts - a.ts);
   const last = sorted[0] || null;
   const counts = { posts: 0, reposts: 0, comments: 0, reactions: 0 };
   for (const a of sorted) counts[a.kind === 'post' ? 'posts' : a.kind === 'repost' ? 'reposts' : a.kind === 'comment' ? 'comments' : 'reactions']++;
   const recentPost = sorted.find((a) => a.kind === 'post' && a.ts >= cutoff);
-  if (recentPost) return { label: 'HIGH', reason: `posted on ${fmtDate(recentPost.ts)}`, proof: recentPost.url, lastActivity: fmtDate(last.ts), counts, connections };
+  const conn = connections != null ? `${connections} connections` : 'connections unknown';
+  if (recentPost) return { label: 'HIGH', reason: `posted on ${fmtDate(recentPost.ts)} (within ${WINDOW_DAYS} days of ${checked}); ${conn}`, proof: recentPost.url || page, lastActivity: fmtDate(last.ts), counts, connections };
   if (last) {
-    const what = last.kind === 'post' ? 'older post' : last.kind === 'reaction' ? (last.text || 'reacted') : last.kind;
-    return { label: 'MEDIUM', reason: `${what} on ${fmtDate(last.ts)}`, proof: last.url, lastActivity: fmtDate(last.ts), counts, connections };
+    const what = last.kind === 'post' ? 'post older than 90 days' : last.kind === 'reaction' ? (last.text || 'reacted') : last.kind;
+    return { label: 'MEDIUM', reason: `${what} on ${fmtDate(last.ts)}; ${conn}`, proof: last.url || page, lastActivity: fmtDate(last.ts), counts, connections };
   }
-  if (connections != null && connections >= CONNECTIONS_MEDIUM) return { label: 'MEDIUM', reason: `${connections}+ connections, no activity found`, proof: '', lastActivity: '', counts, connections };
-  return { label: 'LOW', reason: connections != null ? `${connections} connections, no activity found` : 'no activity found', proof: '', lastActivity: '', counts, connections };
+  if (connections != null && connections >= CONNECTIONS_MEDIUM) return { label: 'MEDIUM', reason: `${connections}+ connections; no posts, reposts, comments or reactions found on ${checked}`, proof: page, lastActivity: '', counts, connections };
+  return { label: 'LOW', reason: `${conn}; no posts, reposts, comments or reactions found on ${checked}`, proof: page, lastActivity: '', counts, connections };
 }
 
 // One person -> activity record. Actor failures are recorded, not thrown.
@@ -160,7 +171,7 @@ async function checkPerson(cfg, person, opts = {}) {
   ]);
   const activities = [...summarizePosts(posts, username), ...summarizeComments(comments), ...summarizeReactions(reactions)];
   const connections = profile && profile.length ? connectionsOf(profile[0]) : null;
-  const result = classify({ activities, connections, now: opts.now });
+  const result = classify({ activities, connections, now: opts.now, profileUrl: person.profileUrl });
   if (errors.length) { result.errors = errors; if (!activities.length && connections == null) { result.label = ''; result.reason = 'check failed: ' + errors.join('; '); } }
   return result;
 }
@@ -191,4 +202,4 @@ async function runActivityCheck(cfg, people, { onProgress = () => {}, shouldStop
   return { results, state };
 }
 
-module.exports = { configFromEnv, usernameOf, runActor, classify, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, tsOf, WINDOW_DAYS };
+module.exports = { configFromEnv, usernameOf, activityPage, runActor, classify, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, tsOf, WINDOW_DAYS };

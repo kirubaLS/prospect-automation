@@ -32,7 +32,9 @@ const reactions = a.summarizeReactions([{ action: 'Komala Maran celebrates this'
 assert.strictEqual(reactions[0].kind, 'reaction'); assert.strictEqual(reactions[0].text, 'Komala Maran celebrates this');
 
 // labels: 90-day window applies to HIGH only; any other activity at any age is MEDIUM.
-let r = a.classify({ activities: posts, connections: 300, now });
+const pu = 'https://www.linkedin.com/in/kingshuk';
+assert.strictEqual(a.activityPage(pu), 'https://www.linkedin.com/in/kingshuk/recent-activity/all/');
+let r = a.classify({ activities: posts, connections: 300, now, profileUrl: pu });
 assert.strictEqual(r.label, 'HIGH'); assert.strictEqual(r.proof, 'https://www.linkedin.com/posts/activity-1'); assert.match(r.reason, /posted on 2026-09-30/);
 r = a.classify({ activities: [posts[1]], connections: 100, now });
 assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /repost on 2026-09-26/); assert.strictEqual(r.proof, 'https://www.linkedin.com/posts/activity-2');
@@ -42,10 +44,12 @@ r = a.classify({ activities: [posts[2]], connections: 120, now }); // post older
 assert.strictEqual(r.label, 'MEDIUM', 'an old post is still activity'); assert.match(r.reason, /older post on 2025-08-27/); assert.strictEqual(r.proof, 'https://www.linkedin.com/posts/activity-old');
 const oldComment = a.summarizeComments([{ comment_text: 'x', created_at: { timestamp: now - 400 * day }, comment_link: 'https://www.linkedin.com/feed/update/old' }]);
 r = a.classify({ activities: oldComment, connections: 50, now }); assert.strictEqual(r.label, 'MEDIUM', 'a comment from a year ago, under 500 connections, is MEDIUM');
-r = a.classify({ activities: [], connections: 1839, now }); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /1839\+ connections, no activity found/);
-r = a.classify({ activities: [], connections: 500, now }); assert.strictEqual(r.label, 'MEDIUM');
-r = a.classify({ activities: [], connections: 499, now }); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /499 connections, no activity found/);
-r = a.classify({ activities: [], connections: null, now }); assert.strictEqual(r.label, 'LOW');
+r = a.classify({ activities: [], connections: 1839, now, profileUrl: pu }); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /1839\+ connections; no posts, reposts, comments or reactions found on 2026-10-01/);
+assert.strictEqual(r.proof, 'https://www.linkedin.com/in/kingshuk/recent-activity/all/', 'MEDIUM by connections still has a proof link');
+r = a.classify({ activities: [], connections: 500, now, profileUrl: pu }); assert.strictEqual(r.label, 'MEDIUM');
+r = a.classify({ activities: [], connections: 499, now, profileUrl: pu }); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /499 connections; no posts, reposts, comments or reactions found on 2026-10-01/);
+assert.strictEqual(r.proof, 'https://www.linkedin.com/in/kingshuk/recent-activity/all/', 'LOW has a proof link too');
+r = a.classify({ activities: [], connections: null, now, profileUrl: pu }); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /connections unknown/);
 
 (async () => {
   // full check against mocked Apify: 4 actors in parallel, token in header, errors recorded not thrown.
