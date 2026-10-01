@@ -94,9 +94,25 @@ Free-tier behaviour you should know:
   when the row has a website domain (1 when only a LinkedIn URL is given),
   0 for the people searches, 0 with web-search resolution, or up to
   "people per company" with Apollo enrichment.
-- LinkedIn activity is not available from Apollo or any data API. The
-  Activity column is left blank for the researcher to fill from the
-  profile.
+- **LinkedIn activity (Activity tab).** For projects with
+  `"activityCheck": true` in their `config.json` (Reach24; not Sharp), a
+  finished job gets a **LinkedIn activity** tab. "Check activity" runs,
+  through your Apify account, four actors per person in parallel: posts,
+  comments, reactions and profile details (connection count), then labels:
+  - **HIGH** — an original post within the last 90 days; proof = post URL
+    and date.
+  - **MEDIUM** — a repost, comment or reaction within 90 days (proof = its
+    link), or 500+ connections with nothing recent.
+  - **LOW** — none of the above.
+  The Excel gains Activity, Activity Proof, Last Activity and Connections.
+  Needs `APIFY_TOKEN` on Render (console.apify.com → Settings →
+  Integrations). Actor ids default to apimaestro's LinkedIn actors
+  (`apimaestro~linkedin-profile-posts`, `~linkedin-profile-comments`,
+  `~linkedin-profile-reactions`, `~linkedin-profile-detail`) and can be
+  overridden with `APIFY_POSTS_ACTOR`, `APIFY_COMMENTS_ACTOR`,
+  `APIFY_REACTIONS_ACTOR`, `APIFY_PROFILE_ACTOR`. Apify bills these runs
+  against its own plan (the free plan includes monthly credit); the app
+  runs two people at a time.
 
 Per-project presets: `projects/<name>/config.json` (see `projects/sharp`
 and `projects/reach24`, whose `titlePriorities` hold each client's

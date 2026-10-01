@@ -1,0 +1,175 @@
+// LinkedIn activity check through Apify actors (the researcher's own Apify
+// account, APIFY_TOKEN). For each person with a profile URL it runs, in
+// parallel: a posts actor, a comments actor and a profile-details actor
+// (connection count), then labels:
+//   HIGH    an original post within the last 90 days (proof: post URL + date)
+//   MEDIUM  a repost, comment or reaction within 90 days, or 500+ connections
+//           with nothing recent (proof: the activity link, or "500+ connections")
+//   LOW     nothing of the above
+// Actor ids are overridable; the defaults are apimaestro's LinkedIn actors.
+const logger = require('./logger');
+
+const APIFY = 'https://api.apify.com/v2';
+const WINDOW_DAYS = 90;
+const CONNECTIONS_MEDIUM = 500;
+
+function configFromEnv(env = process.env) {
+  return {
+    token: env.APIFY_TOKEN || null,
+    postsActor: env.APIFY_POSTS_ACTOR || 'apimaestro~linkedin-profile-posts',
+    commentsActor: env.APIFY_COMMENTS_ACTOR || 'apimaestro~linkedin-profile-comments',
+    profileActor: env.APIFY_PROFILE_ACTOR || 'apimaestro~linkedin-profile-detail',
+    reactionsActor: env.APIFY_REACTIONS_ACTOR || 'apimaestro~linkedin-profile-reactions',
+    timeoutSecs: parseInt(env.APIFY_TIMEOUT_SECS || '150', 10)
+  };
+}
+
+function usernameOf(profileUrl) {
+  const m = String(profileUrl || '').match(/linkedin\.com\/in\/([^/?#]+)/i);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+}
+
+// Runs an actor synchronously and returns its dataset items.
+async function runActor(cfg, actorId, input, { fetchImpl = fetch } = {}) {
+  const url = `${APIFY}/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?timeout=${cfg.timeoutSecs}&clean=true`;
+  const res = await fetchImpl(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.token}` },
+    body: JSON.stringify(input)
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const err = new Error(`Apify ${actorId} ${res.status}: ${text.slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
+  }
+  const data = await res.json().catch(() => []);
+  return Array.isArray(data) ? data : (data && data.items) || [];
+}
+
+// Timestamps come in several shapes across actors.
+function tsOf(item) {
+  const cands = [
+    item && item.posted_at && item.posted_at.timestamp,
+    item && item.created_at && item.created_at.timestamp,
+    item && item.timestamps && item.timestamps.timestamp,
+    item && item.timestamp,
+    item && item.posted_at && item.posted_at.date,
+    item && item.created_at && item.created_at.formatted,
+    item && item.timestamps && item.timestamps.date,
+    item && item.date
+  ];
+  for (const c of cands) {
+    if (c == null || c === '') continue;
+    const n = typeof c === 'number' ? c : Date.parse(String(c).replace(' ', 'T') + (String(c).length === 19 ? 'Z' : ''));
+    if (Number.isFinite(n) && n > 0) return n < 1e12 ? n * 1000 : n;
+  }
+  return null;
+}
+
+function fmtDate(ms) {
+  return ms ? new Date(ms).toISOString().slice(0, 10) : '';
+}
+
+// Posts actor items: post_type regular/quote = original, repost = repost.
+function summarizePosts(items, username) {
+  const out = [];
+  for (const it of items || []) {
+    const ts = tsOf(it);
+    if (!ts) continue;
+    const type = String(it.post_type || '').toLowerCase();
+    const author = it.author && it.author.username;
+    // A regular post by someone else in the profile's feed is not this
+    // person's activity; a repost carries the original author, so it counts.
+    if (type !== 'repost' && author && username && author.toLowerCase() !== username.toLowerCase()) continue;
+    out.push({ kind: type === 'repost' ? 'repost' : 'post', ts, url: it.url || '', text: (it.text || '').slice(0, 120) });
+  }
+  return out;
+}
+
+function summarizeComments(items) {
+  return (items || []).map((it) => ({ kind: 'comment', ts: tsOf(it), url: it.comment_link || (it.post && it.post.post_url) || '', text: (it.comment_text || '').slice(0, 120) })).filter((x) => x.ts);
+}
+
+// Reactions actor items: { action: "Komala Maran likes this", post_url, timestamps }
+function summarizeReactions(items) {
+  return (items || []).map((it) => ({ kind: 'reaction', ts: tsOf(it), url: it.post_url || it.url || (it.post && it.post.post_url) || '', text: String(it.action || '').slice(0, 60) })).filter((x) => x.ts);
+}
+
+// Connection count from a profile-details item, whatever the field is called.
+function connectionsOf(item) {
+  if (!item || typeof item !== 'object') return null;
+  const direct = ['connections', 'connection_count', 'connections_count', 'connectionsCount', 'numConnections'];
+  for (const k of direct) if (item[k] != null && item[k] !== '') return toCount(item[k]);
+  for (const sub of ['basic_info', 'basicInfo', 'profile', 'data']) if (item[sub] && typeof item[sub] === 'object') { const v = connectionsOf(item[sub]); if (v != null) return v; }
+  for (const [k, v] of Object.entries(item)) if (/connection/i.test(k) && (typeof v === 'number' || typeof v === 'string')) return toCount(v);
+  return null;
+}
+function toCount(v) {
+  if (typeof v === 'number') return v;
+  const m = String(v).replace(/,/g, '').match(/(\d+)(\+?)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function classify({ activities = [], connections = null, now = Date.now() }) {
+  const cutoff = now - WINDOW_DAYS * 86400000;
+  const recent = activities.filter((a) => a.ts >= cutoff).sort((a, b) => b.ts - a.ts);
+  const last = activities.slice().sort((a, b) => b.ts - a.ts)[0] || null;
+  const counts = { posts: 0, reposts: 0, comments: 0, reactions: 0 };
+  for (const a of recent) counts[a.kind === 'post' ? 'posts' : a.kind === 'repost' ? 'reposts' : a.kind === 'comment' ? 'comments' : 'reactions']++;
+  const post = recent.find((a) => a.kind === 'post');
+  if (post) return { label: 'HIGH', reason: `posted on ${fmtDate(post.ts)}`, proof: post.url, lastActivity: fmtDate(recent[0].ts), counts, connections };
+  const other = recent[0];
+  if (other) return { label: 'MEDIUM', reason: `${other.kind === 'reaction' ? (other.text || 'reacted') : other.kind} on ${fmtDate(other.ts)}`, proof: other.url, lastActivity: fmtDate(other.ts), counts, connections };
+  if (connections != null && connections >= CONNECTIONS_MEDIUM) return { label: 'MEDIUM', reason: `${connections}+ connections, no activity in ${WINDOW_DAYS} days`, proof: '', lastActivity: fmtDate(last && last.ts), counts, connections };
+  return { label: 'LOW', reason: last ? `last activity ${fmtDate(last.ts)}` : 'no posts, reposts or comments found', proof: '', lastActivity: fmtDate(last && last.ts), counts, connections };
+}
+
+// One person -> activity record. Actor failures are recorded, not thrown.
+async function checkPerson(cfg, person, opts = {}) {
+  const username = usernameOf(person.profileUrl);
+  if (!username) return { label: '', reason: 'no LinkedIn URL', proof: '', lastActivity: '', connections: null, counts: {}, errors: ['no LinkedIn URL'] };
+  const input = { username, profile_url: person.profileUrl, page_number: 1, limit: 20 };
+  const errors = [];
+  const safe = (p, name) => p.catch((err) => { errors.push(`${name}: ${err.message}`); return null; });
+  const [posts, comments, profile, reactions] = await Promise.all([
+    safe(runActor(cfg, cfg.postsActor, input, opts), 'posts'),
+    safe(runActor(cfg, cfg.commentsActor, input, opts), 'comments'),
+    safe(runActor(cfg, cfg.profileActor, input, opts), 'profile'),
+    safe(runActor(cfg, cfg.reactionsActor, input, opts), 'reactions')
+  ]);
+  const activities = [...summarizePosts(posts, username), ...summarizeComments(comments), ...summarizeReactions(reactions)];
+  const connections = profile && profile.length ? connectionsOf(profile[0]) : null;
+  const result = classify({ activities, connections, now: opts.now });
+  if (errors.length) { result.errors = errors; if (!activities.length && connections == null) { result.label = ''; result.reason = 'check failed: ' + errors.join('; '); } }
+  return result;
+}
+
+// Runs the check over `people` (objects with profileUrl), a few at a time.
+async function runActivityCheck(cfg, people, { onProgress = () => {}, shouldStop = () => false, concurrency = 2, fetchImpl, now } = {}) {
+  if (!cfg.token) throw new Error('APIFY_TOKEN is not set on the server');
+  const results = new Array(people.length);
+  let next = 0;
+  const state = { total: people.length, done: 0, high: 0, medium: 0, low: 0, failed: 0 };
+  async function worker() {
+    while (next < people.length && !shouldStop()) {
+      const i = next++;
+      const p = people[i];
+      try {
+        results[i] = await checkPerson(cfg, p, { fetchImpl, now });
+      } catch (err) {
+        results[i] = { label: '', reason: `check failed: ${err.message}`, proof: '', lastActivity: '', connections: null, counts: {}, errors: [err.message] };
+      }
+      const l = results[i].label;
+      if (l === 'HIGH') state.high++; else if (l === 'MEDIUM') state.medium++; else if (l === 'LOW') state.low++; else state.failed++;
+      state.done++;
+      logger.info(`  activity ${p.name || p.profileUrl}: ${l || 'n/a'} - ${results[i].reason}`);
+      onProgress(state);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, people.length || 1) }, worker));
+  return { results, state };
+}
+
+module.exports = { configFromEnv, usernameOf, runActor, classify, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, tsOf, WINDOW_DAYS };

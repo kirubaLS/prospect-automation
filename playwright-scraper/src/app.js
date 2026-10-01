@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const logger = require('./logger');
 const { runJob, exportRows, parseGeography, parseIcp } = require('./jobs');
 const { providersFromEnv } = require('./websearch');
+const activity = require('./activity');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY || null;
@@ -22,6 +23,8 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_JOBS_KEPT = 20;
 const MAX_PEOPLE_PER_COMPANY = 25;
 const SEARCH_PROVIDERS = providersFromEnv();
+const APIFY = activity.configFromEnv();
+let activityRunning = null; // job id whose activity check is running
 // Render's free tier spins a web service down after 15 idle minutes, which
 // would kill a job mid-run if the browser tab polling /jobs is closed. While
 // a job runs, hit our own public URL every few minutes so it counts as
@@ -83,7 +86,8 @@ function presets() {
           name: c.name || d.name,
           geography: (c.personLocations || []).join('; '),
           icp: (industries.length ? industries.join(', ') + '; ' : '') + (c.titlePriorities ? c.titlePriorities.map((g) => g.titles.join(', ')).join(' > ') : (c.titleKeywords || []).join(', ')),
-          peoplePerCompany: c.targetPerCompany || 4
+          peoplePerCompany: c.targetPerCompany || 4,
+          activityCheck: !!c.activityCheck
         };
       });
   } catch (err) {
@@ -95,9 +99,10 @@ function presets() {
 function publicJob(j) {
   return {
     id: j.id,
+    activity: j.activity ? { status: j.activity.status, progress: j.activity.progress, error: j.activity.error || null, startedAt: j.activity.startedAt, finishedAt: j.activity.finishedAt } : null,
     label: j.label,
     filename: j.filename,
-    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, searchExhausted: !!j.params.searchExhausted },
+    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, activityCheck: !!j.params.activityCheck, searchExhausted: !!j.params.searchExhausted },
     status: j.status,
     startedAt: j.startedAt,
     finishedAt: j.finishedAt,
@@ -107,7 +112,7 @@ function publicJob(j) {
   };
 }
 
-function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label, resolve }) {
+function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label, resolve, activityCheck = false }) {
   if (runningId) throw new Error('another job is running - wait for it to finish or stop it');
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
   const count = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 4));
@@ -123,7 +128,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
     label: label || filename,
     filename,
     paramsText: { geography, icp },
-    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
+    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
     status: 'running',
     startedAt: new Date().toISOString(),
     finishedAt: null,
@@ -179,7 +184,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, searchProviders: SEARCH_PROVIDERS.map((p) => p.name), presets: presets() });
+    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, searchProviders: SEARCH_PROVIDERS.map((p) => p.name), apify: !!APIFY.token, presets: presets() });
 
     if (url.pathname === '/jobs' && req.method === 'GET') {
       return send(200, { running: runningId, jobs: [...jobs.values()].reverse().map(publicJob) });
@@ -195,13 +200,14 @@ const server = http.createServer(async (req, res) => {
         icp: url.searchParams.get('icp') || '',
         peoplePerCompany: url.searchParams.get('count') || '4',
         label: url.searchParams.get('label') || '',
-        resolve: url.searchParams.get('resolve') || (url.searchParams.get('enrich') === '0' ? 'none' : undefined)
+        resolve: url.searchParams.get('resolve') || (url.searchParams.get('enrich') === '0' ? 'none' : undefined),
+        activityCheck: url.searchParams.get('activity') === '1'
       });
       return send(202, { status: 'started', job: publicJob(job) });
     }
 
-    const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows))?$/);
-    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx'] });
+    const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows|activity))?$/);
+    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx', 'GET|POST|DELETE /jobs/:id/activity'] });
     const job = jobs.get(m[1]);
     if (!job) return send(404, { error: 'unknown or expired job (results are kept only while the server runs)' });
 
@@ -210,6 +216,37 @@ const server = http.createServer(async (req, res) => {
       job.stopRequested = true;
       return send(202, { status: job.status === 'running' ? 'stopping' : job.status });
     }
+    if (m[2] === 'activity') {
+      if (req.method === 'POST') {
+        if (!job.params.activityCheck) return send(400, { error: 'the LinkedIn activity check is not enabled for this project (set "activityCheck": true in its config.json)' });
+        if (!APIFY.token) return send(400, { error: 'APIFY_TOKEN is not set on the server' });
+        if (job.status === 'running') return send(409, { error: 'wait for the job to finish' });
+        if (activityRunning) return send(409, { error: 'an activity check is already running' });
+        const people = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl);
+        if (!people.length) return send(400, { error: 'no people with a LinkedIn URL in this job' });
+        job.activity = { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, progress: { total: people.length, done: 0, high: 0, medium: 0, low: 0, failed: 0 }, stopRequested: false };
+        activityRunning = job.id;
+        keepAlive(true);
+        logger.info(`Activity check for job ${job.id}: ${people.length} people via Apify (${APIFY.postsActor}, ${APIFY.commentsActor}, ${APIFY.profileActor})`);
+        activity.runActivityCheck(APIFY, people, { onProgress: (st) => { job.activity.progress = { ...st }; }, shouldStop: () => job.activity.stopRequested })
+          .then(({ results, state }) => {
+            people.forEach((r, i) => {
+              const a = results[i];
+              if (!a) return;
+              r.activity = a.label; r.activityReason = a.reason; r.activityProof = a.proof; r.activityDate = a.lastActivity; r.connections = a.connections ?? ''; r.activityCounts = a.counts;
+            });
+            job.activity.progress = { ...state };
+            job.activity.status = job.activity.stopRequested ? 'stopped' : 'done';
+          })
+          .catch((err) => { job.activity.status = 'failed'; job.activity.error = err.message; logger.error(`Activity check ${job.id} failed: ${err.message}`); })
+          .finally(() => { job.activity.finishedAt = new Date().toISOString(); activityRunning = null; keepAlive(false); });
+        return send(202, { status: 'started', total: people.length });
+      }
+      if (req.method === 'DELETE') { if (job.activity) job.activity.stopRequested = true; return send(202, { status: 'stopping' }); }
+      const rows = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl).map((r) => ({ company: r.company, name: r.name, title: r.title, profileUrl: r.profileUrl, activity: r.activity || '', reason: r.activityReason || '', proof: r.activityProof || '', date: r.activityDate || '', connections: r.connections ?? '', counts: r.activityCounts || null }));
+      return send(200, { activity: job.activity ? publicJob(job).activity : null, rows });
+    }
+
     if (m[2] === 'rows') {
       const from = Math.max(0, parseInt(url.searchParams.get('from') || '0', 10) || 0);
       return send(200, { total: job.rows.length, from, rows: job.rows.slice(from, from + 500) });
@@ -233,7 +270,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR}; web search: ${SEARCH_PROVIDERS.map((p) => p.name).join(', ') || 'none configured'})`);
+  logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR}; web search: ${SEARCH_PROVIDERS.map((p) => p.name).join(', ') || 'none configured'}; Apify activity: ${APIFY.token ? 'configured' : 'not configured'})`);
   if (!APOLLO_API_KEY) logger.warn('APOLLO_API_KEY is not set - runs will fail until it is');
 });
 

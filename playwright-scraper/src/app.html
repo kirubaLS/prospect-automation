@@ -90,6 +90,13 @@
   .sum { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
   .sum span { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
   .sum span b { color: var(--ink); font-weight: 600; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+  .tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; font: inherit; font-weight: 600; color: var(--ink-2); cursor: pointer; margin-bottom: -1px; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .lbl { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .lbl.HIGH { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .lbl.MEDIUM { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .lbl.LOW { background: var(--surface-2); color: var(--ink-2); }
 </style>
 </head>
 <body>
@@ -167,7 +174,21 @@
         <a class="btn secondary" id="dl" href="#" style="display:none">⬇ Download CSV</a>
         <span class="hint">Download when the job finishes — results are not kept after a restart.</span>
       </div>
-      <div class="scroll" style="margin-top:12px"><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="5" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
+      <div class="tabs" style="margin-top:14px">
+        <button class="tab active" data-tab="people" onclick="showTab('people')">People</button>
+        <button class="tab" data-tab="activity" id="acttab" onclick="showTab('activity')" style="display:none">LinkedIn activity</button>
+      </div>
+      <div id="tab-activity" style="display:none">
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="actbtn" onclick="startActivity()">Check activity</button>
+          <button class="btn secondary" id="actstop" onclick="stopActivity()" disabled>Stop</button>
+          <span class="hint" id="acthint">HIGH = posted in last 90 days · MEDIUM = repost/comment/reaction in 90 days or 500+ connections · LOW = none.</span>
+        </div>
+        <div class="stats" id="actstats"></div>
+        <div class="msg" id="actmsg"></div>
+        <div class="scroll"><table class="tbl" id="actrows"><thead><tr><th>Company</th><th>Name</th><th>Activity</th><th>Why</th><th>Last</th><th>Connections</th><th>Proof</th></tr></thead><tbody><tr><td colspan="7" class="empty">Run a job, then check activity here.</td></tr></tbody></table></div>
+      </div>
+      <div id="tab-people" class="scroll" style="margin-top:12px"><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="5" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
     </section>
   </div>
 
@@ -193,6 +214,7 @@ if (savedTheme) document.documentElement.dataset.theme = savedTheme;
 $('theme').onclick = () => { const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); const next = cur === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; localStorage.setItem('theme', next); };
 
 // form persistence
+let activityCheck = localStorage.getItem('form.activity') === '1';
 ['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
 { const v = localStorage.getItem('form.resolve'); if (v) $('resolve').value = v; $('resolve').addEventListener('change', () => localStorage.setItem('form.resolve', $('resolve').value)); }
 const resolveValue = () => $('resolve').value || 'search';
@@ -205,6 +227,7 @@ async function loadPresets() {
   const j = await r.json();
   $('keywarn').style.display = j.apolloKeySet ? 'none' : '';
   const sp = j.searchProviders || [];
+  apifyOn = !!j.apify;
   $('searchinfo').textContent = sp.length ? `Web search: ${sp.join(', ')} · 0 credits` : 'Web search not set up on the server — Apollo enrichment will be used (1 credit per person).';
   ['search', 'apollo+search'].forEach((v) => { const o = $('resolve').querySelector(`option[value="${v}"]`); o.disabled = !sp.length; });
   if (!sp.length && ['search', 'apollo+search'].includes($('resolve').value)) $('resolve').value = 'apollo';
@@ -227,7 +250,8 @@ async function loadPresets() {
   }
 }
 function applyPreset(p, force) {
-  $('geography').value = p.geography || ''; $('icp').value = p.icp || ''; $('count').value = p.peoplePerCompany || 8;
+  activityCheck = !!p.activityCheck; localStorage.setItem('form.activity', activityCheck ? '1' : '0');
+  $('geography').value = p.geography || ''; $('icp').value = p.icp || ''; $('count').value = p.peoplePerCompany || 4;
   if (!$('label').value || force) $('label').value = $('label').value || p.name;
   ['geography', 'icp', 'count', 'label'].forEach((id) => $(id).dispatchEvent(new Event('input')));
   icpSummary();
@@ -242,13 +266,13 @@ $('preset').addEventListener('change', () => {
 // Typing over a preset's ICP/geography means it is no longer "the preset".
 ['geography', 'icp', 'count'].forEach((id) => $(id).addEventListener('input', () => {
   const p = presets[$('preset').value];
-  if (p && (String($('geography').value) !== String(p.geography || '') || String($('icp').value) !== String(p.icp || '') || String($('count').value) !== String(p.peoplePerCompany || 8))) { $('preset').value = ''; localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); }
+  if (p && (String($('geography').value) !== String(p.geography || '') || String($('icp').value) !== String(p.icp || '') || String($('count').value) !== String(p.peoplePerCompany || 4))) { $('preset').value = ''; localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); activityCheck = false; localStorage.setItem('form.activity', '0'); }
 }));
 function savePreset() {
   const name = prompt('Preset name (e.g. the client name):', $('label').value || '');
   if (!name) return;
   const mine = localPresets().filter((p) => p.name !== name);
-  mine.push({ slug: 'local-' + Date.now(), name, geography: $('geography').value, icp: $('icp').value, peoplePerCompany: parseInt($('count').value, 10) || 8 });
+  mine.push({ slug: 'local-' + Date.now(), name, geography: $('geography').value, icp: $('icp').value, peoplePerCompany: parseInt($('count').value, 10) || 4 });
   localStorage.setItem('presets', JSON.stringify(mine));
   loadPresets();
 }
@@ -297,7 +321,7 @@ async function startJob() {
   if (!selectedFile) { setMsg('Choose the companies file first.', 'err'); return; }
   if (!$('icp').value.trim()) { setMsg('Enter the ICP roles (after the semicolon).', 'err'); $('icp').focus(); return; }
   setMsg('Starting…');
-  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue() });
+  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0' });
   try {
     const r = await fetch('/jobs?' + params, { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
@@ -379,6 +403,32 @@ function icpSummary() {
   $('icpsum').textContent = !n ? '' : groups.length > 1 ? groups.map((g, i) => `P${i + 1}: ${g.length}`).join(' · ') + ` · ${n} titles` : `${n} titles, no priorities`;
 }
 $('icp').addEventListener('input', icpSummary); setTimeout(icpSummary, 0);
+// ---- activity tab ----
+let apifyOn = false;
+function showTab(t) { document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === t)); $('tab-people').style.display = t === 'people' ? '' : 'none'; $('tab-activity').style.display = t === 'activity' ? '' : 'none'; if (t === 'activity') loadActivity(); }
+async function startActivity() {
+  if (!currentId) return;
+  $('actmsg').textContent = 'Starting…'; $('actmsg').className = 'msg';
+  const r = await fetch('/jobs/' + currentId + '/activity', { method: 'POST' });
+  const j = await r.json().catch(() => ({}));
+  $('actmsg').textContent = r.ok ? `Checking ${j.total} people…` : 'Error: ' + (j.error || r.status); $('actmsg').className = 'msg ' + (r.ok ? 'ok' : 'err');
+  loadActivity();
+}
+async function stopActivity() { if (currentId) await fetch('/jobs/' + currentId + '/activity', { method: 'DELETE' }); }
+async function loadActivity() {
+  if (!currentId) return;
+  let r; try { r = await fetch('/jobs/' + currentId + '/activity'); } catch { return; }
+  if (!r.ok) return;
+  const d = await r.json();
+  const a = d.activity, p = (a && a.progress) || {};
+  $('actbtn').disabled = !apifyOn || (a && a.status === 'running');
+  $('actstop').disabled = !(a && a.status === 'running');
+  $('acthint').textContent = apifyOn ? 'HIGH = posted in last 90 days · MEDIUM = repost/comment/reaction in 90 days or 500+ connections · LOW = none.' : 'Set APIFY_TOKEN on the server to enable.';
+  $('actstats').innerHTML = a ? [['People', p.total], ['Checked', p.done], ['HIGH', p.high], ['MEDIUM', p.medium], ['LOW', p.low], ['Failed', p.failed]].map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('') : '';
+  if (a && a.status !== 'running') $('actmsg').textContent = a.status === 'done' ? 'Done — download Excel to get the Activity columns.' : a.status === 'failed' ? 'Failed: ' + a.error : 'Stopped.';
+  const tb = $('actrows').querySelector('tbody');
+  tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${x.activity}">${x.activity}</span>` : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td>${esc(x.connections)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
+}
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 async function refresh() {
@@ -388,6 +438,10 @@ async function refresh() {
   const cur = j.jobs.find((x) => x.id === currentId) || j.jobs.find((x) => x.id === j.running) || j.jobs[0] || null;
   if (cur) currentId = cur.id;
   show(cur); loadRows(cur);
+  const actOn = !!(cur && cur.params && cur.params.activityCheck);
+  $('acttab').style.display = actOn ? '' : 'none';
+  if (!actOn && $('tab-activity').style.display !== 'none') showTab('people');
+  if (cur && cur.activity && cur.activity.status === 'running' && $('tab-activity').style.display !== 'none') loadActivity();
   $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt).toLocaleString()}</td><td><a href="/jobs/${x.id}/download?format=xlsx">Excel</a><a href="/jobs/${x.id}/download?format=csv">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);

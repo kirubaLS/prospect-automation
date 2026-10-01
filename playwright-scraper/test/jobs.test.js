@@ -89,7 +89,7 @@ const fetchImpl = async (url, init) => {
   assert.match(empty.note, /Industry "retail" not in ICP list/);
 
   const out = jobs.toCsv(rows);
-  assert.ok(out.startsWith('Company,Company Status,Name,Designation,Location,LinkedIn URL,Activity,Note,Company Website,Company LinkedIn URL\r\n'), 'only the requested columns: ' + out.split('\r\n')[0]);
+  assert.ok(out.startsWith('Company,Company Status,Name,Designation,Location,LinkedIn URL,Activity,Activity Proof,Last Activity,Connections,Note,Company Website,Company LinkedIn URL\r\n'), 'only the requested columns: ' + out.split('\r\n')[0]);
   assert.ok(!/Seniority|Function|Match|Rank|Industry|Employees|HQ/.test(out.split('\r\n')[0]), 'no extra columns');
   assert.ok(!/secret@example|1234567890|email|phone|has_email/i.test(out), 'no contact details in the CSV');
 

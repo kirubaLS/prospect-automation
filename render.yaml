@@ -32,6 +32,9 @@ services:
         sync: false
       - key: GOOGLE_CSE_CX
         sync: false
+      # LinkedIn activity check (Activity tab) through your Apify account:
+      - key: APIFY_TOKEN
+        sync: false
       - key: NODE_OPTIONS
         value: "--max-old-space-size=400"
       - key: PROJECTS_DIR
