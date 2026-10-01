@@ -177,11 +177,21 @@
       <div class="tabs" style="margin-top:14px">
         <button class="tab active" data-tab="people" onclick="showTab('people')">People</button>
         <button class="tab" data-tab="activity" id="acttab" onclick="showTab('activity')" style="display:none">LinkedIn activity</button>
+        <button class="tab" data-tab="final" onclick="showTab('final')">Final</button>
+      </div>
+      <div id="tab-final" style="display:none">
+        <div class="row" style="margin-top:10px">
+          <a class="btn" id="dlx2" href="#">⬇ Download Excel</a>
+          <a class="btn secondary" id="dl2" href="#">⬇ Download CSV</a>
+          <span class="hint" id="finalhint">People + LinkedIn activity, exactly as the file will contain them.</span>
+        </div>
+        <div class="scroll" style="margin-top:10px"><table class="tbl" id="finalrows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th>Activity</th><th>Proof</th><th>Last</th><th>Conn.</th></tr></thead><tbody><tr><td colspan="9" class="empty">Run a job first.</td></tr></tbody></table></div>
       </div>
       <div id="tab-activity" style="display:none">
         <div class="row" style="margin-top:10px">
           <button class="btn" id="actbtn" onclick="startActivity()">Check activity</button>
           <button class="btn secondary" id="actstop" onclick="stopActivity()" disabled>Stop</button>
+          <a class="btn secondary sm" id="dlx3" href="#">⬇ Excel</a>
           <span class="hint" id="acthint">HIGH = posted in last 90 days · MEDIUM = repost/comment/reaction in 90 days or 500+ connections · LOW = none.</span>
         </div>
         <div class="stats" id="actstats"></div>
@@ -405,7 +415,28 @@ function icpSummary() {
 $('icp').addEventListener('input', icpSummary); setTimeout(icpSummary, 0);
 // ---- activity tab ----
 let apifyOn = false;
-function showTab(t) { document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === t)); $('tab-people').style.display = t === 'people' ? '' : 'none'; $('tab-activity').style.display = t === 'activity' ? '' : 'none'; if (t === 'activity') loadActivity(); }
+function showTab(t) {
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === t));
+  $('tab-people').style.display = t === 'people' ? '' : 'none'; $('tab-activity').style.display = t === 'activity' ? '' : 'none'; $('tab-final').style.display = t === 'final' ? '' : 'none';
+  if (t === 'activity') loadActivity();
+  if (t === 'final') loadFinal();
+}
+async function loadFinal() {
+  if (!currentId) return;
+  $('dlx2').href = '/jobs/' + currentId + '/download?format=xlsx'; $('dl2').href = '/jobs/' + currentId + '/download?format=csv';
+  let r; try { r = await fetch('/jobs/' + currentId + '/rows?from=0'); } catch { return; }
+  if (!r.ok) return;
+  const d = await r.json();
+  const all = [...d.rows];
+  let from = d.rows.length;
+  while (from < d.total) { const rr = await (await fetch(`/jobs/${currentId}/rows?from=${from}`)).json(); all.push(...rr.rows); from += rr.rows.length; if (!rr.rows.length) break; }
+  const tb = $('finalrows').querySelector('tbody');
+  tb.innerHTML = all.map((x) => x.companyStatus === 'Found'
+    ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${x.activity}">${x.activity}</span>` : ''}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td></tr>`
+    : `<tr class="co"><td colspan="9"><span class="s-nf">${esc(x.companyStatus)}</span> · ${esc(x.company)}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No rows.</td></tr>';
+  const withAct = all.filter((x) => x.activity).length;
+  $('finalhint').textContent = withAct ? `${withAct} people carry an activity label.` : 'Activity columns fill in after "Check activity" (Reach24).';
+}
 async function startActivity() {
   if (!currentId) return;
   $('actmsg').textContent = 'Starting…'; $('actmsg').className = 'msg';
@@ -417,6 +448,7 @@ async function startActivity() {
 async function stopActivity() { if (currentId) await fetch('/jobs/' + currentId + '/activity', { method: 'DELETE' }); }
 async function loadActivity() {
   if (!currentId) return;
+  $('dlx3').href = '/jobs/' + currentId + '/download?format=xlsx';
   let r; try { r = await fetch('/jobs/' + currentId + '/activity'); } catch { return; }
   if (!r.ok) return;
   const d = await r.json();
@@ -442,6 +474,7 @@ async function refresh() {
   $('acttab').style.display = actOn ? '' : 'none';
   if (!actOn && $('tab-activity').style.display !== 'none') showTab('people');
   if (cur && cur.activity && cur.activity.status === 'running' && $('tab-activity').style.display !== 'none') loadActivity();
+  if (cur && $('tab-final').style.display !== 'none' && (cur.status === 'running' || (cur.activity && cur.activity.status === 'running'))) loadFinal();
   $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt).toLocaleString()}</td><td><a href="/jobs/${x.id}/download?format=xlsx">Excel</a><a href="/jobs/${x.id}/download?format=csv">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);
