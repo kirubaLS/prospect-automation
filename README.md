@@ -115,7 +115,9 @@ Free-tier behaviour you should know:
   overridden with `APIFY_POSTS_ACTOR`, `APIFY_COMMENTS_ACTOR`,
   `APIFY_REACTIONS_ACTOR`, `APIFY_PROFILE_ACTOR`. Apify bills these runs
   against its own plan (the free plan includes monthly credit); the app
-  runs two people at a time.
+  runs two people at a time and asks each actor for at most 2 items per
+  person (`APIFY_MAX_ITEMS`, default 2), the newest two being enough to
+  judge the 90-day window.
 
 Per-project presets: `projects/<name>/config.json` (see `projects/sharp`
 and `projects/reach24`, whose `titlePriorities` hold each client's

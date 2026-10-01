@@ -29,7 +29,10 @@ function configFromEnv(env = process.env) {
     actors,
     configured,
     missing: Object.entries(actors).filter(([, a]) => !a.token).map(([k]) => `APIFY_${k.toUpperCase()}_TOKEN`),
-    timeoutSecs: parseInt(env.APIFY_TIMEOUT_SECS || '150', 10)
+    timeoutSecs: parseInt(env.APIFY_TIMEOUT_SECS || '150', 10),
+    // Items fetched per actor per person. Two is enough to judge recency
+    // (the newest two posts / comments / reactions) and keeps Apify cost low.
+    maxItems: Math.max(1, parseInt(env.APIFY_MAX_ITEMS || '2', 10))
   };
 }
 
@@ -42,7 +45,9 @@ function usernameOf(profileUrl) {
 // Runs an actor synchronously and returns its dataset items.
 async function runActor(cfg, actor, input, { fetchImpl = fetch } = {}) {
   if (!actor.token) throw new Error(`no Apify token for ${actor.id}`);
-  const url = `${APIFY}/acts/${encodeURIComponent(actor.id)}/run-sync-get-dataset-items?timeout=${cfg.timeoutSecs}&clean=true`;
+  // `limit` here caps the dataset items returned; the input `limit` asks the
+  // actor itself to stop early where it supports that.
+  const url = `${APIFY}/acts/${encodeURIComponent(actor.id)}/run-sync-get-dataset-items?timeout=${cfg.timeoutSecs}&clean=true&limit=${cfg.maxItems}`;
   const res = await fetchImpl(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${actor.token}` },
@@ -55,7 +60,8 @@ async function runActor(cfg, actor, input, { fetchImpl = fetch } = {}) {
     throw err;
   }
   const data = await res.json().catch(() => []);
-  return Array.isArray(data) ? data : (data && data.items) || [];
+  const items = Array.isArray(data) ? data : (data && data.items) || [];
+  return items.slice(0, cfg.maxItems);
 }
 
 // Timestamps come in several shapes across actors.
@@ -140,7 +146,7 @@ function classify({ activities = [], connections = null, now = Date.now() }) {
 async function checkPerson(cfg, person, opts = {}) {
   const username = usernameOf(person.profileUrl);
   if (!username) return { label: '', reason: 'no LinkedIn URL', proof: '', lastActivity: '', connections: null, counts: {}, errors: ['no LinkedIn URL'] };
-  const input = { username, profile_url: person.profileUrl, page_number: 1, limit: 20 };
+  const input = { username, profile_url: person.profileUrl, page_number: 1, limit: cfg.maxItems, max_results: cfg.maxItems };
   const errors = [];
   const safe = (p, name) => p.catch((err) => { errors.push(`${name}: ${err.message}`); return null; });
   const [posts, comments, profile, reactions] = await Promise.all([

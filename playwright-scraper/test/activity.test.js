@@ -52,9 +52,10 @@ r = a.classify({ activities: [], connections: null, now }); assert.strictEqual(r
     const expectTok = act.endsWith('posts') ? 'Bearer t-posts' : act.endsWith('comments') ? 'Bearer t-comments' : act.endsWith('reactions') ? 'Bearer t-reactions' : 'Bearer t-profile';
     assert.strictEqual(init.headers.Authorization, expectTok, 'each actor gets only its own token');
     const body = JSON.parse(init.body); assert.strictEqual(body.username, 'kingshuk');
+    assert.strictEqual(body.limit, 2, 'actors are asked for 2 items'); assert.strictEqual(u.searchParams.get('limit'), '2', 'dataset capped at 2');
     const actor = decodeURIComponent(u.pathname.split('/')[3]);
     let d;
-    if (actor.endsWith('posts')) d = [{ post_type: 'regular', posted_at: { timestamp: now - 3 * day }, url: 'https://www.linkedin.com/posts/p1', author: { username: 'kingshuk' } }];
+    if (actor.endsWith('posts')) d = [1, 2, 3].map((i) => ({ post_type: 'regular', posted_at: { timestamp: now - i * 3 * day }, url: 'https://www.linkedin.com/posts/p' + i, author: { username: 'kingshuk' } }));
     else if (actor.endsWith('comments')) d = [];
     else if (actor.endsWith('detail')) d = [{ basic_info: { connection_count: 1839 } }];
     else return { ok: false, status: 500, text: async () => 'actor crashed' };
@@ -66,7 +67,9 @@ r = a.classify({ activities: [], connections: null, now }); assert.strictEqual(r
   assert.strictEqual(partial.configured, false); assert.deepStrictEqual(partial.missing, ['APIFY_COMMENTS_TOKEN', 'APIFY_REACTIONS_TOKEN', 'APIFY_PROFILE_TOKEN']);
   assert.strictEqual(a.configFromEnv({ APIFY_TOKEN: 'one' }).configured, true, 'a single token still works as fallback');
   const res = await a.checkPerson(cfg, { name: 'Kingshuk Hazra', profileUrl: 'https://www.linkedin.com/in/kingshuk' }, { fetchImpl, now });
-  assert.strictEqual(res.label, 'HIGH'); assert.strictEqual(res.connections, 1839); assert.deepStrictEqual(res.errors, ['reactions: Apify apimaestro~linkedin-profile-reactions 500: actor crashed']);
+  assert.strictEqual(res.label, 'HIGH'); assert.strictEqual(res.connections, 1839);
+  assert.strictEqual(res.counts.posts, 2, 'never more than 2 items per actor are used');
+  assert.strictEqual(res.proof, 'https://www.linkedin.com/posts/p1'); assert.deepStrictEqual(res.errors, ['reactions: Apify apimaestro~linkedin-profile-reactions 500: actor crashed']);
   assert.strictEqual(calls.length, 4);
   const noUrl = await a.checkPerson(cfg, { name: 'X', profileUrl: '' }, { fetchImpl, now });
   assert.strictEqual(noUrl.label, '');
