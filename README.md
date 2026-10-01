@@ -97,10 +97,10 @@ Free-tier behaviour you should know:
 - **LinkedIn activity (Activity tab).** For projects with
   `"activityCheck": true` in their `config.json` (Reach24; not Sharp), a
   finished job gets a **LinkedIn activity** tab. "Check activity" runs,
-  through your Apify account, up to four actors per person one after
-  another, stopping at the first that decides the label: posts, then
-  comments, then reactions, then profile details (connection count).
-  Labels:
+  through your Apify account, the profile-details actor for everyone
+  (connection and follower counts are always filled), then the activity
+  actors one after another, stopping at the first that decides the label:
+  posts, then comments, then reactions. Labels:
   - **HIGH** — an original post within the last 90 days; proof = post URL
     and date.
   - **MEDIUM** — any other activity at all: an older post, or a repost,
@@ -110,7 +110,7 @@ Free-tier behaviour you should know:
   Every label has a proof: the activity link where there is one, otherwise
   the person's LinkedIn recent-activity page, with a note giving the
   connection count and the date checked. The Excel gains Activity,
-  Activity Proof, Activity Note, Last Activity and Connections.
+  Activity Proof, Activity Note, Last Activity, Connections and Followers.
   Needs one Apify token per process on Render: `APIFY_POSTS_TOKEN`,
   `APIFY_COMMENTS_TOKEN`, `APIFY_REACTIONS_TOKEN`, `APIFY_PROFILE_TOKEN`
   (console.apify.com → Settings → API & Integrations → create a token for

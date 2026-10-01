@@ -13,6 +13,7 @@ assert.strictEqual(a.usernameOf('https://www.linkedin.com/company/acme'), null);
 assert.strictEqual(a.connectionsOf({ basic_info: { fullname: 'Kiruba Karan', follower_count: 1836, connection_count: 1839 } }), 1839);
 assert.strictEqual(a.connectionsOf({ basic_info: { connection_count: '500+' } }), 500);
 assert.strictEqual(a.connectionsOf({ experience: [] }), null);
+assert.strictEqual(a.followersOf({ basic_info: { follower_count: 1836, connection_count: 1839 } }), 1836);
 
 // posts actor
 const posts = a.summarizePosts([
@@ -78,25 +79,28 @@ r = a.classify({ activities: [], connections: null, now, profileUrl: pu }); asse
   const me = { name: 'Kingshuk Hazra', profileUrl: 'https://www.linkedin.com/in/kingshuk' };
   const recentPosts = [1, 2, 3].map((i) => ({ post_type: 'regular', posted_at: { timestamp: now - i * 3 * day }, url: 'https://www.linkedin.com/posts/p' + i, author: { username: 'kingshuk' } }));
 
-  let f = makeFetch({ posts: recentPosts });
+  const prof = [{ basic_info: { connection_count: 1839, follower_count: 1836 } }];
+  let f = makeFetch({ profile: prof, posts: recentPosts });
   let res = await a.checkPerson(cfg, me, { fetchImpl: f.fetchImpl, now });
   assert.strictEqual(res.label, 'HIGH'); assert.strictEqual(res.proof, 'https://www.linkedin.com/posts/p1');
+  assert.strictEqual(res.connections, 1839, 'connections always filled, even for HIGH'); assert.strictEqual(res.followers, 1836);
+  assert.match(res.reason, /1839 connections/);
   assert.strictEqual(res.counts.posts, 2, 'never more than 2 items per actor are used');
-  assert.deepStrictEqual(f.calls, ['posts'], 'HIGH from posts: no other actor runs');
+  assert.deepStrictEqual(f.calls, ['profile', 'posts'], 'profile first, then posts decide: no other actor runs');
 
-  f = makeFetch({ posts: [], comments: [{ comment_text: 'nice', created_at: { timestamp: now - 200 * day }, comment_link: 'https://www.linkedin.com/feed/update/c1' }] });
+  f = makeFetch({ profile: prof, posts: [], comments: [{ comment_text: 'nice', created_at: { timestamp: now - 200 * day }, comment_link: 'https://www.linkedin.com/feed/update/c1' }] });
   res = await a.checkPerson(cfg, me, { fetchImpl: f.fetchImpl, now });
-  assert.strictEqual(res.label, 'MEDIUM'); assert.strictEqual(res.proof, 'https://www.linkedin.com/feed/update/c1');
-  assert.deepStrictEqual(f.calls, ['posts', 'comments'], 'stops at comments');
+  assert.strictEqual(res.label, 'MEDIUM'); assert.strictEqual(res.proof, 'https://www.linkedin.com/feed/update/c1'); assert.strictEqual(res.connections, 1839);
+  assert.deepStrictEqual(f.calls, ['profile', 'posts', 'comments'], 'stops at comments');
 
-  f = makeFetch({ posts: [], comments: [], reactions: [{ action: 'Kingshuk Hazra likes this', post_url: 'https://www.linkedin.com/posts/r1', timestamps: { timestamp: now - 5 * day } }] });
+  f = makeFetch({ profile: prof, posts: [], comments: [], reactions: [{ action: 'Kingshuk Hazra likes this', post_url: 'https://www.linkedin.com/posts/r1', timestamps: { timestamp: now - 5 * day } }] });
   res = await a.checkPerson(cfg, me, { fetchImpl: f.fetchImpl, now });
   assert.strictEqual(res.label, 'MEDIUM'); assert.match(res.reason, /likes this/);
-  assert.deepStrictEqual(f.calls, ['posts', 'comments', 'reactions'], 'stops at reactions');
+  assert.deepStrictEqual(f.calls, ['profile', 'posts', 'comments', 'reactions'], 'stops at reactions');
 
   f = makeFetch({ posts: [], comments: [], reactions: [], profile: [{ basic_info: { connection_count: 1839 } }] });
   res = await a.checkPerson(cfg, me, { fetchImpl: f.fetchImpl, now });
-  assert.strictEqual(res.label, 'MEDIUM'); assert.strictEqual(res.connections, 1839); assert.deepStrictEqual(f.calls, ['posts', 'comments', 'reactions', 'profile']);
+  assert.strictEqual(res.label, 'MEDIUM'); assert.strictEqual(res.connections, 1839); assert.deepStrictEqual(f.calls, ['profile', 'posts', 'comments', 'reactions']);
   assert.strictEqual(res.proof, 'https://www.linkedin.com/in/kingshuk/recent-activity/all/');
 
   f = makeFetch({ posts: [], comments: [], reactions: [], profile: [{ basic_info: { connection_count: 120 } }] });

@@ -192,11 +192,11 @@
           <button class="btn" id="actbtn" onclick="startActivity()">Check activity</button>
           <button class="btn secondary" id="actstop" onclick="stopActivity()" disabled>Stop</button>
           <a class="btn secondary sm" id="dlx3" href="#">⬇ Excel</a>
-          <span class="hint" id="acthint">Posts → comments → reactions → connections, stopping at the first hit. HIGH = posted in last 90 days · MEDIUM = any other activity or 500+ connections · LOW = nothing.</span>
+          <span class="hint" id="acthint">Connections for everyone, then posts → comments → reactions, stopping at the first hit. HIGH = posted in last 90 days · MEDIUM = any other activity or 500+ connections · LOW = nothing.</span>
         </div>
         <div class="stats" id="actstats"></div>
         <div class="msg" id="actmsg"></div>
-        <div class="scroll"><table class="tbl" id="actrows"><thead><tr><th>Company</th><th>Name</th><th>Activity</th><th>Why</th><th>Last</th><th>Connections</th><th>Proof</th></tr></thead><tbody><tr><td colspan="7" class="empty">Run a job, then check activity here.</td></tr></tbody></table></div>
+        <div class="scroll"><table class="tbl" id="actrows"><thead><tr><th>Company</th><th>Name</th><th>Activity</th><th>Why</th><th>Last</th><th>Connections</th><th>Followers</th><th>Proof</th></tr></thead><tbody><tr><td colspan="8" class="empty">Run a job, then check activity here.</td></tr></tbody></table></div>
       </div>
       <div id="tab-people" class="scroll" style="margin-top:12px"><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="5" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
     </section>
@@ -455,11 +455,11 @@ async function loadActivity() {
   const a = d.activity, p = (a && a.progress) || {};
   $('actbtn').disabled = !apifyOn || (a && a.status === 'running');
   $('actstop').disabled = !(a && a.status === 'running');
-  $('acthint').textContent = apifyOn ? 'Posts → comments → reactions → connections, stopping at the first hit. HIGH = posted in last 90 days · MEDIUM = any other activity or 500+ connections · LOW = nothing.' : 'Set the four Apify tokens on the server to enable.';
+  $('acthint').textContent = apifyOn ? 'Connections for everyone, then posts → comments → reactions, stopping at the first hit. HIGH = posted in last 90 days · MEDIUM = any other activity or 500+ connections · LOW = nothing.' : 'Set the four Apify tokens on the server to enable.';
   $('actstats').innerHTML = a ? [['People', p.total], ['Checked', p.done], ['HIGH', p.high], ['MEDIUM', p.medium], ['LOW', p.low], ['Failed', p.failed]].map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('') : '';
   if (a && a.status !== 'running') $('actmsg').textContent = a.status === 'done' ? 'Done — download Excel to get the Activity columns.' : a.status === 'failed' ? 'Failed: ' + a.error : 'Stopped.';
   const tb = $('actrows').querySelector('tbody');
-  tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${x.activity}">${x.activity}</span>` : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td>${esc(x.connections)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
+  tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${x.activity}">${x.activity}</span>` : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td><b>${esc(x.connections)}</b></td><td>${esc(x.followers)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 

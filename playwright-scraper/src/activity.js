@@ -123,6 +123,12 @@ function connectionsOf(item) {
   for (const [k, v] of Object.entries(item)) if (/connection/i.test(k) && (typeof v === 'number' || typeof v === 'string')) return toCount(v);
   return null;
 }
+function followersOf(item) {
+  if (!item || typeof item !== 'object') return null;
+  for (const k of ['follower_count', 'followers', 'followers_count', 'followerCount']) if (item[k] != null && item[k] !== '') return toCount(item[k]);
+  for (const sub of ['basic_info', 'basicInfo', 'profile', 'data']) if (item[sub] && typeof item[sub] === 'object') { const v = followersOf(item[sub]); if (v != null) return v; }
+  return null;
+}
 function toCount(v) {
   if (typeof v === 'number') return v;
   const m = String(v).replace(/,/g, '').match(/(\d+)(\+?)/);
@@ -156,16 +162,18 @@ function classify({ activities = [], connections = null, now = Date.now(), profi
   return { label: 'LOW', reason: `${conn}; no posts, reposts, comments or reactions found on ${checked}`, proof: page, lastActivity: '', counts, connections };
 }
 
-// One person -> activity record. Actors run one after another and stop as
-// soon as the label is decided, so most people cost a single actor run:
+// One person -> activity record. The profile actor runs first for everyone
+// (the connection count is a decision key, so it is always filled), then
+// the activity actors run one after another and stop at the first that
+// decides the label:
 //   posts -> HIGH (recent post) or MEDIUM (older post / repost)
 //   comments -> MEDIUM
 //   reactions -> MEDIUM
-//   profile (connection count) -> MEDIUM (500+) or LOW
+//   none -> MEDIUM (500+ connections) or LOW
 // Actor failures are recorded on the record, never thrown.
 async function checkPerson(cfg, person, opts = {}) {
   const username = usernameOf(person.profileUrl);
-  if (!username) return { label: '', reason: 'no LinkedIn URL', proof: '', lastActivity: '', connections: null, counts: {}, checked: [], errors: ['no LinkedIn URL'] };
+  if (!username) return { label: '', reason: 'no LinkedIn URL', proof: '', lastActivity: '', connections: null, followers: null, counts: {}, checked: [], errors: ['no LinkedIn URL'] };
   const input = { username, profile_url: person.profileUrl, page_number: 1, limit: cfg.maxItems, max_results: cfg.maxItems };
   const errors = [];
   const checked = [];
@@ -173,8 +181,15 @@ async function checkPerson(cfg, person, opts = {}) {
     checked.push(key);
     try { return await runActor(cfg, cfg.actors[key], input, opts); } catch (err) { errors.push(`${key}: ${err.message}`); return null; }
   };
-  const finish = (activities, connections) => {
+
+  const profile = await run('profile');
+  const info = profile && profile.length ? profile[0] : null;
+  const connections = info ? connectionsOf(info) : null;
+  const followers = info ? followersOf(info) : null;
+
+  const finish = (activities) => {
     const result = classify({ activities, connections, now: opts.now, profileUrl: person.profileUrl });
+    result.followers = followers;
     result.checked = checked;
     if (errors.length) result.errors = errors;
     if (errors.length === checked.length && !activities.length && connections == null) { result.label = ''; result.reason = 'check failed: ' + errors.join('; '); }
@@ -182,14 +197,11 @@ async function checkPerson(cfg, person, opts = {}) {
   };
 
   const posts = summarizePosts(await run('posts'), username);
-  if (posts.length) return finish(posts, null);
+  if (posts.length) return finish(posts);
   const comments = summarizeComments(await run('comments'));
-  if (comments.length) return finish(comments, null);
+  if (comments.length) return finish(comments);
   const reactions = summarizeReactions(await run('reactions'));
-  if (reactions.length) return finish(reactions, null);
-  const profile = await run('profile');
-  const connections = profile && profile.length ? connectionsOf(profile[0]) : null;
-  return finish([], connections);
+  return finish(reactions);
 }
 
 // Runs the check over `people` (objects with profileUrl), a few at a time.
@@ -218,4 +230,4 @@ async function runActivityCheck(cfg, people, { onProgress = () => {}, shouldStop
   return { results, state };
 }
 
-module.exports = { configFromEnv, usernameOf, activityPage, runActor, classify, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, tsOf, WINDOW_DAYS };
+module.exports = { configFromEnv, usernameOf, activityPage, runActor, classify, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, followersOf, tsOf, WINDOW_DAYS };

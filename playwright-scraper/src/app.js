@@ -233,7 +233,7 @@ const server = http.createServer(async (req, res) => {
             people.forEach((r, i) => {
               const a = results[i];
               if (!a) return;
-              r.activity = a.label; r.activityReason = a.reason; r.activityProof = a.proof; r.activityDate = a.lastActivity; r.connections = a.connections ?? ''; r.activityCounts = a.counts;
+              r.activity = a.label; r.activityReason = a.reason; r.activityProof = a.proof; r.activityDate = a.lastActivity; r.connections = a.connections ?? ''; r.followers = a.followers ?? ''; r.activityCounts = a.counts;
             });
             job.activity.progress = { ...state };
             job.activity.status = job.activity.stopRequested ? 'stopped' : 'done';
@@ -243,7 +243,7 @@ const server = http.createServer(async (req, res) => {
         return send(202, { status: 'started', total: people.length });
       }
       if (req.method === 'DELETE') { if (job.activity) job.activity.stopRequested = true; return send(202, { status: 'stopping' }); }
-      const rows = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl).map((r) => ({ company: r.company, name: r.name, title: r.title, profileUrl: r.profileUrl, activity: r.activity || '', reason: r.activityReason || '', proof: r.activityProof || '', date: r.activityDate || '', connections: r.connections ?? '', counts: r.activityCounts || null }));
+      const rows = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl).map((r) => ({ company: r.company, name: r.name, title: r.title, profileUrl: r.profileUrl, activity: r.activity || '', reason: r.activityReason || '', proof: r.activityProof || '', date: r.activityDate || '', connections: r.connections ?? '', followers: r.followers ?? '', counts: r.activityCounts || null }));
       return send(200, { activity: job.activity ? publicJob(job).activity : null, rows });
     }
 
