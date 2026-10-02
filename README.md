@@ -24,6 +24,17 @@ DOWNLOAD (Excel or CSV)                  Company, Status, Name, Designation, Loc
                                          researcher), Note; "Company not found" / "No people found" row otherwise
 ```
 
+## Several people using the site at once
+
+Jobs run **one at a time** in the order they arrive. A second upload is not
+rejected: it is queued and the page shows "Queued — N ahead of you" until
+its turn (at most 10 waiting). Each browser mints its own owner token (kept
+in local storage and sent as the `X-Owner` header, or `?owner=` on download
+links), and the server only lists, stops, downloads or activity-checks jobs
+started by that owner. Another user's jobs are invisible and answer 403.
+This is separation, not a login: clearing site data makes a new owner, and
+Apollo credits, search quotas and Apify tokens are still one shared pool.
+
 ## Deploy on Render (free, no card)
 
 1. Render dashboard → **New +** → **Blueprint** → connect this repo →

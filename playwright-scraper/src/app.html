@@ -65,6 +65,7 @@
   .bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
   .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--ink-2); }
+  .pill.queued { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
   .pill.running { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
   .pill.done { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
   .pill.failed, .pill.stopped { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
@@ -162,6 +163,7 @@
         <a class="btn secondary sm" id="tpl" href="#" download="companies-template.csv">Template CSV</a>
       </div>
       <div class="msg" id="msg"></div>
+      <div class="hint" id="serverstate"></div>
     </section>
 
     <section class="card" id="results">
@@ -205,6 +207,7 @@
 
   <section class="card span2">
     <details><summary>Recent jobs</summary>
+      <div class="hint">Only jobs started from this browser are listed.</div>
       <table class="tbl jobs" style="margin-top:8px"><thead><tr><th>Name</th><th>File</th><th>Status</th><th>Companies</th><th>People</th><th>Started</th><th></th></tr></thead><tbody id="jobs"></tbody></table>
     </details>
   </section>
@@ -215,6 +218,11 @@ const $ = (id) => document.getElementById(id);
 const GEO_SHORTCUTS = ['South India', 'North India', 'India', 'US', 'UK', 'UAE', 'GCC', 'APAC', 'Europe'];
 let presets = [];
 let currentId = localStorage.getItem('currentJob') || null;
+// Each browser gets its own owner token: you only see and control your own jobs.
+let OWNER = localStorage.getItem('owner');
+if (!OWNER || !/^[\w-]{8,64}$/.test(OWNER)) { OWNER = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/[^\w-]/g, ''); localStorage.setItem('owner', OWNER); }
+const api = (url, opts = {}) => fetch(url, { ...opts, headers: { ...(opts.headers || {}), 'X-Owner': OWNER } });
+const dlUrl = (id, format) => `/jobs/${id}/download?format=${format}&owner=${OWNER}`;
 let rowsLoaded = 0;
 let rowsJob = null;
 let selectedFile = null;
@@ -338,24 +346,26 @@ async function startJob() {
   setMsg('Starting…');
   const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0', scheme: activityScheme, items: activityMaxItems });
   try {
-    const r = await fetch('/jobs?' + params, { method: 'POST', body: selectedFile });
+    const r = await api('/jobs?' + params, { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return setMsg('Error: ' + (j.error || r.status), 'err');
     currentId = j.job.id; localStorage.setItem('currentJob', currentId); rowsLoaded = 0; rowsJob = null;
-    setMsg('Started — ' + summary(j.job.params), 'ok');
+    setMsg((j.job.ahead ? `Queued — ${j.job.ahead} ahead of you — ` : 'Started — ') + summary(j.job.params), 'ok');
     selectedFile = null; fileInput.value = ''; $('preview').innerHTML = '';
     $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) { setMsg('Request failed: ' + e.message + ' — is the server awake?', 'err'); }
   refresh();
 }
-async function stopJob() { if (!currentId) return; await fetch('/jobs/' + currentId + '/stop', { method: 'POST' }); refresh(); }
+async function stopJob() { if (!currentId) return; await api('/jobs/' + currentId + '/stop', { method: 'POST' }); refresh(); }
 function setMsg(t, cls) { $('msg').textContent = t; $('msg').className = 'msg ' + (cls || ''); }
 
+let busy = { running: false, mine: false, queued: 0 };
 function show(j) {
-  $('jobpill').textContent = j ? j.status : 'no job';
+  $('jobpill').textContent = j ? (j.status === 'queued' ? `queued · ${j.ahead} ahead` : j.status) : 'no job';
   $('jobpill').className = 'pill ' + (j ? j.status : '');
-  $('runbtn').disabled = !!(j && j.status === 'running');
-  $('stopbtn').disabled = !(j && j.status === 'running');
+  $('runbtn').disabled = false;
+  $('stopbtn').disabled = !(j && (j.status === 'running' || j.status === 'queued'));
+  $('stopbtn').textContent = j && j.status === 'queued' ? 'Cancel' : 'Stop';
   if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
   $('jobname').innerHTML = `<b>${esc(j.label)}</b> · ${summary(j.params)}${j.params.searchExhausted ? ' · <b style="color:var(--warn)">search quota ran out</b>' : ''}`;
@@ -363,10 +373,10 @@ function show(j) {
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
   const a = p.apollo;
-  $('current').textContent = (j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`))
+  $('current').textContent = (j.status === 'queued' ? `Queued — ${j.ahead} job${j.ahead === 1 ? '' : 's'} ahead of you${busy.running && !busy.mine ? " (another user's job is running)" : ''}` : j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`))
     + (a ? ` · Apollo credits ≈ ${a.estimatedCredits} · web searches ${a.webSearches || 0}` : '');
-  $('dl').style.display = 'inline-flex'; $('dl').href = '/jobs/' + j.id + '/download?format=csv';
-  $('dlx').style.display = 'inline-flex'; $('dlx').href = '/jobs/' + j.id + '/download?format=xlsx';
+  $('dl').style.display = 'inline-flex'; $('dl').href = dlUrl(j.id, 'csv');
+  $('dlx').style.display = 'inline-flex'; $('dlx').href = dlUrl(j.id, 'xlsx');
 }
 
 let jobsCache = [];
@@ -378,7 +388,7 @@ async function loadRows(j) {
   rowsBusy = true;
   let d;
   try {
-    const r = await fetch(`/jobs/${j.id}/rows?from=${rowsLoaded}`);
+    const r = await api(`/jobs/${j.id}/rows?from=${rowsLoaded}`);
     if (!r.ok) return;
     d = await r.json();
   } catch { return; } finally { rowsBusy = false; }
@@ -429,13 +439,13 @@ function showTab(t) {
 }
 async function loadFinal() {
   if (!currentId) return;
-  $('dlx2').href = '/jobs/' + currentId + '/download?format=xlsx'; $('dl2').href = '/jobs/' + currentId + '/download?format=csv';
-  let r; try { r = await fetch('/jobs/' + currentId + '/rows?from=0'); } catch { return; }
+  $('dlx2').href = dlUrl(currentId, 'xlsx'); $('dl2').href = dlUrl(currentId, 'csv');
+  let r; try { r = await api('/jobs/' + currentId + '/rows?from=0'); } catch { return; }
   if (!r.ok) return;
   const d = await r.json();
   const all = [...d.rows];
   let from = d.rows.length;
-  while (from < d.total) { const rr = await (await fetch(`/jobs/${currentId}/rows?from=${from}`)).json(); all.push(...rr.rows); from += rr.rows.length; if (!rr.rows.length) break; }
+  while (from < d.total) { const rr = await (await api(`/jobs/${currentId}/rows?from=${from}`)).json(); all.push(...rr.rows); from += rr.rows.length; if (!rr.rows.length) break; }
   const tb = $('finalrows').querySelector('tbody');
   tb.innerHTML = all.map((x) => x.companyStatus === 'Found'
     ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : ''}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td></tr>`
@@ -446,16 +456,16 @@ async function loadFinal() {
 async function startActivity() {
   if (!currentId) return;
   $('actmsg').textContent = 'Starting…'; $('actmsg').className = 'msg';
-  const r = await fetch('/jobs/' + currentId + '/activity', { method: 'POST' });
+  const r = await api('/jobs/' + currentId + '/activity', { method: 'POST' });
   const j = await r.json().catch(() => ({}));
   $('actmsg').textContent = r.ok ? `Checking ${j.total} people…` : 'Error: ' + (j.error || r.status); $('actmsg').className = 'msg ' + (r.ok ? 'ok' : 'err');
   loadActivity();
 }
-async function stopActivity() { if (currentId) await fetch('/jobs/' + currentId + '/activity', { method: 'DELETE' }); }
+async function stopActivity() { if (currentId) await api('/jobs/' + currentId + '/activity', { method: 'DELETE' }); }
 async function loadActivity() {
   if (!currentId) return;
-  $('dlx3').href = '/jobs/' + currentId + '/download?format=xlsx';
-  let r; try { r = await fetch('/jobs/' + currentId + '/activity'); } catch { return; }
+  $('dlx3').href = dlUrl(currentId, 'xlsx');
+  let r; try { r = await api('/jobs/' + currentId + '/activity'); } catch { return; }
   if (!r.ok) return;
   const d = await r.json();
   const a = d.activity, p = (a && a.progress) || {};
@@ -475,9 +485,10 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&am
 
 async function refresh() {
   let r;
-  try { r = await fetch('/jobs'); } catch { return; }
+  try { r = await api('/jobs'); } catch { return; }
   const j = await r.json();
-  jobsCache = j.jobs;
+  jobsCache = j.jobs; busy = j.busy || busy;
+  $('serverstate').textContent = busy.running && !busy.mine ? `Server busy: another user's job is running${busy.queued ? ` · ${busy.queued} waiting` : ''} — yours will queue.` : busy.queued ? `${busy.queued} job${busy.queued === 1 ? '' : 's'} waiting in the queue.` : '';
   const cur = j.jobs.find((x) => x.id === currentId) || j.jobs.find((x) => x.id === j.running) || j.jobs[0] || null;
   if (cur) currentId = cur.id;
   show(cur); loadRows(cur);
@@ -486,7 +497,7 @@ async function refresh() {
   if (!actOn && $('tab-activity').style.display !== 'none') showTab('people');
   if (cur && cur.activity && cur.activity.status === 'running' && $('tab-activity').style.display !== 'none') loadActivity();
   if (cur && $('tab-final').style.display !== 'none' && (cur.status === 'running' || (cur.activity && cur.activity.status === 'running'))) loadFinal();
-  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt).toLocaleString()}</td><td><a href="/jobs/${x.id}/download?format=xlsx">Excel</a><a href="/jobs/${x.id}/download?format=csv">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
+  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status === 'queued' ? `queued · ${x.ahead} ahead` : x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt || x.queuedAt).toLocaleString()}</td><td><a href="${dlUrl(x.id, 'xlsx')}">Excel</a><a href="${dlUrl(x.id, 'csv')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);
 </script>

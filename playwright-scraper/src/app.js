@@ -21,6 +21,7 @@ const APOLLO_API_KEY = process.env.APOLLO_API_KEY || null;
 const PROJECTS_DIR = process.env.PROJECTS_DIR || path.resolve(__dirname, '..', '..', 'projects');
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_JOBS_KEPT = 20;
+const MAX_QUEUED = 10;
 const MAX_PEOPLE_PER_COMPANY = 25;
 const SEARCH_PROVIDERS = providersFromEnv();
 const APIFY = activity.configFromEnv();
@@ -33,6 +34,7 @@ const KEEP_ALIVE_URL = process.env.KEEP_ALIVE_URL || process.env.RENDER_EXTERNAL
 const KEEP_ALIVE_EVERY_MS = 5 * 60 * 1000;
 
 const jobs = new Map(); // id -> job
+const queue = []; // jobs waiting to run, oldest first
 let runningId = null;
 const processStartedAt = new Date();
 let keepAliveTimer = null;
@@ -98,14 +100,30 @@ function presets() {
   }
 }
 
+// Jobs belong to whoever started them. The browser mints a random owner token
+// and sends it as the X-Owner header (or ?owner= on download links); each
+// owner only sees and controls their own jobs. Not a login - it just keeps
+// users from stepping on each other.
+function ownerOf(req, url) {
+  const o = String(req.headers['x-owner'] || url.searchParams.get('owner') || '').trim();
+  return /^[\w-]{8,64}$/.test(o) ? o : null;
+}
+
+function queuePosition(j) {
+  const i = queue.indexOf(j);
+  return i < 0 ? null : i + (runningId ? 1 : 0);
+}
+
 function publicJob(j) {
   return {
     id: j.id,
+    ahead: queuePosition(j),
     activity: j.activity ? { status: j.activity.status, progress: j.activity.progress, error: j.activity.error || null, startedAt: j.activity.startedAt, finishedAt: j.activity.finishedAt } : null,
     label: j.label,
     filename: j.filename,
     params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, activityCheck: !!j.params.activityCheck, activityScheme: j.params.activityScheme || 'standard', searchExhausted: !!j.params.searchExhausted },
     status: j.status,
+    queuedAt: j.queuedAt || null,
     startedAt: j.startedAt,
     finishedAt: j.finishedAt,
     progress: j.progress,
@@ -114,8 +132,9 @@ function publicJob(j) {
   };
 }
 
-function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label, resolve, activityCheck = false, activityScheme = 'standard', activityMaxItems = null }) {
-  if (runningId) throw new Error('another job is running - wait for it to finish or stop it');
+function startJob({ owner, fileBuffer, filename, geography, icp, peoplePerCompany, label, resolve, activityCheck = false, activityScheme = 'standard', activityMaxItems = null }) {
+  if (!owner) throw new Error('missing owner token - reload the page');
+  if (queue.length >= MAX_QUEUED) throw new Error(`the queue is full (${MAX_QUEUED} jobs waiting) - try again later`);
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
   const count = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 4));
   const locations = parseGeography(geography);
@@ -127,27 +146,51 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
   const id = crypto.randomBytes(6).toString('hex');
   const job = {
     id,
+    owner,
+    fileBuffer,
     label: label || filename,
     filename,
     paramsText: { geography, icp },
     params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, activityScheme: activityScheme === 'yard' ? 'yard' : 'standard', activityMaxItems: parseInt(activityMaxItems, 10) || null, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
-    status: 'running',
-    startedAt: new Date().toISOString(),
+    status: 'queued',
+    queuedAt: new Date().toISOString(),
+    startedAt: null,
     finishedAt: null,
     progress: { total: 0, done: 0, found: 0, notFound: 0, noPeople: 0, prospects: 0, errors: 0, current: '' },
     rows: [],
     stopRequested: false
   };
   jobs.set(id, job);
-  runningId = id;
-  while (jobs.size > MAX_JOBS_KEPT) jobs.delete(jobs.keys().next().value);
+  queue.push(job);
+  // forget the oldest finished jobs; never a queued or running one
+  for (const [k, v] of jobs) {
+    if (jobs.size <= MAX_JOBS_KEPT) break;
+    if (v.status !== 'running' && v.status !== 'queued') jobs.delete(k);
+  }
 
-  logger.info(`Job ${id} "${job.label}": ${count}/company, resolve=${resolve}, geography=[${locations.join(' | ') || 'any'}], ICP=${priorities ? priorities.map((g, i) => `P${i + 1}[${g.join(', ')}]`).join(' > ') : `[${keywords.join(', ')}]`}${industries.length ? `, industries=[${industries.join(', ')}]` : ''}`);
+  logger.info(`Job ${id} "${job.label}" (owner ${owner.slice(0, 8)}): ${count}/company, resolve=${resolve}, geography=[${locations.join(' | ') || 'any'}], ICP=${priorities ? priorities.map((g, i) => `P${i + 1}[${g.join(', ')}]`).join(' > ') : `[${keywords.join(', ')}]`}${industries.length ? `, industries=[${industries.join(', ')}]` : ''}${runningId ? ` - queued behind ${queuePosition(job)} job(s)` : ''}`);
   keepAlive(true);
+  pump();
+  return job;
+}
+
+// Run queued jobs one at a time, oldest first.
+function pump() {
+  if (runningId) return;
+  const job = queue.shift();
+  if (!job) { keepAlive(false); return; }
+  if (job.stopRequested) { job.status = 'stopped'; job.finishedAt = new Date().toISOString(); return pump(); }
+  const id = job.id;
+  const fileBuffer = job.fileBuffer;
+  delete job.fileBuffer;
+  job.status = 'running';
+  job.startedAt = new Date().toISOString();
+  runningId = id;
+  logger.info(`Job ${id} "${job.label}" started${queue.length ? ` (${queue.length} waiting)` : ''}`);
   runJob({
     apiKey: APOLLO_API_KEY,
     fileBuffer,
-    filename,
+    filename: job.filename,
     params: job.params,
     onProgress: (s) => {
       job.progress = { ...s };
@@ -168,9 +211,8 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
     .finally(() => {
       job.finishedAt = new Date().toISOString();
       runningId = null;
-      keepAlive(false);
+      pump();
     });
-  return job;
 }
 
 const PAGE = fs.readFileSync(path.join(__dirname, 'app.html'), 'utf8');
@@ -188,14 +230,22 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, searchProviders: SEARCH_PROVIDERS.map((p) => p.name), apify: APIFY.configured, presets: presets() });
 
+    const owner = ownerOf(req, url);
     if (url.pathname === '/jobs' && req.method === 'GET') {
-      return send(200, { running: runningId, jobs: [...jobs.values()].reverse().map(publicJob) });
+      const mine = [...jobs.values()].filter((j) => j.owner === owner).reverse();
+      const runningJob = runningId && jobs.get(runningId);
+      return send(200, {
+        running: runningJob && runningJob.owner === owner ? runningId : null,
+        busy: { running: !!runningId, mine: !!(runningJob && runningJob.owner === owner), queued: queue.length },
+        jobs: mine.map(publicJob)
+      });
     }
 
     if (url.pathname === '/jobs' && req.method === 'POST') {
       const body = await readBody(req);
       if (!body.length) return send(400, { error: 'empty upload - choose the companies file' });
       const job = startJob({
+        owner,
         fileBuffer: body,
         filename: url.searchParams.get('filename') || 'companies.csv',
         geography: url.searchParams.get('geography') || '',
@@ -207,24 +257,33 @@ const server = http.createServer(async (req, res) => {
         activityScheme: url.searchParams.get('scheme') || 'standard',
         activityMaxItems: url.searchParams.get('items') || null
       });
-      return send(202, { status: 'started', job: publicJob(job) });
+      return send(202, { status: job.status === 'running' ? 'started' : 'queued', job: publicJob(job) });
     }
 
     const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows|activity))?$/);
     if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx', 'GET|POST|DELETE /jobs/:id/activity'] });
     const job = jobs.get(m[1]);
     if (!job) return send(404, { error: 'unknown or expired job (results are kept only while the server runs)' });
+    if (job.owner !== owner) return send(403, { error: 'this job belongs to another user' });
 
     if (!m[2]) return send(200, publicJob(job));
     if (m[2] === 'stop' && req.method === 'POST') {
       job.stopRequested = true;
+      if (job.status === 'queued') {
+        const i = queue.indexOf(job);
+        if (i >= 0) queue.splice(i, 1);
+        delete job.fileBuffer;
+        job.status = 'stopped';
+        job.finishedAt = new Date().toISOString();
+        if (!runningId) keepAlive(false);
+      }
       return send(202, { status: job.status === 'running' ? 'stopping' : job.status });
     }
     if (m[2] === 'activity') {
       if (req.method === 'POST') {
         if (!job.params.activityCheck) return send(400, { error: 'the LinkedIn activity check is not enabled for this project (set "activityCheck": true in its config.json)' });
         if (!APIFY.configured) return send(400, { error: `Apify tokens missing on the server: ${APIFY.missing.join(', ')}` });
-        if (job.status === 'running') return send(409, { error: 'wait for the job to finish' });
+        if (job.status === 'running' || job.status === 'queued') return send(409, { error: 'wait for the job to finish' });
         if (activityRunning) return send(409, { error: 'an activity check is already running' });
         const people = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl);
         if (!people.length) return send(400, { error: 'no people with a LinkedIn URL in this job' });
@@ -243,7 +302,7 @@ const server = http.createServer(async (req, res) => {
             job.activity.status = job.activity.stopRequested ? 'stopped' : 'done';
           })
           .catch((err) => { job.activity.status = 'failed'; job.activity.error = err.message; logger.error(`Activity check ${job.id} failed: ${err.message}`); })
-          .finally(() => { job.activity.finishedAt = new Date().toISOString(); activityRunning = null; keepAlive(false); });
+          .finally(() => { job.activity.finishedAt = new Date().toISOString(); activityRunning = null; if (!runningId && !queue.length) keepAlive(false); });
         return send(202, { status: 'started', total: people.length });
       }
       if (req.method === 'DELETE') { if (job.activity) job.activity.stopRequested = true; return send(202, { status: 'stopping' }); }
@@ -281,6 +340,7 @@ server.listen(PORT, () => {
 async function shutdown(signal) {
   logger.info(`Received ${signal}, shutting down...`);
   server.close();
+  for (const q of queue.splice(0)) { q.status = 'stopped'; q.finishedAt = new Date().toISOString(); }
   const j = runningId && jobs.get(runningId);
   if (j) j.stopRequested = true;
   const start = Date.now();
