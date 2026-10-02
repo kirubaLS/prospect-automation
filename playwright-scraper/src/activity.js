@@ -162,6 +162,54 @@ function classify({ activities = [], connections = null, now = Date.now(), profi
   return { label: 'LOW', reason: `${conn}; no posts, reposts, comments or reactions found on ${checked}`, proof: page, lastActivity: '', counts, connections };
 }
 
+// Yard scheme: LinkedIn activity as outreach probability. Only intentional
+// activity counts (posts, reposts, comments); reactions are weak evidence;
+// connections, followers, job changes and profile updates never count.
+//   High     meaningful activity in the last 30 days: a post, or 2+ meaningful
+//            activities, or any meaningful activity within 14 days
+//   Medium   one meaningful activity 15-30 days ago, or the last one 31-90
+//            days ago, or only reactions within 90 days
+//   Low      last activity 91-180 days ago
+//   Unknown  nothing within 180 days, or the data was not accessible
+function classifyYard({ activities = [], connections = null, now = Date.now(), profileUrl = '', dataOk = true }) {
+  const day = 86400000;
+  const checked = fmtDate(now);
+  const page = activityPage(profileUrl);
+  const sorted = activities.filter((a) => a.ts).sort((a, b) => b.ts - a.ts);
+  const meaningful = sorted.filter((a) => a.kind !== 'reaction');
+  const ageDays = (a) => Math.floor((now - a.ts) / day);
+  const counts = { posts: 0, reposts: 0, comments: 0, reactions: 0 };
+  for (const a of sorted) counts[a.kind === 'post' ? 'posts' : a.kind === 'repost' ? 'reposts' : a.kind === 'comment' ? 'comments' : 'reactions']++;
+  const base = { counts, connections, lastActivity: sorted[0] ? fmtDate(sorted[0].ts) : '' };
+  const describe = (list) => {
+    const n = { post: 0, repost: 0, comment: 0 };
+    for (const a of list) n[a.kind] = (n[a.kind] || 0) + 1;
+    return Object.entries(n).filter(([, v]) => v).map(([k, v]) => `${v} ${k}${v > 1 ? 's' : ''}`).join(', ');
+  };
+
+  const m30 = meaningful.filter((a) => ageDays(a) <= 30);
+  const latest = meaningful[0];
+  if (m30.length && (m30.some((a) => a.kind === 'post') || m30.length >= 2 || ageDays(m30[0]) <= 14)) {
+    return { ...base, label: 'High', reason: `${describe(m30)} in the last 30 days; latest activity ${ageDays(m30[0])} days ago`, proof: m30[0].url || page };
+  }
+  if (m30.length === 1) {
+    return { ...base, label: 'Medium', reason: `one ${m30[0].kind} ${ageDays(m30[0])} days ago, no evidence of regular activity`, proof: m30[0].url || page };
+  }
+  if (latest && ageDays(latest) <= 90) {
+    const since = sorted.filter((a) => a.kind === 'reaction' && a.ts > latest.ts).length;
+    return { ...base, label: 'Medium', reason: `last ${latest.kind} ${ageDays(latest)} days ago${since ? `; ${since} reaction${since > 1 ? 's' : ''} since` : ''}`, proof: latest.url || page };
+  }
+  const r90 = sorted.filter((a) => a.kind === 'reaction' && ageDays(a) <= 90);
+  if (r90.length) {
+    return { ...base, label: 'Medium', reason: `only reactions in the last 90 days (${r90.length}), latest ${ageDays(r90[0])} days ago; no posts or comments`, proof: r90[0].url || page };
+  }
+  if (sorted[0] && ageDays(sorted[0]) <= 180) {
+    return { ...base, label: 'Low', reason: `latest activity (${sorted[0].kind}) ${ageDays(sorted[0])} days ago; nothing in the last 90 days`, proof: sorted[0].url || page };
+  }
+  if (!dataOk) return { ...base, label: 'Unknown', reason: `activity could not be fetched on ${checked}`, proof: page };
+  return { ...base, label: 'Unknown', reason: sorted[0] ? `no activity in the last 180 days (latest ${ageDays(sorted[0])} days ago)` : `no visible activity on ${checked}`, proof: page };
+}
+
 // One person -> activity record. The profile actor runs first for everyone
 // (the connection count is a decision key, so it is always filled), then
 // the activity actors run one after another and stop at the first that
@@ -196,6 +244,18 @@ async function checkPerson(cfg, person, opts = {}) {
     return result;
   };
 
+  if (cfg.scheme === 'yard') {
+    // Counting "2+ activities this month" needs every source, so no early exit.
+    const [po, co, re] = [await run('posts'), await run('comments'), await run('reactions')];
+    const activities = [...summarizePosts(po, username), ...summarizeComments(co), ...summarizeReactions(re)];
+    const dataOk = [po, co, re].some((x) => x !== null);
+    const result = classifyYard({ activities, connections, now: opts.now, profileUrl: person.profileUrl, dataOk });
+    result.followers = followers;
+    result.checked = checked;
+    if (errors.length) result.errors = errors;
+    return result;
+  }
+
   const posts = summarizePosts(await run('posts'), username);
   if (posts.length) return finish(posts);
   const comments = summarizeComments(await run('comments'));
@@ -205,11 +265,12 @@ async function checkPerson(cfg, person, opts = {}) {
 }
 
 // Runs the check over `people` (objects with profileUrl), a few at a time.
-async function runActivityCheck(cfg, people, { onProgress = () => {}, shouldStop = () => false, concurrency = 2, fetchImpl, now } = {}) {
-  if (!cfg.configured) throw new Error(`Apify tokens missing on the server: ${cfg.missing.join(', ')} (or set APIFY_TOKEN for all)`);
+async function runActivityCheck(baseCfg, people, { onProgress = () => {}, shouldStop = () => false, concurrency = 2, fetchImpl, now, scheme = 'standard', maxItems } = {}) {
+  if (!baseCfg.configured) throw new Error(`Apify tokens missing on the server: ${baseCfg.missing.join(', ')} (or set APIFY_TOKEN for all)`);
+  const cfg = { ...baseCfg, scheme, maxItems: Math.max(1, parseInt(maxItems, 10) || baseCfg.maxItems) };
   const results = new Array(people.length);
   let next = 0;
-  const state = { total: people.length, done: 0, high: 0, medium: 0, low: 0, failed: 0 };
+  const state = { total: people.length, done: 0, high: 0, medium: 0, low: 0, unknown: 0, failed: 0, scheme };
   async function worker() {
     while (next < people.length && !shouldStop()) {
       const i = next++;
@@ -219,8 +280,8 @@ async function runActivityCheck(cfg, people, { onProgress = () => {}, shouldStop
       } catch (err) {
         results[i] = { label: '', reason: `check failed: ${err.message}`, proof: '', lastActivity: '', connections: null, counts: {}, errors: [err.message] };
       }
-      const l = results[i].label;
-      if (l === 'HIGH') state.high++; else if (l === 'MEDIUM') state.medium++; else if (l === 'LOW') state.low++; else state.failed++;
+      const l = String(results[i].label || '').toUpperCase();
+      if (l === 'HIGH') state.high++; else if (l === 'MEDIUM') state.medium++; else if (l === 'LOW') state.low++; else if (l === 'UNKNOWN') state.unknown++; else state.failed++;
       state.done++;
       logger.info(`  activity ${p.name || p.profileUrl}: ${l || 'n/a'} - ${results[i].reason}`);
       onProgress(state);
@@ -230,4 +291,4 @@ async function runActivityCheck(cfg, people, { onProgress = () => {}, shouldStop
   return { results, state };
 }
 
-module.exports = { configFromEnv, usernameOf, activityPage, runActor, classify, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, followersOf, tsOf, WINDOW_DAYS };
+module.exports = { configFromEnv, usernameOf, activityPage, runActor, classify, classifyYard, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, followersOf, tsOf, WINDOW_DAYS };

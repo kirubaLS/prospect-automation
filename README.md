@@ -107,6 +107,14 @@ Free-tier behaviour you should know:
     comment or reaction at any time (proof = its link), whatever the
     connection count; or 500+ connections with nothing found.
   - **LOW** — nothing found and fewer than 500 connections.
+  **Yard scheme** (`"activityScheme": "yard"`, used by the Yard project):
+  activity is scored as outreach probability, not ICP fit, and connections
+  never count. All four actors run with the newest 5 items each
+  (`activityMaxItems`). High = a post, or 2+ posts/reposts/comments, or any
+  of those within 14 days, all inside the last 30 days; Medium = one such
+  activity 15-30 days ago, the last one 31-90 days ago, or reactions only in
+  90 days; Low = last activity 91-180 days ago; Unknown = nothing in 6
+  months or data not accessible (never assumed Low).
   Every label has a proof: the activity link where there is one, otherwise
   the person's LinkedIn recent-activity page, with a note giving the
   connection count and the date checked. The Excel gains Activity,
@@ -127,7 +135,7 @@ Free-tier behaviour you should know:
   the 90-day window.
 
 Per-project presets: `projects/<name>/config.json` (see `projects/sharp`
-, `projects/reach24` and `projects/scikiq`, whose `titlePriorities` hold each client's
+, `projects/reach24`, `projects/scikiq` and `projects/yard`, whose `titlePriorities` hold each client's
 Priority 1/2/3 designation lists) show up in the page's Preset dropdown; **Save as preset** on the page keeps
 a geography/ICP combo in that browser without a git push.
 

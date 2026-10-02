@@ -87,7 +87,9 @@ function presets() {
           geography: (c.personLocations || []).join('; '),
           icp: (industries.length ? industries.join(', ') + '; ' : '') + (c.titlePriorities ? c.titlePriorities.map((g) => g.titles.join(', ')).join(' > ') : (c.titleKeywords || []).join(', ')),
           peoplePerCompany: c.targetPerCompany || 4,
-          activityCheck: !!c.activityCheck
+          activityCheck: !!c.activityCheck,
+          activityScheme: c.activityScheme || 'standard',
+          activityMaxItems: c.activityMaxItems || null
         };
       });
   } catch (err) {
@@ -102,7 +104,7 @@ function publicJob(j) {
     activity: j.activity ? { status: j.activity.status, progress: j.activity.progress, error: j.activity.error || null, startedAt: j.activity.startedAt, finishedAt: j.activity.finishedAt } : null,
     label: j.label,
     filename: j.filename,
-    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, activityCheck: !!j.params.activityCheck, searchExhausted: !!j.params.searchExhausted },
+    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, activityCheck: !!j.params.activityCheck, activityScheme: j.params.activityScheme || 'standard', searchExhausted: !!j.params.searchExhausted },
     status: j.status,
     startedAt: j.startedAt,
     finishedAt: j.finishedAt,
@@ -112,7 +114,7 @@ function publicJob(j) {
   };
 }
 
-function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label, resolve, activityCheck = false }) {
+function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, label, resolve, activityCheck = false, activityScheme = 'standard', activityMaxItems = null }) {
   if (runningId) throw new Error('another job is running - wait for it to finish or stop it');
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
   const count = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 4));
@@ -128,7 +130,7 @@ function startJob({ fileBuffer, filename, geography, icp, peoplePerCompany, labe
     label: label || filename,
     filename,
     paramsText: { geography, icp },
-    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
+    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, activityScheme: activityScheme === 'yard' ? 'yard' : 'standard', activityMaxItems: parseInt(activityMaxItems, 10) || null, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
     status: 'running',
     startedAt: new Date().toISOString(),
     finishedAt: null,
@@ -201,7 +203,9 @@ const server = http.createServer(async (req, res) => {
         peoplePerCompany: url.searchParams.get('count') || '4',
         label: url.searchParams.get('label') || '',
         resolve: url.searchParams.get('resolve') || (url.searchParams.get('enrich') === '0' ? 'none' : undefined),
-        activityCheck: url.searchParams.get('activity') === '1'
+        activityCheck: url.searchParams.get('activity') === '1',
+        activityScheme: url.searchParams.get('scheme') || 'standard',
+        activityMaxItems: url.searchParams.get('items') || null
       });
       return send(202, { status: 'started', job: publicJob(job) });
     }
@@ -224,11 +228,11 @@ const server = http.createServer(async (req, res) => {
         if (activityRunning) return send(409, { error: 'an activity check is already running' });
         const people = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl);
         if (!people.length) return send(400, { error: 'no people with a LinkedIn URL in this job' });
-        job.activity = { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, progress: { total: people.length, done: 0, high: 0, medium: 0, low: 0, failed: 0 }, stopRequested: false };
+        job.activity = { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, progress: { total: people.length, done: 0, high: 0, medium: 0, low: 0, unknown: 0, failed: 0, scheme: job.params.activityScheme }, stopRequested: false };
         activityRunning = job.id;
         keepAlive(true);
         logger.info(`Activity check for job ${job.id}: ${people.length} people via Apify (${Object.values(APIFY.actors).map((a) => a.id).join(', ')})`);
-        activity.runActivityCheck(APIFY, people, { onProgress: (st) => { job.activity.progress = { ...st }; }, shouldStop: () => job.activity.stopRequested })
+        activity.runActivityCheck(APIFY, people, { onProgress: (st) => { job.activity.progress = { ...st }; }, shouldStop: () => job.activity.stopRequested, scheme: job.params.activityScheme, maxItems: job.params.activityMaxItems })
           .then(({ results, state }) => {
             people.forEach((r, i) => {
               const a = results[i];

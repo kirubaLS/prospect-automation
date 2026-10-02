@@ -97,6 +97,7 @@
   .lbl.HIGH { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
   .lbl.MEDIUM { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
   .lbl.LOW { background: var(--surface-2); color: var(--ink-2); }
+  .lbl.UNKNOWN { background: var(--surface-2); color: var(--ink-2); border: 1px dashed var(--line); }
 </style>
 </head>
 <body>
@@ -225,6 +226,8 @@ $('theme').onclick = () => { const cur = document.documentElement.dataset.theme 
 
 // form persistence
 let activityCheck = localStorage.getItem('form.activity') === '1';
+let activityScheme = localStorage.getItem('form.activityScheme') || 'standard';
+let activityMaxItems = localStorage.getItem('form.activityMaxItems') || '';
 ['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
 { const v = localStorage.getItem('form.resolve'); if (v) $('resolve').value = v; $('resolve').addEventListener('change', () => localStorage.setItem('form.resolve', $('resolve').value)); }
 const resolveValue = () => $('resolve').value || 'search';
@@ -261,6 +264,8 @@ async function loadPresets() {
 }
 function applyPreset(p, force) {
   activityCheck = !!p.activityCheck; localStorage.setItem('form.activity', activityCheck ? '1' : '0');
+  activityScheme = p.activityScheme || 'standard'; localStorage.setItem('form.activityScheme', activityScheme);
+  activityMaxItems = p.activityMaxItems || ''; localStorage.setItem('form.activityMaxItems', activityMaxItems);
   $('geography').value = p.geography || ''; $('icp').value = p.icp || ''; $('count').value = p.peoplePerCompany || 4;
   if (!$('label').value || force) $('label').value = $('label').value || p.name;
   ['geography', 'icp', 'count', 'label'].forEach((id) => $(id).dispatchEvent(new Event('input')));
@@ -276,7 +281,7 @@ $('preset').addEventListener('change', () => {
 // Typing over a preset's ICP/geography means it is no longer "the preset".
 ['geography', 'icp', 'count'].forEach((id) => $(id).addEventListener('input', () => {
   const p = presets[$('preset').value];
-  if (p && (String($('geography').value) !== String(p.geography || '') || String($('icp').value) !== String(p.icp || '') || String($('count').value) !== String(p.peoplePerCompany || 4))) { $('preset').value = ''; localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); activityCheck = false; localStorage.setItem('form.activity', '0'); }
+  if (p && (String($('geography').value) !== String(p.geography || '') || String($('icp').value) !== String(p.icp || '') || String($('count').value) !== String(p.peoplePerCompany || 4))) { $('preset').value = ''; localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); activityCheck = false; localStorage.setItem('form.activity', '0'); activityScheme = 'standard'; localStorage.setItem('form.activityScheme', 'standard'); }
 }));
 function savePreset() {
   const name = prompt('Preset name (e.g. the client name):', $('label').value || '');
@@ -331,7 +336,7 @@ async function startJob() {
   if (!selectedFile) { setMsg('Choose the companies file first.', 'err'); return; }
   if (!$('icp').value.trim()) { setMsg('Enter the ICP roles (after the semicolon).', 'err'); $('icp').focus(); return; }
   setMsg('Starting…');
-  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0' });
+  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0', scheme: activityScheme, items: activityMaxItems });
   try {
     const r = await fetch('/jobs?' + params, { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
@@ -364,6 +369,7 @@ function show(j) {
   $('dlx').style.display = 'inline-flex'; $('dlx').href = '/jobs/' + j.id + '/download?format=xlsx';
 }
 
+let jobsCache = [];
 let rowsBusy = false;
 async function loadRows(j) {
   if (!j || rowsBusy) return;
@@ -432,7 +438,7 @@ async function loadFinal() {
   while (from < d.total) { const rr = await (await fetch(`/jobs/${currentId}/rows?from=${from}`)).json(); all.push(...rr.rows); from += rr.rows.length; if (!rr.rows.length) break; }
   const tb = $('finalrows').querySelector('tbody');
   tb.innerHTML = all.map((x) => x.companyStatus === 'Found'
-    ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${x.activity}">${x.activity}</span>` : ''}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td></tr>`
+    ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : ''}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td></tr>`
     : `<tr class="co"><td colspan="9"><span class="s-nf">${esc(x.companyStatus)}</span> · ${esc(x.company)}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No rows.</td></tr>';
   const withAct = all.filter((x) => x.activity).length;
   $('finalhint').textContent = withAct ? `${withAct} people carry an activity label.` : 'Activity columns fill in after "Check activity" (Reach24).';
@@ -455,11 +461,15 @@ async function loadActivity() {
   const a = d.activity, p = (a && a.progress) || {};
   $('actbtn').disabled = !apifyOn || (a && a.status === 'running');
   $('actstop').disabled = !(a && a.status === 'running');
-  $('acthint').textContent = apifyOn ? 'Connections for everyone, then posts → comments → reactions, stopping at the first hit. HIGH = posted in last 90 days · MEDIUM = any other activity or 500+ connections · LOW = nothing.' : 'Set the four Apify tokens on the server to enable.';
-  $('actstats').innerHTML = a ? [['People', p.total], ['Checked', p.done], ['HIGH', p.high], ['MEDIUM', p.medium], ['LOW', p.low], ['Failed', p.failed]].map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('') : '';
+  const cur = jobsCache.find((x) => x.id === currentId);
+  const sch = cur && cur.params && cur.params.activityScheme === 'yard';
+  $('acthint').textContent = !apifyOn ? 'Set the four Apify tokens on the server to enable.' : sch
+    ? 'Yard scheme: High = post / 2+ activities / anything within 14 days, all in the last 30 days · Medium = one activity 15–30 days, last activity 31–90 days, or reactions only · Low = 91–180 days · Unknown = nothing in 6 months. Connections never count.'
+    : 'Connections for everyone, then posts → comments → reactions, stopping at the first hit. HIGH = posted in last 90 days · MEDIUM = any other activity or 500+ connections · LOW = nothing.';
+  $('actstats').innerHTML = a ? [['People', p.total], ['Checked', p.done], ['High', p.high], ['Medium', p.medium], ['Low', p.low], ['Unknown', p.unknown], ['Failed', p.failed]].map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('') : '';
   if (a && a.status !== 'running') $('actmsg').textContent = a.status === 'done' ? 'Done — download Excel to get the Activity columns.' : a.status === 'failed' ? 'Failed: ' + a.error : 'Stopped.';
   const tb = $('actrows').querySelector('tbody');
-  tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${x.activity}">${x.activity}</span>` : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td><b>${esc(x.connections)}</b></td><td>${esc(x.followers)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
+  tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td><b>${esc(x.connections)}</b></td><td>${esc(x.followers)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -467,6 +477,7 @@ async function refresh() {
   let r;
   try { r = await fetch('/jobs'); } catch { return; }
   const j = await r.json();
+  jobsCache = j.jobs;
   const cur = j.jobs.find((x) => x.id === currentId) || j.jobs.find((x) => x.id === j.running) || j.jobs[0] || null;
   if (cur) currentId = cur.id;
   show(cur); loadRows(cur);

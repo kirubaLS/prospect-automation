@@ -52,6 +52,27 @@ r = a.classify({ activities: [], connections: 499, now, profileUrl: pu }); asser
 assert.strictEqual(r.proof, 'https://www.linkedin.com/in/kingshuk/recent-activity/all/', 'LOW has a proof link too');
 r = a.classify({ activities: [], connections: null, now, profileUrl: pu }); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /connections unknown/);
 
+// ---- Yard scheme ----
+{
+  const pu = 'https://www.linkedin.com/in/kingshuk';
+  const act = (kind, ago, url = 'u') => ({ kind, ts: now - ago * day, url });
+  const y = (activities, extra = {}) => a.classifyYard({ activities, now, profileUrl: pu, connections: 3000, ...extra });
+  let r = y([act('post', 8, 'p1'), act('post', 20, 'p2'), act('post', 27, 'p3')]);
+  assert.strictEqual(r.label, 'High'); assert.match(r.reason, /3 posts in the last 30 days; latest activity 8 days ago/); assert.strictEqual(r.proof, 'p1');
+  r = y([act('comment', 5)]); assert.strictEqual(r.label, 'High', 'any meaningful activity within 14 days');
+  r = y([act('comment', 20), act('repost', 28)]); assert.strictEqual(r.label, 'High', '2+ meaningful activities in 30 days');
+  r = y([act('comment', 22)]); assert.strictEqual(r.label, 'Medium'); assert.match(r.reason, /one comment 22 days ago, no evidence of regular activity/);
+  r = y([act('post', 42), act('reaction', 10), act('reaction', 30)]); assert.strictEqual(r.label, 'Medium'); assert.match(r.reason, /last post 42 days ago; 2 reactions since/);
+  r = y([act('reaction', 12), act('reaction', 40)]); assert.strictEqual(r.label, 'Medium'); assert.match(r.reason, /only reactions in the last 90 days \(2\)/);
+  r = y([act('post', 120)]); assert.strictEqual(r.label, 'Low'); assert.match(r.reason, /120 days ago; nothing in the last 90 days/);
+  r = y([act('reaction', 150)]); assert.strictEqual(r.label, 'Low');
+  r = y([act('post', 400)]); assert.strictEqual(r.label, 'Unknown'); assert.match(r.reason, /no activity in the last 180 days/);
+  r = y([]); assert.strictEqual(r.label, 'Unknown'); assert.match(r.reason, /no visible activity/); assert.strictEqual(r.proof, 'https://www.linkedin.com/in/kingshuk/recent-activity/all/');
+  r = y([], { dataOk: false }); assert.strictEqual(r.label, 'Unknown'); assert.match(r.reason, /could not be fetched/);
+  r = y([], { connections: 5000 }); assert.strictEqual(r.label, 'Unknown', 'connections never lift the label');
+  assert.strictEqual(r.connections, 5000, 'but are still reported');
+}
+
 (async () => {
   // Sequential with early exit: posts decide -> only 1 actor runs; each actor gets only its own token.
   const cfg = a.configFromEnv({ APIFY_POSTS_TOKEN: 't-posts', APIFY_COMMENTS_TOKEN: 't-comments', APIFY_REACTIONS_TOKEN: 't-reactions', APIFY_PROFILE_TOKEN: 't-profile' });
@@ -122,5 +143,19 @@ r = a.classify({ activities: [], connections: null, now, profileUrl: pu }); asse
   const { results, state } = await a.runActivityCheck(cfg, [{ name: 'A', profileUrl: 'https://www.linkedin.com/in/kingshuk' }, { name: 'B', profileUrl: 'https://www.linkedin.com/in/kingshuk' }], { fetchImpl: f.fetchImpl, now });
   assert.deepStrictEqual(results.map((x) => x.label), ['HIGH', 'HIGH']); assert.strictEqual(state.high, 2);
   await assert.rejects(a.runActivityCheck(partial, [], {}), /APIFY_COMMENTS_TOKEN/);
+
+  // Yard scheme through runActivityCheck: all four actors run, 5 items each, Unknown counted.
+  const seen = [];
+  const yardFetch = async (url, init) => {
+    const u = new URL(url); const act = decodeURIComponent(u.pathname.split('/')[3]);
+    const key = act.endsWith('posts') ? 'posts' : act.endsWith('comments') ? 'comments' : act.endsWith('reactions') ? 'reactions' : 'profile';
+    seen.push(key);
+    assert.strictEqual(JSON.parse(init.body).limit, 5); assert.strictEqual(u.searchParams.get('limit'), '5');
+    const d = key === 'profile' ? [{ basic_info: { connection_count: 2500 } }] : [];
+    return { ok: true, status: 201, json: async () => d, text: async () => '' };
+  };
+  const yr = await a.runActivityCheck(cfg, [me], { fetchImpl: yardFetch, now, scheme: 'yard', maxItems: 5 });
+  assert.deepStrictEqual(seen, ['profile', 'posts', 'comments', 'reactions'], 'yard runs every actor');
+  assert.strictEqual(yr.results[0].label, 'Unknown'); assert.strictEqual(yr.results[0].connections, 2500); assert.strictEqual(yr.state.unknown, 1); assert.strictEqual(yr.state.scheme, 'yard');
   console.log('PASS: linkedin activity labels');
 })().catch((e) => { console.error('FAIL:', e.stack || e.message); process.exit(1); });
