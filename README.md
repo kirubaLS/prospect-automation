@@ -114,15 +114,19 @@ Free-tier behaviour you should know:
   posts, then comments, then reactions. Labels:
   - **HIGH** — an original post within the last 90 days; proof = post URL
     and date.
-  - **MEDIUM** — any other activity at all: an older post, or a repost,
-    comment or reaction at any time (proof = its link), whatever the
-    connection count; or 500+ connections with nothing found.
-  - **LOW** — nothing found and fewer than 500 connections.
+  - **MEDIUM** — a repost, comment or reaction within the last 90 days
+    (proof = its link), whatever the connection count; or 500+ connections
+    with nothing in the last 90 days.
+  - **LOW** — nothing in the last 90 days and fewer than 500 connections
+    (or the count could not be fetched). Older activity is still reported
+    in the note and the "Last Activity" column but does not raise the label.
   Every label carries an "Activity Note" that spells the rule out, e.g.
-  "MEDIUM because the latest activity is a comment on 2026-05-01 and there
-  is no original post in the last 90 days; 1839 connections (500+)". A
+  "MEDIUM because of a comment on 2026-09-20, within 90 days of 2026-10-05,
+  but no original post in that time; 1839 connections (500+)". A
   regular post whose author is clearly another person (slug and name both
-  differ from the profile's) is not counted; a repost always is.
+  differ from the profile's) is not counted; a repost always is. Post links
+  are stored without their utm/rcm tracking query. The profile actor is
+  retried once, and the note says why when the count is still unknown.
   **Yard scheme** (`"activityScheme": "yard"`, used by the Yard project):
   activity is scored as outreach probability, not ICP fit, and connections
   never count. All four actors run with the newest 5 items each

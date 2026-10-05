@@ -3,10 +3,11 @@
 // posts actor, a comments actor, a reactions actor and a profile-details
 // actor (connection count), then labels:
 //   HIGH    an original post within the last 90 days (proof: post URL + date)
-//   MEDIUM  any other activity at all - an older post, or a repost, comment
-//           or reaction at any time (proof: its link) - whatever the
-//           connection count; or 500+ connections with nothing found
-//   LOW     nothing found and fewer than 500 connections
+//   MEDIUM  a repost, comment or reaction within the last 90 days (proof: its
+//           link), whatever the connection count; or 500+ connections with
+//           nothing in the last 90 days
+//   LOW     nothing in the last 90 days and fewer than 500 connections (or
+//           the count could not be fetched); older activity is still noted
 // Actor ids are overridable; the defaults are apimaestro's LinkedIn actors.
 const logger = require('./logger');
 
@@ -85,6 +86,12 @@ function tsOf(item) {
   return null;
 }
 
+// Post links come back with utm_* and the researcher's own `rcm` member token; keep only the post path.
+function cleanUrl(u) {
+  const str = String(u || '');
+  return /linkedin\.com\/posts\//i.test(str) ? str.split('?')[0] : str;
+}
+
 function fmtDate(ms) {
   return ms ? new Date(ms).toISOString().slice(0, 10) : '';
 }
@@ -117,7 +124,7 @@ function summarizePosts(items, self) {
     if (!ts) continue;
     const type = String(it.post_type || '').toLowerCase();
     if (type !== 'repost' && !isSelf(it.author, self)) continue;
-    out.push({ kind: type === 'repost' ? 'repost' : 'post', ts, url: it.url || '', text: (it.text || '').slice(0, 120) });
+    out.push({ kind: type === 'repost' ? 'repost' : 'post', ts, url: cleanUrl(it.url), text: (it.text || '').slice(0, 120) });
   }
   return out;
 }
@@ -128,7 +135,7 @@ function summarizeComments(items) {
 
 // Reactions actor items: { action: "Komala Maran likes this", post_url, timestamps }
 function summarizeReactions(items) {
-  return (items || []).map((it) => ({ kind: 'reaction', ts: tsOf(it), url: it.post_url || it.url || (it.post && it.post.post_url) || '', text: String(it.action || '').slice(0, 60) })).filter((x) => x.ts);
+  return (items || []).map((it) => ({ kind: 'reaction', ts: tsOf(it), url: cleanUrl(it.post_url || it.url || (it.post && it.post.post_url) || ''), text: String(it.action || '').slice(0, 60) })).filter((x) => x.ts);
 }
 
 // Connection count from a profile-details item, whatever the field is called.
@@ -168,17 +175,16 @@ function classify({ activities = [], connections = null, now = Date.now(), profi
   const last = sorted[0] || null;
   const counts = { posts: 0, reposts: 0, comments: 0, reactions: 0 };
   for (const a of sorted) counts[a.kind === 'post' ? 'posts' : a.kind === 'repost' ? 'reposts' : a.kind === 'comment' ? 'comments' : 'reactions']++;
-  const recentPost = sorted.find((a) => a.kind === 'post' && a.ts >= cutoff);
+  const describe = (x) => `${x.kind === 'post' ? 'an original post' : x.kind === 'repost' ? 'a repost' : x.kind === 'comment' ? 'a comment' : `a reaction${x.text ? ` ("${x.text}")` : ''}`} on ${fmtDate(x.ts)}`;
   const conn = connections == null ? `connections unknown${connectionsNote ? ` (${connectionsNote})` : ''}`
     : connections >= CONNECTIONS_MEDIUM ? `${connections} connections (500+)` : `${connections} connections (under 500)`;
-  const nothing = `no post, repost, comment or reaction found on ${checked}`;
-  if (recentPost) return { label: 'HIGH', reason: `HIGH because of an original post on ${fmtDate(recentPost.ts)}, within ${WINDOW_DAYS} days of ${checked}; ${conn}`, proof: recentPost.url || page, lastActivity: fmtDate(last.ts), counts, connections };
-  if (last) {
-    const what = last.kind === 'post' ? `an original post on ${fmtDate(last.ts)} (older than ${WINDOW_DAYS} days)` : last.kind === 'repost' ? `a repost on ${fmtDate(last.ts)}` : last.kind === 'comment' ? `a comment on ${fmtDate(last.ts)}` : `a reaction on ${fmtDate(last.ts)}${last.text ? ` ("${last.text}")` : ''}`;
-    return { label: 'MEDIUM', reason: `MEDIUM because the latest activity is ${what} and there is no original post in the last ${WINDOW_DAYS} days; ${conn} - any activity counts as MEDIUM whatever the connection count`, proof: last.url || page, lastActivity: fmtDate(last.ts), counts, connections };
-  }
-  if (connections != null && connections >= CONNECTIONS_MEDIUM) return { label: 'MEDIUM', reason: `MEDIUM because of ${conn} even though ${nothing}`, proof: page, lastActivity: '', counts, connections };
-  return { label: 'LOW', reason: `LOW because ${nothing} and ${conn}`, proof: page, lastActivity: '', counts, connections };
+  const recentPost = sorted.find((a) => a.kind === 'post' && a.ts >= cutoff);
+  if (recentPost) return { label: 'HIGH', reason: `HIGH because of ${describe(recentPost)}, within ${WINDOW_DAYS} days of ${checked}; ${conn}`, proof: recentPost.url || page, lastActivity: fmtDate(last.ts), counts, connections };
+  const recent = sorted.find((a) => a.ts >= cutoff);
+  if (recent) return { label: 'MEDIUM', reason: `MEDIUM because of ${describe(recent)}, within ${WINDOW_DAYS} days of ${checked}, but no original post in that time; ${conn} - recent activity counts as MEDIUM whatever the connection count`, proof: recent.url || page, lastActivity: fmtDate(last.ts), counts, connections };
+  const nothing = last ? `nothing in the last ${WINDOW_DAYS} days (latest activity was ${describe(last)}, older than ${WINDOW_DAYS} days)` : `no post, repost, comment or reaction found on ${checked}`;
+  if (connections != null && connections >= CONNECTIONS_MEDIUM) return { label: 'MEDIUM', reason: `MEDIUM because of ${conn} even though ${nothing}`, proof: page, lastActivity: last ? fmtDate(last.ts) : '', counts, connections };
+  return { label: 'LOW', reason: `LOW because ${nothing} and ${conn}`, proof: page, lastActivity: last ? fmtDate(last.ts) : '', counts, connections };
 }
 
 // Yard scheme: LinkedIn activity as outreach probability. Only intentional
@@ -249,11 +255,16 @@ async function checkPerson(cfg, person, opts = {}) {
     try { return await runActor(cfg, cfg.actors[key], input, opts); } catch (err) { errors.push(`${key}: ${err.message}`); return null; }
   };
 
-  const profile = await run('profile');
+  let profile = await run('profile');
+  if (profile === null || !profile.length) { // the connection count decides MEDIUM vs LOW, so try once more
+    await new Promise((r) => setTimeout(r, opts.retryDelayMs ?? 3000));
+    profile = await run('profile');
+  }
   const info = profile && profile.length ? profile[0] : null;
   const connections = info ? connectionsOf(info) : null;
   const followers = info ? followersOf(info) : null;
-  const connectionsNote = connections != null ? '' : profile === null ? 'profile actor failed' : !info ? 'profile actor returned nothing' : 'no connection count in the profile data';
+  const profileErr = errors.filter((e) => e.startsWith('profile:')).pop();
+  const connectionsNote = connections != null ? '' : profileErr ? `profile actor failed: ${profileErr.slice(9, 120)}` : !info ? 'profile actor returned no data for this URL' : 'no connection count in the profile data';
   const bi = (info && (info.basic_info || info.basicInfo)) || info || {};
   const self = {
     usernames: [username, bi.public_identifier, bi.publicIdentifier, bi.username, usernameOf(bi.profile_url || bi.url || '')].filter(Boolean),
@@ -281,12 +292,16 @@ async function checkPerson(cfg, person, opts = {}) {
     return result;
   }
 
+  // Stop at the first actor that shows activity inside the window; older
+  // activity is kept for the note but does not decide, so the next actor runs.
+  const cutoff = (opts.now || Date.now()) - WINDOW_DAYS * 86400000;
+  const recent = (list) => list.some((x) => x.ts >= cutoff);
   const posts = summarizePosts(await run('posts'), self);
-  if (posts.length) return finish(posts);
+  if (recent(posts)) return finish(posts);
   const comments = summarizeComments(await run('comments'));
-  if (comments.length) return finish(comments);
+  if (recent(comments)) return finish([...posts, ...comments]);
   const reactions = summarizeReactions(await run('reactions'));
-  return finish(reactions);
+  return finish([...posts, ...comments, ...reactions]);
 }
 
 // Runs the check over `people` (objects with profileUrl), a few at a time.
