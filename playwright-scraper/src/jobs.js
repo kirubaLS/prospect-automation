@@ -150,13 +150,16 @@ function sanitize(p, org, tier, icpHit) {
 //     held back and used only if every group leaves the company short.
 //   seniority (plain ICP keywords): decision makers with the keywords in
 //     their title, then managers, then any decision maker.
+// `opts.exclude` (iterable of person keys, see personKey) skips people already
+// listed or removed, so a replacement search returns someone new.
+function personKey(p) { return p.apolloId || p.profileUrl || `${p.name}|${p.title}`; }
 async function findPeople(apiKey, org, params, opts = {}) {
   const want = params.peoplePerCompany;
-  const perPage = Math.min(50, Math.max(want * 2, 10));
+  const seen = new Set(opts.exclude || []);
+  const perPage = Math.min(50, Math.max((want + seen.size) * 2, 10));
   // api_search may omit the LinkedIn URL (preview plans), so dedupe on
   // the Apollo id and let enrichment fill the URL in afterwards.
-  const keyOf = (p) => p.apolloId || p.profileUrl || `${p.name}|${p.title}`;
-  const seen = new Set();
+  const keyOf = personKey;
   let out = [];
 
   if (params.priorities && params.priorities.length) {
@@ -284,6 +287,8 @@ function companyRow(company, status, note, org) {
     companyStatus: status,
     note: note || '',
     apolloOrg: org ? org.name : '',
+    apolloOrgId: org ? org.id || '' : '',
+    apolloDomain: org ? org.domain || '' : '',
     industry: org ? org.industry : '',
     employees: org ? org.employees : '',
     hq: org ? [org.city, org.state, org.country].filter(Boolean).join(', ') : ''
@@ -404,4 +409,4 @@ function exportRows(rows, format) {
   return { buffer: Buffer.from(toCsv(rows), 'utf8'), contentType: 'text/csv; charset=utf-8', extension: 'csv' };
 }
 
-module.exports = { runJob, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };
+module.exports = { runJob, personKey, companyRow, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };

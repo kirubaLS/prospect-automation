@@ -199,6 +199,16 @@ const fetchImpl = async (url, init) => {
   assert.deepStrictEqual(k7.map((r) => [r.title, r.match]), [['Head of Operations', 'Priority 2'], ['IT Head', 'Priority 2'], ['IT Manager', 'Priority 3'], ['Software Developer', 'Priority 3']], 'P2 people before P3; developer kept because it is listed; Purchase Manager (P3, 5th) cut by the target of 4');
   assert.ok(!k7.some((r) => r.name.startsWith('Loose')), 'similar-title person not used while listed titles fill the target');
 
+  // replacement search: people already listed or removed are excluded, so one new person comes back
+  const org7 = { id: 'o1', domain: null, name: 'Kosmoderma' };
+  const prio = { locations: params.locations, industries: pr.industries, icpKeywords: pr.keywords, priorities: pr.priorities, peoplePerCompany: 1, resolve: 'none' };
+  const exclude = new Set(k7.map(jobs.personKey));
+  const repl = await jobs.findPeople('k', org7, prio, { fetchImpl: prioFetch, exclude });
+  assert.strictEqual(repl.length, 1, 'exactly one replacement');
+  assert.ok(!exclude.has(jobs.personKey(repl[0])), 'the replacement is nobody already listed');
+  assert.ok(k7.every((r) => r.name !== repl[0].name), 'replacement differs from all four kept people');
+  assert.ok(k7[0].apolloOrgId === 'o1', 'rows carry the Apollo org id so a replacement search needs no company lookup');
+
   // resolve: 'none' -> preview only, no bulk_match, masked names kept as-is.
   const before = calls.enrich;
   const r2 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'none' }, fetchImpl });

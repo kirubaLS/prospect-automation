@@ -65,6 +65,8 @@
   .bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
   .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--ink-2); }
+  .del { border: 0; background: transparent; color: var(--ink-2); cursor: pointer; font-size: 12px; padding: 0 4px; border-radius: 4px; }
+  .del:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
   .pill.queued { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
   .pill.running { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
   .pill.done { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
@@ -201,7 +203,7 @@
         <div class="msg" id="actmsg"></div>
         <div class="scroll"><table class="tbl" id="actrows"><thead><tr><th>Company</th><th>Name</th><th>Activity</th><th>Why</th><th>Last</th><th>Connections</th><th>Followers</th><th>Proof</th></tr></thead><tbody><tr><td colspan="8" class="empty">Run a job, then check activity here.</td></tr></tbody></table></div>
       </div>
-      <div id="tab-people" class="scroll" style="margin-top:12px"><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="5" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
+      <div id="tab-people" class="scroll" style="margin-top:12px"><div class="hint" style="margin-bottom:6px">✕ removes a person and fetches the next match for that company (no Apollo credits with web search; 1 credit with Apollo enrichment).</div><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th></tr></thead><tbody><tr><td colspan="5" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
     </section>
   </div>
 
@@ -357,6 +359,20 @@ async function startJob() {
   refresh();
 }
 async function stopJob() { if (!currentId) return; await api('/jobs/' + currentId + '/stop', { method: 'POST' }); refresh(); }
+async function removePerson(idx, btn) {
+  if (!currentId) return;
+  const tr = btn.closest('tr'); const name = tr.children[1].firstChild.textContent;
+  if (!confirm(`Remove ${name} and fetch the next matching person for this company?`)) return;
+  btn.disabled = true; btn.textContent = '…'; tr.style.opacity = '0.5';
+  setMsg(`Removing ${name} and looking for the next match…`);
+  try {
+    const r = await api(`/jobs/${currentId}/rows/${idx}?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+    const j = await r.json().catch(() => ({}));
+    setMsg(r.ok ? j.message : 'Error: ' + (j.error || r.status), r.ok && j.replacement ? 'ok' : r.ok ? '' : 'err');
+  } catch (e) { setMsg('Request failed: ' + e.message, 'err'); }
+  rowsJob = null; rowsLoaded = 0; // reload the list from scratch
+  refresh();
+}
 function setMsg(t, cls) { $('msg').textContent = t; $('msg').className = 'msg ' + (cls || ''); }
 
 let busy = { running: false, mine: false, queued: 0 };
@@ -396,16 +412,18 @@ async function loadRows(j) {
   const tb = $('rows').querySelector('tbody');
   if (!rowsLoaded) tb.innerHTML = '';
   let lastCo = tb.dataset.lastCo || '';
-  for (const x of d.rows) {
+  const canEdit = j.status !== 'running' && j.status !== 'queued' && !(j.activity && j.activity.status === 'running');
+  d.rows.forEach((x, k) => {
+    const idx = d.from + k;
     if (x.company !== lastCo) {
       lastCo = x.company;
       const cls = x.companyStatus === 'Found' ? 's-found' : x.companyStatus === 'Company not found' ? 's-nf' : 's-np';
       tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="5"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`);
     }
     if (x.companyStatus === 'Found') {
-      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : `<span class="muted">${esc(x.note || 'not resolved')}</span>`}</td></tr>`);
+      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}${x.replaced ? `<div class="hint">replaces ${esc(x.replaced)}</div>` : ''}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : `<span class="muted">${esc(x.note || 'not resolved')}</span>`}${canEdit ? ` <button class="del" title="Remove this person and fetch the next match" onclick="removePerson(${idx}, this)">✕</button>` : ''}</td></tr>`);
     }
-  }
+  });
   tb.dataset.lastCo = lastCo;
   rowsLoaded = d.from + d.rows.length;
   if (rowsLoaded < d.total) loadRows(j);

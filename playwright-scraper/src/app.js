@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
-const { runJob, exportRows, parseGeography, parseIcp } = require('./jobs');
+const { runJob, exportRows, parseGeography, parseIcp, findPeople, personKey } = require('./jobs');
 const { providersFromEnv } = require('./websearch');
 const activity = require('./activity');
 
@@ -260,8 +260,8 @@ const server = http.createServer(async (req, res) => {
       return send(202, { status: job.status === 'running' ? 'started' : 'queued', job: publicJob(job) });
     }
 
-    const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows|activity))?$/);
-    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx', 'GET|POST|DELETE /jobs/:id/activity'] });
+    const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows|activity))?(?:\/(\d+))?$/);
+    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx', 'DELETE /jobs/:id/rows/:index', 'GET|POST|DELETE /jobs/:id/activity'] });
     const job = jobs.get(m[1]);
     if (!job) return send(404, { error: 'unknown or expired job (results are kept only while the server runs)' });
     if (job.owner !== owner) return send(403, { error: 'this job belongs to another user' });
@@ -310,6 +310,49 @@ const server = http.createServer(async (req, res) => {
       return send(200, { activity: job.activity ? publicJob(job).activity : null, rows });
     }
 
+    if (m[2] === 'rows' && m[3] != null && req.method === 'DELETE') {
+      // Remove one person and fetch the next match for that company, skipping
+      // everyone already listed or removed. Same resolve mode as the job:
+      // with web search this costs no Apollo credits.
+      if (job.status === 'running' || job.status === 'queued') return send(409, { error: 'wait for the job to finish' });
+      if (job.activity && job.activity.status === 'running') return send(409, { error: 'wait for the activity check to finish' });
+      if (job.replacing) return send(409, { error: 'another replacement is in progress - try again in a moment' });
+      const idx = parseInt(m[3], 10);
+      const row = job.rows[idx];
+      if (!row || row.companyStatus !== 'Found' || !row.name) return send(404, { error: 'no such person row' });
+      if (url.searchParams.get('name') && url.searchParams.get('name') !== row.name) return send(409, { error: 'the list changed - refresh and try again' });
+      const sameCompany = (r) => r.company === row.company && r.companyWebsite === row.companyWebsite && r.companyUrl === row.companyUrl;
+      job.removed = job.removed || [];
+      job.removed.push({ company: row.company, name: row.name, title: row.title, profileUrl: row.profileUrl, key: personKey(row) });
+      job.rows.splice(idx, 1);
+      job.progress.prospects = Math.max(0, (job.progress.prospects || 0) - 1);
+      const exclude = new Set([...job.removed.filter((r) => r.company === row.company).map((r) => r.key), ...job.rows.filter((r) => sameCompany(r) && r.name).map(personKey)]);
+      const org = { id: row.apolloOrgId || null, domain: row.apolloDomain || null, name: row.company, industry: row.industry || '', employees: row.employees ?? null };
+      if (!org.id && !org.domain) return send(200, { removed: true, replacement: null, message: 'removed; cannot search again for this company (no Apollo id or domain on the row)' });
+      job.replacing = true;
+      keepAlive(true);
+      try {
+        const ledger = job.progress.apollo || null;
+        const people = await findPeople(APOLLO_API_KEY, org, { ...job.params, peoplePerCompany: 1 }, { exclude, ...(ledger ? { ledger } : {}) });
+        const p = people[0] || null;
+        let replacement = null;
+        if (p) {
+          const companyBits = Object.fromEntries(Object.entries(row).filter(([k]) => ['company', 'companyUrl', 'companyWebsite', 'companyStatus', 'apolloOrg', 'apolloOrgId', 'apolloDomain', 'industry', 'employees', 'hq'].includes(k)));
+          const after = job.rows.map((r, i) => (sameCompany(r) ? i : -1)).filter((i) => i >= 0).pop();
+          const at = after == null ? Math.min(idx, job.rows.length) : after + 1;
+          replacement = { ...companyBits, ...p, note: p.note || '', replaced: row.name };
+          job.rows.splice(at, 0, replacement);
+          job.progress.prospects = (job.progress.prospects || 0) + 1;
+        }
+        logger.info(`Job ${job.id}: removed ${row.name} (${row.company}); replacement: ${p ? `${p.name} (${p.title})` : 'none left in Apollo'}`);
+        return send(200, { removed: true, replacement, message: p ? `${row.name} removed; ${p.name} (${p.title}) added` : `${row.name} removed; no one else in Apollo matches this company's geography/ICP` });
+      } catch (err) {
+        return send(200, { removed: true, replacement: null, message: `${row.name} removed; replacement search failed: ${err.message}` });
+      } finally {
+        job.replacing = false;
+        if (!runningId && !queue.length && !activityRunning) keepAlive(false);
+      }
+    }
     if (m[2] === 'rows') {
       const from = Math.max(0, parseInt(url.searchParams.get('from') || '0', 10) || 0);
       return send(200, { total: job.rows.length, from, rows: job.rows.slice(from, from + 500) });
