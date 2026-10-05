@@ -107,15 +107,33 @@ const SENIORITY_LABEL = { owner: 'Owner', founder: 'Founder', c_suite: 'C-Suite'
 const DECISION_MAKERS = ['owner', 'founder', 'c_suite', 'partner', 'vp', 'head', 'director'];
 const MANAGERS = ['manager', 'senior'];
 
-// Titles that are never prospects regardless of ICP.
-const ALWAYS_EXCLUDE = /\b(intern|trainee|student|assistant|associate|executive|analyst|coordinator|receptionist|clerk|cashier|driver|dispatcher|technician|mechanic|developer|programmer|engineer(?!ing (manager|head|director))|recruiter|nurse|teacher|lecturer|professor|therapist|pharmacist|physician|surgeon|dentist|doctor|dr\.?|clinician|\w+ologist|\w+iatrist|medical officer)\b/i;
+// Titles that are never prospects regardless of ICP. A listed title may
+// still contain one of these words ("Executive Director", "Chief of Staff"):
+// see excludedTitle.
+const ALWAYS_EXCLUDE = /\b(intern|trainee|student|assistant|associate|executive|analyst|coordinator|receptionist|clerk|cashier|driver|dispatcher|technician|mechanic|developer|programmer|engineer(?!ing (manager|head|director))|recruiter|nurse|teacher|lecturer|professor|therapist|pharmacist|physician|surgeon|dentist|doctor|dr\.?|clinician|\w+ologist|\w+iatrist|medical officer|chief of staff|(?:md|cmd|ceo|cxo|coo|cfo|cto|chairman|chairperson|director|president|founder|promoter)['\u2019]?s? office|office of the|secretary to|\bea\b|\bpa\b)\b/i;
+
+// Words in front of a matched title that change its meaning: "Vice President"
+// is not a "President", "Associate Director" is not a "Director". A pattern
+// that itself starts with such a word ("Vice President Operations") is fine.
+const MODIFIERS = '(?:vice|assistant|asst|associate|deputy|junior|jr|sub|under)';
 
 function titleMatches(title, patterns) {
   const t = String(title || '').replace(/&/g, 'and').replace(/[\u2013\u2014]/g, '-');
   return patterns.some((k) => {
     const k2 = k.replace(/&/g, 'and');
-    return new RegExp(`(^|[^a-z0-9])${k2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*[-/]?\\s*')}($|[^a-z0-9])`, 'i').test(t);
+    const body = k2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*[-/]?\\s*');
+    return new RegExp(`(^|[^a-z0-9])(?<!\\b${MODIFIERS}[\\s.-]*)${body}($|[^a-z0-9])`, 'i').test(t);
   });
+}
+
+// True when the title carries an excluded word that none of the group's own
+// patterns contains - so "Executive Director" survives a group listing it,
+// but "Assistant Manager - MD's Office" never does.
+function excludedTitle(title, patterns = []) {
+  const m = ALWAYS_EXCLUDE.exec(String(title || ''));
+  if (!m) return false;
+  const word = m[0].toLowerCase().replace(/[^a-z ]/g, '');
+  return !patterns.some((p) => String(p).toLowerCase().replace(/[^a-z ]/g, '').includes(word));
 }
 
 function sanitize(p, org, tier, icpHit) {
@@ -171,8 +189,8 @@ async function findPeople(apiKey, org, params, opts = {}) {
       logger.info(`    ${tier.label}: ${people.length} returned (${total} in Apollo)`);
       const fresh = people.filter((p) => p.name && !seen.has(keyOf(p)));
       // An explicitly listed title is never excluded, whatever it is.
-      const exact = fresh.filter((p) => titleMatches(p.title, group)).sort((a, b) => (SENIORITY_RANK[a.seniority] ?? 9) - (SENIORITY_RANK[b.seniority] ?? 9));
-      const rest = fresh.filter((p) => !titleMatches(p.title, group) && !ALWAYS_EXCLUDE.test(p.title || ''));
+      const exact = fresh.filter((p) => titleMatches(p.title, group) && !excludedTitle(p.title, group)).sort((a, b) => (SENIORITY_RANK[a.seniority] ?? 9) - (SENIORITY_RANK[b.seniority] ?? 9));
+      const rest = fresh.filter((p) => !titleMatches(p.title, group) && !excludedTitle(p.title));
       for (const p of exact) {
         if (out.length >= want) break;
         seen.add(keyOf(p));
@@ -197,7 +215,7 @@ async function findPeople(apiKey, org, params, opts = {}) {
       const { people, total } = await apollo.searchPeople(apiKey, org, { seniorities: tier.seniorities, titles: tier.titles, locations: params.locations, perPage }, opts);
       logger.info(`    ${tier.label}: ${people.length} returned (${total} in Apollo)`);
       const ranked = people
-        .filter((p) => p.name && !seen.has(keyOf(p)) && !ALWAYS_EXCLUDE.test(p.title || ''))
+        .filter((p) => p.name && !seen.has(keyOf(p)) && !excludedTitle(p.title, titles))
         .map((p) => ({ p, icp: titles.length ? titleMatches(p.title, titles) : false }))
         .sort((a, b) => Number(b.icp) - Number(a.icp) || (SENIORITY_RANK[a.p.seniority] ?? 9) - (SENIORITY_RANK[b.p.seniority] ?? 9));
       for (const { p, icp } of ranked) {
@@ -409,4 +427,4 @@ function exportRows(rows, format) {
   return { buffer: Buffer.from(toCsv(rows), 'utf8'), contentType: 'text/csv; charset=utf-8', extension: 'csv' };
 }
 
-module.exports = { runJob, personKey, companyRow, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };
+module.exports = { runJob, personKey, companyRow, titleMatches, excludedTitle, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };

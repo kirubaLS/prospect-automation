@@ -14,6 +14,7 @@ const logger = require('./logger');
 const APIFY = 'https://api.apify.com/v2';
 const WINDOW_DAYS = 90;
 const CONNECTIONS_MEDIUM = 500;
+const DORMANT_CONNECTIONS = 50; // fewer than this and the profile is probably unused
 
 // One Apify token per process (APIFY_POSTS_TOKEN, APIFY_COMMENTS_TOKEN,
 // APIFY_REACTIONS_TOKEN, APIFY_PROFILE_TOKEN); APIFY_TOKEN fills in for any
@@ -177,7 +178,7 @@ function classify({ activities = [], connections = null, now = Date.now(), profi
   for (const a of sorted) counts[a.kind === 'post' ? 'posts' : a.kind === 'repost' ? 'reposts' : a.kind === 'comment' ? 'comments' : 'reactions']++;
   const describe = (x) => `${x.kind === 'post' ? 'an original post' : x.kind === 'repost' ? 'a repost' : x.kind === 'comment' ? 'a comment' : `a reaction${x.text ? ` ("${x.text}")` : ''}`} on ${fmtDate(x.ts)}`;
   const conn = connections == null ? `connections unknown${connectionsNote ? ` (${connectionsNote})` : ''}`
-    : connections >= CONNECTIONS_MEDIUM ? `${connections} connections (500+)` : `${connections} connections (under 500)`;
+    : connections >= CONNECTIONS_MEDIUM ? `${connections} connections (500+)` : connections < DORMANT_CONNECTIONS ? `${connections} connections (under ${DORMANT_CONNECTIONS}: looks like a dormant profile)` : `${connections} connections (under 500)`;
   const recentPost = sorted.find((a) => a.kind === 'post' && a.ts >= cutoff);
   if (recentPost) return { label: 'HIGH', reason: `HIGH because of ${describe(recentPost)}, within ${WINDOW_DAYS} days of ${checked}; ${conn}`, proof: recentPost.url || page, lastActivity: fmtDate(last.ts), counts, connections };
   const recent = sorted.find((a) => a.ts >= cutoff);

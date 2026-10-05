@@ -145,6 +145,7 @@ r = a.classify({ activities: [], connections: null, now, profileUrl: pu }); asse
   f = makeFetch({ posts: [], comments: [], reactions: [], profile: [{ basic_info: { connection_count: 120 } }] });
   res = await a.checkPerson(cfg, me, { fetchImpl: f.fetchImpl, now, retryDelayMs: 0 });
   assert.strictEqual(res.label, 'LOW'); assert.match(res.reason, /LOW because no post, repost, comment or reaction found on 2026-10-01 and 120 connections \(under 500\)/);
+  r = a.classify({ activities: [], connections: 8, now, profileUrl: 'https://www.linkedin.com/in/x' }); assert.match(r.reason, /8 connections \(under 50: looks like a dormant profile\)/);
 
   // a crashed actor is skipped, the chain continues
   f = makeFetch({ posts: 'crash', comments: [], reactions: [], profile: [{ basic_info: { connection_count: 900 } }] });

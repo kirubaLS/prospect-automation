@@ -199,6 +199,25 @@ const fetchImpl = async (url, init) => {
   assert.deepStrictEqual(k7.map((r) => [r.title, r.match]), [['Head of Operations', 'Priority 2'], ['IT Head', 'Priority 2'], ['IT Manager', 'Priority 3'], ['Software Developer', 'Priority 3']], 'P2 people before P3; developer kept because it is listed; Purchase Manager (P3, 5th) cut by the target of 4');
   assert.ok(!k7.some((r) => r.name.startsWith('Loose')), 'similar-title person not used while listed titles fill the target');
 
+  // title matching: modifiers break a match, excluded words only survive when the group lists them
+  const P2 = ['Managing Director', 'MD', 'Chief Executive Officer', 'CEO', 'Executive Director', 'President'];
+  const keep = (t, g) => jobs.titleMatches(t, g) && !jobs.excludedTitle(t, g);
+  assert.strictEqual(keep("Manager - MD's Office", P2), false, 'MD\'s Office staff are not the MD');
+  assert.strictEqual(keep('General Manager MD\u2019s Office', P2), false, 'curly apostrophe too');
+  assert.strictEqual(keep("Assistant Manager - MD's Office", P2), false);
+  assert.strictEqual(keep('Associate Vice President', P2), false, 'not a President');
+  assert.strictEqual(keep('Vice President', P2), false, 'not a President');
+  assert.strictEqual(keep('EA to the CEO', P2), false);
+  assert.strictEqual(keep('Chief Executive Officer & MD', P2), true);
+  assert.strictEqual(keep('Executive Director', P2), true, 'listed title keeps its excluded word');
+  assert.strictEqual(keep('President', P2), true);
+  assert.strictEqual(keep('Vice President Operations', ['Vice President Operations']), true, 'pattern starting with the modifier is fine');
+  assert.strictEqual(keep('Senior Vice President Operations', ['Vice President Operations']), true);
+  assert.strictEqual(keep('Associate Director Operations', ['Director Operations']), false);
+  assert.strictEqual(keep('Chief of Staff', ['Chief of Staff']), true, 'Yard lists it');
+  assert.strictEqual(keep('Chief of Staff', P2), false, 'Scikiq does not');
+  assert.strictEqual(keep('Office Manager', ['Office Manager']), true);
+
   // replacement search: people already listed or removed are excluded, so one new person comes back
   const org7 = { id: 'o1', domain: null, name: 'Kosmoderma' };
   const prio = { locations: params.locations, industries: pr.industries, icpKeywords: pr.keywords, priorities: pr.priorities, peoplePerCompany: 1, resolve: 'none' };
