@@ -76,7 +76,13 @@
         "VP Operations",
         "Vice President Operations",
         "Senior Vice President Operations",
-        "General Manager Operations"
+        "General Manager Operations",
+        "SVP Operations",
+        "Sr. Vice President Operations",
+        "Executive Vice President Operations",
+        "Global Head of Operations",
+        "Global COO",
+        "Group COO"
       ]
     },
     {
@@ -94,7 +100,13 @@
         "Vice President Finance",
         "Financial Controller",
         "Group CFO",
-        "Finance Controller"
+        "Finance Controller",
+        "Global CFO",
+        "Global Chief Financial Officer",
+        "Group Chief Financial Officer",
+        "Senior Vice President Finance",
+        "SVP Finance",
+        "Global Head of Finance"
       ]
     },
     {
@@ -119,7 +131,20 @@
         "Vice President Technology",
         "Vice President Information Technology",
         "Head of Engineering",
-        "Chief Technology & Information Officer"
+        "Chief Technology & Information Officer",
+        "Vice President IT",
+        "Senior Vice President IT",
+        "Global Vice President IT",
+        "Global VP IT",
+        "SVP IT",
+        "VP Information Technology",
+        "Global CIO",
+        "Group CIO",
+        "Global CTO",
+        "Global Head of IT",
+        "Head of Digital",
+        "VP Digital",
+        "Vice President Digital"
       ]
     }
   ],
@@ -192,6 +217,12 @@
     "Vice President Operations",
     "Senior Vice President Operations",
     "General Manager Operations",
+    "SVP Operations",
+    "Sr. Vice President Operations",
+    "Executive Vice President Operations",
+    "Global Head of Operations",
+    "Global COO",
+    "Group COO",
     "Chief Financial Officer",
     "CFO",
     "Director Finance",
@@ -205,6 +236,12 @@
     "Financial Controller",
     "Group CFO",
     "Finance Controller",
+    "Global CFO",
+    "Global Chief Financial Officer",
+    "Group Chief Financial Officer",
+    "Senior Vice President Finance",
+    "SVP Finance",
+    "Global Head of Finance",
     "Chief Technology Officer",
     "CTO",
     "Chief Information Officer",
@@ -224,7 +261,20 @@
     "Vice President Technology",
     "Vice President Information Technology",
     "Head of Engineering",
-    "Chief Technology & Information Officer"
+    "Chief Technology & Information Officer",
+    "Vice President IT",
+    "Senior Vice President IT",
+    "Global Vice President IT",
+    "Global VP IT",
+    "SVP IT",
+    "VP Information Technology",
+    "Global CIO",
+    "Group CIO",
+    "Global CTO",
+    "Global Head of IT",
+    "Head of Digital",
+    "VP Digital",
+    "Vice President Digital"
   ],
   "qualification": "rules",
   "rules": {

@@ -182,21 +182,28 @@ async function findPeople(apiKey, org, params, opts = {}) {
 
   if (params.priorities && params.priorities.length) {
     const similar = [];
-    for (let i = 0; i < params.priorities.length && out.length < want; i++) {
-      const group = params.priorities[i];
-      const tier = { label: `Priority ${i + 1}`, priority: i + 1 };
-      const { people, total } = await apollo.searchPeople(apiKey, org, { titles: group, locations: params.locations, perPage, includeSimilar: false }, opts);
-      logger.info(`    ${tier.label}: ${people.length} returned (${total} in Apollo)`);
-      const fresh = people.filter((p) => p.name && !seen.has(keyOf(p)));
-      // An explicitly listed title is never excluded, whatever it is.
-      const exact = fresh.filter((p) => titleMatches(p.title, group) && !excludedTitle(p.title, group)).sort((a, b) => (SENIORITY_RANK[a.seniority] ?? 9) - (SENIORITY_RANK[b.seniority] ?? 9));
-      const rest = fresh.filter((p) => !titleMatches(p.title, group) && !excludedTitle(p.title));
-      for (const p of exact) {
-        if (out.length >= want) break;
-        seen.add(keyOf(p));
-        out.push({ ...sanitize(p, org, tier, true), match: tier.label });
+    // Pass 1: exact titles only. Pass 2 (only if still short, still 0 credits):
+    // ask Apollo for similar titles too, so "Sr. Vice President - Operations"
+    // is found for "Vice President Operations"; our own title check still
+    // decides what counts as exact.
+    for (const includeSimilar of [false, true]) {
+      if (out.length >= want) break;
+      if (includeSimilar) logger.info(`    short (${out.length}/${want}) after exact titles - widening to similar titles`);
+      for (let i = 0; i < params.priorities.length && out.length < want; i++) {
+        const group = params.priorities[i];
+        const tier = { label: `Priority ${i + 1}`, priority: i + 1 };
+        const { people, total } = await apollo.searchPeople(apiKey, org, { titles: group, locations: params.locations, perPage, includeSimilar }, opts);
+        logger.info(`    ${tier.label}${includeSimilar ? ' (similar)' : ''}: ${people.length} returned (${total} in Apollo)`);
+        const fresh = people.filter((p) => p.name && !seen.has(keyOf(p)));
+        const exact = fresh.filter((p) => titleMatches(p.title, group) && !excludedTitle(p.title, group)).sort((a, b) => (SENIORITY_RANK[a.seniority] ?? 9) - (SENIORITY_RANK[b.seniority] ?? 9));
+        const rest = fresh.filter((p) => !titleMatches(p.title, group) && !excludedTitle(p.title));
+        for (const p of exact) {
+          if (out.length >= want) break;
+          seen.add(keyOf(p));
+          out.push({ ...sanitize(p, org, tier, true), match: tier.label });
+        }
+        for (const p of rest) if (!seen.has(keyOf(p))) { seen.add(keyOf(p)); similar.push({ p, tier }); }
       }
-      for (const p of rest) if (!seen.has(keyOf(p))) { seen.add(keyOf(p)); similar.push({ p, tier }); }
     }
     for (const { p, tier } of similar) {
       if (out.length >= want) break;
