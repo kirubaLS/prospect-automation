@@ -118,6 +118,11 @@ Free-tier behaviour you should know:
     comment or reaction at any time (proof = its link), whatever the
     connection count; or 500+ connections with nothing found.
   - **LOW** — nothing found and fewer than 500 connections.
+  Every label carries an "Activity Note" that spells the rule out, e.g.
+  "MEDIUM because the latest activity is a comment on 2026-05-01 and there
+  is no original post in the last 90 days; 1839 connections (500+)". A
+  regular post whose author is clearly another person (slug and name both
+  differ from the profile's) is not counted; a repost always is.
   **Yard scheme** (`"activityScheme": "yard"`, used by the Yard project):
   activity is scored as outreach probability, not ICP fit, and connections
   never count. All four actors run with the newest 5 items each

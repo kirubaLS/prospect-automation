@@ -188,7 +188,7 @@
           <a class="btn secondary" id="dl2" href="#">⬇ Download CSV</a>
           <span class="hint" id="finalhint">People + LinkedIn activity, exactly as the file will contain them.</span>
         </div>
-        <div class="scroll" style="margin-top:10px"><table class="tbl" id="finalrows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th>Activity</th><th>Proof</th><th>Last</th><th>Conn.</th></tr></thead><tbody><tr><td colspan="9" class="empty">Run a job first.</td></tr></tbody></table></div>
+        <div class="scroll" style="margin-top:10px"><table class="tbl" id="finalrows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th>Activity</th><th>Note</th><th>Proof</th><th>Last</th><th>Conn.</th></tr></thead><tbody><tr><td colspan="10" class="empty">Run a job first.</td></tr></tbody></table></div>
       </div>
       <div id="tab-activity" style="display:none">
         <div class="row" style="margin-top:10px">
@@ -448,8 +448,8 @@ async function loadFinal() {
   while (from < d.total) { const rr = await (await api(`/jobs/${currentId}/rows?from=${from}`)).json(); all.push(...rr.rows); from += rr.rows.length; if (!rr.rows.length) break; }
   const tb = $('finalrows').querySelector('tbody');
   tb.innerHTML = all.map((x) => x.companyStatus === 'Found'
-    ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : ''}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td></tr>`
-    : `<tr class="co"><td colspan="9"><span class="s-nf">${esc(x.companyStatus)}</span> · ${esc(x.company)}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No rows.</td></tr>';
+    ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : ''}</td><td class="muted">${esc(x.activityReason || '')}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td></tr>`
+    : `<tr class="co"><td colspan="10"><span class="s-nf">${esc(x.companyStatus)}</span> · ${esc(x.company)}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">No rows.</td></tr>';
   const withAct = all.filter((x) => x.activity).length;
   $('finalhint').textContent = withAct ? `${withAct} people carry an activity label.` : 'Activity columns fill in after "Check activity" (Reach24).';
 }

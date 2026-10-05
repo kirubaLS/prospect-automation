@@ -90,16 +90,33 @@ function fmtDate(ms) {
 }
 
 // Posts actor items: post_type regular/quote = original, repost = repost.
-function summarizePosts(items, username) {
+// `self` is the person: { usernames: [...], names: [...] } (or a bare
+// username). A regular post whose author is clearly somebody else is not this
+// person's activity; a repost carries the original author, so it counts.
+// When the author cannot be matched to the person by slug or by name, the
+// post is kept: the actor was asked for this profile's posts, and dropping a
+// real post would wrongly lower HIGH to MEDIUM/LOW.
+function isSelf(author, self) {
+  if (!author || typeof author !== 'object') return true;
+  const norm = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const slugs = (self.usernames || []).map(norm).filter(Boolean);
+  const names = (self.names || []).map(norm).filter(Boolean);
+  const aSlug = norm(author.username || author.public_identifier || author.publicIdentifier || (String(author.profile_url || author.url || '').match(/\/in\/([^/?#]+)/i) || [])[1]);
+  const aName = norm(author.name || author.full_name || author.fullname || [author.first_name, author.last_name].filter(Boolean).join(' '));
+  if (aSlug && slugs.includes(aSlug)) return true;
+  if (aName && names.includes(aName)) return true;
+  // comparable on at least one side and no match -> somebody else's post
+  if ((aSlug && slugs.length) || (aName && names.length)) return false;
+  return true;
+}
+function summarizePosts(items, self) {
+  if (typeof self === 'string' || !self) self = { usernames: self ? [self] : [], names: [] };
   const out = [];
   for (const it of items || []) {
     const ts = tsOf(it);
     if (!ts) continue;
     const type = String(it.post_type || '').toLowerCase();
-    const author = it.author && it.author.username;
-    // A regular post by someone else in the profile's feed is not this
-    // person's activity; a repost carries the original author, so it counts.
-    if (type !== 'repost' && author && username && author.toLowerCase() !== username.toLowerCase()) continue;
+    if (type !== 'repost' && !isSelf(it.author, self)) continue;
     out.push({ kind: type === 'repost' ? 'repost' : 'post', ts, url: it.url || '', text: (it.text || '').slice(0, 120) });
   }
   return out;
@@ -143,7 +160,7 @@ function activityPage(profileUrl) {
 // Every label gets a proof: the activity link when there is one, otherwise
 // the person's recent-activity page (where "nothing found" and the
 // connection count can be verified), plus a note with the date checked.
-function classify({ activities = [], connections = null, now = Date.now(), profileUrl = '' }) {
+function classify({ activities = [], connections = null, now = Date.now(), profileUrl = '', connectionsNote = '' }) {
   const cutoff = now - WINDOW_DAYS * 86400000;
   const checked = fmtDate(now);
   const page = activityPage(profileUrl);
@@ -152,14 +169,16 @@ function classify({ activities = [], connections = null, now = Date.now(), profi
   const counts = { posts: 0, reposts: 0, comments: 0, reactions: 0 };
   for (const a of sorted) counts[a.kind === 'post' ? 'posts' : a.kind === 'repost' ? 'reposts' : a.kind === 'comment' ? 'comments' : 'reactions']++;
   const recentPost = sorted.find((a) => a.kind === 'post' && a.ts >= cutoff);
-  const conn = connections != null ? `${connections} connections` : 'connections unknown';
-  if (recentPost) return { label: 'HIGH', reason: `posted on ${fmtDate(recentPost.ts)} (within ${WINDOW_DAYS} days of ${checked}); ${conn}`, proof: recentPost.url || page, lastActivity: fmtDate(last.ts), counts, connections };
+  const conn = connections == null ? `connections unknown${connectionsNote ? ` (${connectionsNote})` : ''}`
+    : connections >= CONNECTIONS_MEDIUM ? `${connections} connections (500+)` : `${connections} connections (under 500)`;
+  const nothing = `no post, repost, comment or reaction found on ${checked}`;
+  if (recentPost) return { label: 'HIGH', reason: `HIGH because of an original post on ${fmtDate(recentPost.ts)}, within ${WINDOW_DAYS} days of ${checked}; ${conn}`, proof: recentPost.url || page, lastActivity: fmtDate(last.ts), counts, connections };
   if (last) {
-    const what = last.kind === 'post' ? 'post older than 90 days' : last.kind === 'reaction' ? (last.text || 'reacted') : last.kind;
-    return { label: 'MEDIUM', reason: `${what} on ${fmtDate(last.ts)}; ${conn}`, proof: last.url || page, lastActivity: fmtDate(last.ts), counts, connections };
+    const what = last.kind === 'post' ? `an original post on ${fmtDate(last.ts)} (older than ${WINDOW_DAYS} days)` : last.kind === 'repost' ? `a repost on ${fmtDate(last.ts)}` : last.kind === 'comment' ? `a comment on ${fmtDate(last.ts)}` : `a reaction on ${fmtDate(last.ts)}${last.text ? ` ("${last.text}")` : ''}`;
+    return { label: 'MEDIUM', reason: `MEDIUM because the latest activity is ${what} and there is no original post in the last ${WINDOW_DAYS} days; ${conn} - any activity counts as MEDIUM whatever the connection count`, proof: last.url || page, lastActivity: fmtDate(last.ts), counts, connections };
   }
-  if (connections != null && connections >= CONNECTIONS_MEDIUM) return { label: 'MEDIUM', reason: `${connections}+ connections; no posts, reposts, comments or reactions found on ${checked}`, proof: page, lastActivity: '', counts, connections };
-  return { label: 'LOW', reason: `${conn}; no posts, reposts, comments or reactions found on ${checked}`, proof: page, lastActivity: '', counts, connections };
+  if (connections != null && connections >= CONNECTIONS_MEDIUM) return { label: 'MEDIUM', reason: `MEDIUM because of ${conn} even though ${nothing}`, proof: page, lastActivity: '', counts, connections };
+  return { label: 'LOW', reason: `LOW because ${nothing} and ${conn}`, proof: page, lastActivity: '', counts, connections };
 }
 
 // Yard scheme: LinkedIn activity as outreach probability. Only intentional
@@ -234,9 +253,15 @@ async function checkPerson(cfg, person, opts = {}) {
   const info = profile && profile.length ? profile[0] : null;
   const connections = info ? connectionsOf(info) : null;
   const followers = info ? followersOf(info) : null;
+  const connectionsNote = connections != null ? '' : profile === null ? 'profile actor failed' : !info ? 'profile actor returned nothing' : 'no connection count in the profile data';
+  const bi = (info && (info.basic_info || info.basicInfo)) || info || {};
+  const self = {
+    usernames: [username, bi.public_identifier, bi.publicIdentifier, bi.username, usernameOf(bi.profile_url || bi.url || '')].filter(Boolean),
+    names: [person.name, bi.fullname, bi.full_name, bi.name, [bi.first_name, bi.last_name].filter(Boolean).join(' ')].filter(Boolean)
+  };
 
   const finish = (activities) => {
-    const result = classify({ activities, connections, now: opts.now, profileUrl: person.profileUrl });
+    const result = classify({ activities, connections, connectionsNote, now: opts.now, profileUrl: person.profileUrl });
     result.followers = followers;
     result.checked = checked;
     if (errors.length) result.errors = errors;
@@ -247,7 +272,7 @@ async function checkPerson(cfg, person, opts = {}) {
   if (cfg.scheme === 'yard') {
     // Counting "2+ activities this month" needs every source, so no early exit.
     const [po, co, re] = [await run('posts'), await run('comments'), await run('reactions')];
-    const activities = [...summarizePosts(po, username), ...summarizeComments(co), ...summarizeReactions(re)];
+    const activities = [...summarizePosts(po, self), ...summarizeComments(co), ...summarizeReactions(re)];
     const dataOk = [po, co, re].some((x) => x !== null);
     const result = classifyYard({ activities, connections, now: opts.now, profileUrl: person.profileUrl, dataOk });
     result.followers = followers;
@@ -256,7 +281,7 @@ async function checkPerson(cfg, person, opts = {}) {
     return result;
   }
 
-  const posts = summarizePosts(await run('posts'), username);
+  const posts = summarizePosts(await run('posts'), self);
   if (posts.length) return finish(posts);
   const comments = summarizeComments(await run('comments'));
   if (comments.length) return finish(comments);
@@ -291,4 +316,5 @@ async function runActivityCheck(baseCfg, people, { onProgress = () => {}, should
   return { results, state };
 }
 
-module.exports = { configFromEnv, usernameOf, activityPage, runActor, classify, classifyYard, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, followersOf, tsOf, WINDOW_DAYS };
+module.exports = {
+  isSelf, configFromEnv, usernameOf, activityPage, runActor, classify, classifyYard, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, followersOf, tsOf, WINDOW_DAYS };
