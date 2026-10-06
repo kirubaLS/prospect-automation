@@ -114,9 +114,18 @@ function queuePosition(j) {
   return i < 0 ? null : i + (runningId ? 1 : 0);
 }
 
+// A job started with ?preset=<slug> takes every setting from that project's
+// config.json, read fresh at start time; nothing from the browser form is
+// used, so projects can never bleed into each other.
+function presetBySlug(slug) {
+  if (!slug || !/^[\w-]+$/.test(slug)) return null;
+  return presets().find((p) => p.slug === slug) || null;
+}
+
 function publicJob(j) {
   return {
     id: j.id,
+    project: j.project || null,
     ahead: queuePosition(j),
     activity: j.activity ? { status: j.activity.status, progress: j.activity.progress, error: j.activity.error || null, startedAt: j.activity.startedAt, finishedAt: j.activity.finishedAt } : null,
     label: j.label,
@@ -132,7 +141,7 @@ function publicJob(j) {
   };
 }
 
-function startJob({ owner, fileBuffer, filename, geography, icp, peoplePerCompany, label, resolve, activityCheck = false, activityScheme = 'standard', activityMaxItems = null }) {
+function startJob({ owner, fileBuffer, filename, project = null, geography, icp, peoplePerCompany, label, resolve, activityCheck = false, activityScheme = 'standard', activityMaxItems = null }) {
   if (!owner) throw new Error('missing owner token - reload the page');
   if (queue.length >= MAX_QUEUED) throw new Error(`the queue is full (${MAX_QUEUED} jobs waiting) - try again later`);
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
@@ -147,6 +156,7 @@ function startJob({ owner, fileBuffer, filename, geography, icp, peoplePerCompan
   const job = {
     id,
     owner,
+    project: project ? { slug: project.slug, name: project.name, edited: !!project.edited } : null,
     fileBuffer,
     label: label || filename,
     filename,
@@ -168,7 +178,7 @@ function startJob({ owner, fileBuffer, filename, geography, icp, peoplePerCompan
     if (v.status !== 'running' && v.status !== 'queued') jobs.delete(k);
   }
 
-  logger.info(`Job ${id} "${job.label}" (owner ${owner.slice(0, 8)}): ${count}/company, resolve=${resolve}, geography=[${locations.join(' | ') || 'any'}], ICP=${priorities ? priorities.map((g, i) => `P${i + 1}[${g.join(', ')}]`).join(' > ') : `[${keywords.join(', ')}]`}${industries.length ? `, industries=[${industries.join(', ')}]` : ''}${runningId ? ` - queued behind ${queuePosition(job)} job(s)` : ''}`);
+  logger.info(`Job ${id} "${job.label}" (owner ${owner.slice(0, 8)}${project ? `, project ${project.slug}` : ', custom settings'}): ${count}/company, resolve=${resolve}, geography=[${locations.join(' | ') || 'any'}], ICP=${priorities ? priorities.map((g, i) => `P${i + 1}[${g.join(', ')}]`).join(' > ') : `[${keywords.join(', ')}]`}${industries.length ? `, industries=[${industries.join(', ')}]` : ''}${runningId ? ` - queued behind ${queuePosition(job)} job(s)` : ''}`);
   keepAlive(true);
   pump();
   return job;
@@ -244,10 +254,31 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/jobs' && req.method === 'POST') {
       const body = await readBody(req);
       if (!body.length) return send(400, { error: 'empty upload - choose the companies file' });
-      const job = startJob({
+      const slug = url.searchParams.get('preset') || '';
+      const preset = presetBySlug(slug);
+      if (slug && !preset) return send(400, { error: `unknown project preset "${slug}" - reload the page and choose it again` });
+      const filename = url.searchParams.get('filename') || 'companies.csv';
+      // Geography / titles / count may be edited for one run; activity settings
+      // and the label always come from the project.
+      const ov = (k) => url.searchParams.get(k);
+      const edited = !!(ov('geography') || ov('icp') || ov('count'));
+      const job = startJob(preset ? {
         owner,
         fileBuffer: body,
-        filename: url.searchParams.get('filename') || 'companies.csv',
+        filename,
+        project: { ...preset, edited },
+        geography: ov('geography') || preset.geography,
+        icp: ov('icp') || preset.icp,
+        peoplePerCompany: ov('count') || String(preset.peoplePerCompany),
+        label: url.searchParams.get('label') || `${preset.name} - ${filename}`,
+        resolve: url.searchParams.get('resolve') || undefined,
+        activityCheck: preset.activityCheck,
+        activityScheme: preset.activityScheme,
+        activityMaxItems: preset.activityMaxItems
+      } : {
+        owner,
+        fileBuffer: body,
+        filename,
         geography: url.searchParams.get('geography') || '',
         icp: url.searchParams.get('icp') || '',
         peoplePerCompany: url.searchParams.get('count') || '4',

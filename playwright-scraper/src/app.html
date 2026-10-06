@@ -117,8 +117,10 @@
     <label>Preset</label>
     <div class="row" style="margin-top:0">
       <select id="preset" style="flex:1"><option value="">— choose a client —</option></select>
+      <button class="btn secondary sm" onclick="resetPreset()" title="Put this project's own geography, titles and count back">Reset</button>
       <button class="btn secondary sm" onclick="savePreset()" title="Save the current settings in this browser">Save</button>
     </div>
+    <div class="hint" id="presethint"></div>
 
     <label>Batch name</label>
     <input type="text" id="label" placeholder="e.g. Sharp – batch 3">
@@ -239,7 +241,7 @@ $('theme').onclick = () => { const cur = document.documentElement.dataset.theme 
 let activityCheck = localStorage.getItem('form.activity') === '1';
 let activityScheme = localStorage.getItem('form.activityScheme') || 'standard';
 let activityMaxItems = localStorage.getItem('form.activityMaxItems') || '';
-['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => localStorage.setItem('form.' + id, $(id).value)); });
+['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => { if (!presets[$('preset').value]) localStorage.setItem('form.' + id, $(id).value); }); });
 { const v = localStorage.getItem('form.resolve'); if (v) $('resolve').value = v; $('resolve').addEventListener('change', () => localStorage.setItem('form.resolve', $('resolve').value)); }
 const resolveValue = () => $('resolve').value || 'search';
 GEO_SHORTCUTS.forEach((g) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = g; c.onclick = () => { const cur = $('geography').value.trim(); $('geography').value = cur ? cur + '; ' + g : g; $('geography').dispatchEvent(new Event('input')); }; $('geochips').appendChild(c); });
@@ -270,29 +272,59 @@ async function loadPresets() {
     sel.value = String(presets.indexOf(used));
     const snap = localStorage.getItem('form.presetSnapshot');
     const now = JSON.stringify([used.geography, used.icp, used.peoplePerCompany]);
-    if (snap !== now) { applyPreset(used, true); setMsg(`Preset “${used.name}” was updated on the server — settings refreshed.`, 'ok'); }
+    if (snap !== now) { for (const f of FIELDS) localStorage.removeItem(keyFor(used, f)); applyPreset(used, { fromServer: true }); setMsg(`Preset “${used.name}” was updated on the server — settings refreshed.`, 'ok'); }
+    else applyPreset(used);
   }
+  presetHint();
 }
-function applyPreset(p, force) {
+// Each project keeps its own form values in this browser, keyed by its slug
+// (form.<slug>.geography/icp/count/label). Switching projects swaps the whole
+// set, so Sharp's edits never show up under Reach24. "Reset" puts the
+// project's server config back.
+const FIELDS = ['geography', 'icp', 'count', 'label'];
+const keyFor = (p, f) => `form.${p.slug}.${f}`;
+function applyPreset(p, { fromServer = false } = {}) {
   activityCheck = !!p.activityCheck; localStorage.setItem('form.activity', activityCheck ? '1' : '0');
   activityScheme = p.activityScheme || 'standard'; localStorage.setItem('form.activityScheme', activityScheme);
   activityMaxItems = p.activityMaxItems || ''; localStorage.setItem('form.activityMaxItems', activityMaxItems);
-  $('geography').value = p.geography || ''; $('icp').value = p.icp || ''; $('count').value = p.peoplePerCompany || 4;
-  if (!$('label').value || force) $('label').value = $('label').value || p.name;
-  ['geography', 'icp', 'count', 'label'].forEach((id) => $(id).dispatchEvent(new Event('input')));
+  const defaults = { geography: p.geography || '', icp: p.icp || '', count: String(p.peoplePerCompany || 4), label: p.name };
+  for (const f of FIELDS) {
+    const saved = fromServer ? null : localStorage.getItem(keyFor(p, f));
+    $(f).value = saved != null ? saved : defaults[f];
+  }
   icpSummary();
   if (p.source === 'server') { localStorage.setItem('form.presetSlug', p.slug); localStorage.setItem('form.presetSnapshot', JSON.stringify([p.geography, p.icp, p.peoplePerCompany])); }
   else { localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); }
+  presetHint();
+}
+function currentPreset() { return presets[$('preset').value] || null; }
+function presetEdited(p) {
+  return String($('geography').value) !== String(p.geography || '') || String($('icp').value) !== String(p.icp || '') || String($('count').value) !== String(p.peoplePerCompany || 4);
+}
+function presetHint() {
+  const p = currentPreset();
+  if (!p) { $('presethint').textContent = 'No project chosen: the fields below are used as typed.'; return; }
+  if (p.source !== 'server') { $('presethint').textContent = 'Saved preset from this browser.'; return; }
+  $('presethint').textContent = presetEdited(p)
+    ? `${p.name}: geography/titles/count edited for this run (activity ${p.activityCheck ? 'on' : 'off'} from the project config). Reset puts the project defaults back.`
+    : `${p.name}: running with the project config from the server (${p.peoplePerCompany}/company, activity ${p.activityCheck ? 'on' : 'off'}).`;
+}
+function resetPreset() {
+  const p = currentPreset();
+  if (!p) return;
+  for (const f of FIELDS) localStorage.removeItem(keyFor(p, f));
+  applyPreset(p, { fromServer: true });
 }
 $('preset').addEventListener('change', () => {
-  const p = presets[$('preset').value];
-  if (!p) { localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); return; }
+  const p = currentPreset();
+  if (!p) { localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); presetHint(); return; }
   applyPreset(p);
 });
-// Typing over a preset's ICP/geography means it is no longer "the preset".
-['geography', 'icp', 'count'].forEach((id) => $(id).addEventListener('input', () => {
-  const p = presets[$('preset').value];
-  if (p && (String($('geography').value) !== String(p.geography || '') || String($('icp').value) !== String(p.icp || '') || String($('count').value) !== String(p.peoplePerCompany || 4))) { $('preset').value = ''; localStorage.removeItem('form.presetSlug'); localStorage.removeItem('form.presetSnapshot'); activityCheck = false; localStorage.setItem('form.activity', '0'); activityScheme = 'standard'; localStorage.setItem('form.activityScheme', 'standard'); }
+// Edits stay with the selected project (stored under its slug); the project stays selected.
+FIELDS.forEach((f) => $(f).addEventListener('input', () => {
+  const p = currentPreset();
+  if (p) localStorage.setItem(keyFor(p, f), $(f).value);
+  presetHint();
 }));
 function savePreset() {
   const name = prompt('Preset name (e.g. the client name):', $('label').value || '');
@@ -347,7 +379,11 @@ async function startJob() {
   if (!selectedFile) { setMsg('Choose the companies file first.', 'err'); return; }
   if (!$('icp').value.trim()) { setMsg('Enter the ICP roles (after the semicolon).', 'err'); $('icp').focus(); return; }
   setMsg('Starting…');
-  const params = new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0', scheme: activityScheme, items: activityMaxItems });
+  const sp = presets[$('preset').value];
+  const params = sp && sp.source === 'server'
+    // Project run: only the slug goes up; the server reads that project's config.json itself.
+    ? new URLSearchParams({ filename: selectedFile.name, preset: sp.slug, label: $('label').value || `${sp.name} - ${selectedFile.name}`, resolve: resolveValue(), ...(presetEdited(sp) ? { geography: $('geography').value, icp: $('icp').value, count: $('count').value } : {}) })
+    : new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0', scheme: activityScheme, items: activityMaxItems });
   try {
     const r = await api('/jobs?' + params, { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
@@ -387,7 +423,7 @@ function show(j) {
   $('stopbtn').textContent = j && j.status === 'queued' ? 'Cancel' : 'Stop';
   if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
-  $('jobname').innerHTML = `<b>${esc(j.label)}</b> · ${summary(j.params)}${j.params.searchExhausted ? ' · <b style="color:var(--warn)">search quota ran out</b>' : ''}`;
+  $('jobname').innerHTML = `${j.project ? `<span class="pill done">${esc(j.project.name)}${j.project.edited ? ' · edited' : ''}</span> ` : '<span class="pill">custom</span> '}<b>${esc(j.label)}</b> · ${summary(j.params)}${j.params.searchExhausted ? ' · <b style="color:var(--warn)">search quota ran out</b>' : ''}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
@@ -524,7 +560,7 @@ async function refresh() {
   if (!actOn && $('tab-activity').style.display !== 'none') showTab('people');
   if (cur && cur.activity && cur.activity.status === 'running' && $('tab-activity').style.display !== 'none') loadActivity();
   if (cur && $('tab-final').style.display !== 'none' && (cur.status === 'running' || (cur.activity && cur.activity.status === 'running'))) loadFinal();
-  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status === 'queued' ? `queued · ${x.ahead} ahead` : x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt || x.queuedAt).toLocaleString()}</td><td><a href="${dlUrl(x.id, 'xlsx')}">Excel</a><a href="${dlUrl(x.id, 'csv')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
+  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${x.project ? `<span class="pill done">${esc(x.project.name)}</span> ` : ''}${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status === 'queued' ? `queued · ${x.ahead} ahead` : x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt || x.queuedAt).toLocaleString()}</td><td><a href="${dlUrl(x.id, 'xlsx')}">Excel</a><a href="${dlUrl(x.id, 'csv')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);
 </script>
