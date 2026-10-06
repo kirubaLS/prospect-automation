@@ -306,7 +306,7 @@ const server = http.createServer(async (req, res) => {
         return send(202, { status: 'started', total: people.length });
       }
       if (req.method === 'DELETE') { if (job.activity) job.activity.stopRequested = true; return send(202, { status: 'stopping' }); }
-      const rows = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl).map((r) => ({ company: r.company, name: r.name, title: r.title, profileUrl: r.profileUrl, activity: r.activity || '', reason: r.activityReason || '', proof: r.activityProof || '', date: r.activityDate || '', connections: r.connections ?? '', followers: r.followers ?? '', counts: r.activityCounts || null }));
+      const rows = job.rows.map((r, idx) => ({ r, idx })).filter(({ r }) => r.companyStatus === 'Found' && r.profileUrl).map(({ r, idx }) => ({ idx, pending: !!r.activityPending, company: r.company, name: r.name, title: r.title, profileUrl: r.profileUrl, activity: r.activity || '', reason: r.activityReason || '', proof: r.activityProof || '', date: r.activityDate || '', connections: r.connections ?? '', followers: r.followers ?? '', counts: r.activityCounts || null }));
       return send(200, { activity: job.activity ? publicJob(job).activity : null, rows });
     }
 
@@ -343,6 +343,19 @@ const server = http.createServer(async (req, res) => {
           replacement = { ...companyBits, ...p, note: p.note || '', replaced: row.name };
           job.rows.splice(at, 0, replacement);
           job.progress.prospects = (job.progress.prospects || 0) + 1;
+          // Labels already exist for this job: check the newcomer too, in the background.
+          if (job.params.activityCheck && APIFY.configured && job.activity && job.activity.status !== 'running' && replacement.profileUrl) {
+            replacement.activityPending = true;
+            activity.runActivityCheck(APIFY, [replacement], { scheme: job.params.activityScheme, maxItems: job.params.activityMaxItems })
+              .then(({ results }) => {
+                const a = results[0];
+                if (a) { replacement.activity = a.label; replacement.activityReason = a.reason; replacement.activityProof = a.proof; replacement.activityDate = a.lastActivity; replacement.connections = a.connections ?? ''; replacement.followers = a.followers ?? ''; replacement.activityCounts = a.counts; }
+                const prog = job.activity.progress || {};
+                if (a && a.label) { prog.total = (prog.total || 0) + 1; prog.done = (prog.done || 0) + 1; const k = String(a.label).toLowerCase(); if (k in prog) prog[k]++; }
+              })
+              .catch((err) => { replacement.activityReason = `activity check failed: ${err.message}`; })
+              .finally(() => { delete replacement.activityPending; });
+          }
         }
         logger.info(`Job ${job.id}: removed ${row.name} (${row.company}); replacement: ${p ? `${p.name} (${p.title})` : 'none left in Apollo'}`);
         return send(200, { removed: true, replacement, message: p ? `${row.name} removed; ${p.name} (${p.title}) added` : `${row.name} removed; no one else in Apollo matches this company's geography/ICP` });
