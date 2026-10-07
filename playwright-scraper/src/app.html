@@ -48,6 +48,7 @@
   .chip:hover { border-color: var(--accent); }
   .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 9px; border: 1px solid transparent; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
   .btn.secondary { background: var(--surface-2); color: var(--ink); border-color: var(--line); }
+  #results h2, #setup h2 { display: flex; align-items: center; gap: 8px; }
   .btn.danger { background: transparent; color: var(--bad); border-color: var(--line); }
   .btn.sm { padding: 6px 10px; font-size: 13px; }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -168,7 +169,7 @@
       <div class="preview" id="preview"></div>
       <div class="row">
         <button class="btn" id="runbtn" onclick="startJob()">▶ Run</button>
-        <button class="btn secondary" id="stopbtn" onclick="stopJob()" disabled>Stop</button>
+        <button class="btn danger" id="stopbtn" onclick="stopJob()" disabled>Cancel job</button>
         <a class="btn secondary sm" id="tpl" href="#" download="companies-template.csv">Template CSV</a>
       </div>
       <div class="msg" id="msg"></div>
@@ -176,7 +177,7 @@
     </section>
 
     <section class="card" id="results">
-      <h2><span class="step">3</span> Results <span id="jobpill" class="pill">no job</span></h2>
+      <h2><span class="step">3</span> Results <span id="jobpill" class="pill">no job</span> <button class="btn danger sm" id="cancelbtn" onclick="stopJob()" style="display:none;margin-left:auto">✕ Cancel job</button></h2>
       <div id="jobname" class="hint"></div>
       <div class="bar" style="margin:8px 0"><i id="barfill"></i></div>
       <div class="stats" id="stats"></div>
@@ -425,7 +426,15 @@ async function startJob() {
   } catch (e) { setMsg('Request failed: ' + e.message + ' — is the server awake?', 'err'); }
   refresh();
 }
-async function stopJob() { if (!currentId) return; await api('/jobs/' + currentId + '/stop', { method: 'POST' }); refresh(); }
+async function stopJob(id) {
+  id = id || currentId; if (!id) return;
+  const j = jobsCache.find((x) => x.id === id);
+  if (!confirm(j && j.status === 'queued' ? 'Remove this job from the queue?' : 'Cancel the running job? Companies already processed stay downloadable.')) return;
+  const r = await api('/jobs/' + id + '/stop', { method: 'POST' });
+  const d = await r.json().catch(() => ({}));
+  setMsg(d.status === 'stopping' ? 'Cancelling after the current company…' : d.status === 'stopped' ? 'Removed from the queue.' : 'Status: ' + (d.status || r.status));
+  refresh();
+}
 async function removePerson(idx, btn) {
   if (!currentId) return;
   const tr = btn.closest('tr'); const name = (tr.children[1].childNodes[0] || tr.children[1]).textContent.trim();
@@ -449,8 +458,11 @@ function show(j) {
   $('jobpill').textContent = j ? (j.status === 'queued' ? `queued · ${j.ahead} ahead` : j.status) : 'no job';
   $('jobpill').className = 'pill ' + (j ? j.status : '');
   $('runbtn').disabled = false;
-  $('stopbtn').disabled = !(j && (j.status === 'running' || j.status === 'queued'));
-  $('stopbtn').textContent = j && j.status === 'queued' ? 'Cancel' : 'Stop';
+  const cancellable = !!(j && (j.status === 'running' || j.status === 'queued'));
+  $('stopbtn').disabled = !cancellable;
+  $('stopbtn').textContent = j && j.status === 'queued' ? 'Cancel (queued)' : 'Cancel job';
+  $('cancelbtn').style.display = cancellable ? '' : 'none';
+  $('cancelbtn').textContent = j && j.status === 'queued' ? '✕ Cancel (queued)' : '✕ Cancel job';
   if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
   const p = j.progress || {};
   $('jobname').innerHTML = `${j.project ? `<span class="pill done">${esc(j.project.name)}${j.project.edited ? ' · edited' : ''}</span> ` : '<span class="pill">custom</span> '}<b>${esc(j.label)}</b> · ${summary(j.params)}${j.params.searchExhausted ? ' · <b style="color:var(--warn)">search quota ran out</b>' : ''}`;
@@ -590,7 +602,7 @@ async function refresh() {
   if (!actOn && $('tab-activity').style.display !== 'none') showTab('people');
   if (cur && cur.activity && cur.activity.status === 'running' && $('tab-activity').style.display !== 'none') loadActivity();
   if (cur && $('tab-final').style.display !== 'none' && (cur.status === 'running' || (cur.activity && cur.activity.status === 'running'))) loadFinal();
-  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${x.project ? `<span class="pill done">${esc(x.project.name)}</span> ` : ''}${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status === 'queued' ? `queued · ${x.ahead} ahead` : x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt || x.queuedAt).toLocaleString()}</td><td><a href="${dlUrl(x.id, 'xlsx')}">Excel</a><a href="${dlUrl(x.id, 'csv')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
+  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${x.project ? `<span class="pill done">${esc(x.project.name)}</span> ` : ''}${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status === 'queued' ? `queued · ${x.ahead} ahead` : x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt || x.queuedAt).toLocaleString()}</td><td><a href="${dlUrl(x.id, 'xlsx')}">Excel</a><a href="${dlUrl(x.id, 'csv')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a>${x.status === 'running' || x.status === 'queued' ? `<a href="#" style="color:var(--bad)" onclick="stopJob('${x.id}');return false;">cancel</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);
 </script>
