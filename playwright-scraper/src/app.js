@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
-const { runJob, exportRows, parseGeography, parseIcp, findPeople, personKey } = require('./jobs');
+const { runJob, exportRows, parseGeography, parseIcp, findPeople, personKey, sortRowsByActivity } = require('./jobs');
 const { providersFromEnv } = require('./websearch');
 const activity = require('./activity');
 
@@ -331,6 +331,7 @@ const server = http.createServer(async (req, res) => {
             });
             job.activity.progress = { ...state };
             job.activity.status = job.activity.stopRequested ? 'stopped' : 'done';
+            sortRowsByActivity(job.rows);
           })
           .catch((err) => { job.activity.status = 'failed'; job.activity.error = err.message; logger.error(`Activity check ${job.id} failed: ${err.message}`); })
           .finally(() => { job.activity.finishedAt = new Date().toISOString(); activityRunning = null; if (!runningId && !queue.length) keepAlive(false); });
@@ -389,7 +390,7 @@ const server = http.createServer(async (req, res) => {
                 if (a && a.label) { prog.total = (prog.total || 0) + 1; prog.done = (prog.done || 0) + 1; const k = String(a.label).toLowerCase(); if (k in prog) prog[k]++; }
               })
               .catch((err) => { replacement.activityReason = `activity check failed: ${err.message}`; })
-              .finally(() => { delete replacement.activityPending; });
+              .finally(() => { delete replacement.activityPending; sortRowsByActivity(job.rows); });
           }
         }
         logger.info(`Job ${job.id}: removed ${row.name} (${row.company}); replacement: ${p ? `${p.name} (${p.title})` : 'none left in Apollo'}`);

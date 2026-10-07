@@ -394,6 +394,26 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
   return { rows, state, params };
 }
 
+// After labelling, order each company's people HIGH -> MEDIUM -> LOW ->
+// Unknown -> unlabelled; company blocks keep their order. Mutates in place so
+// row indexes used by Replace/Delete match what every tab shows.
+const LABEL_RANK = { high: 0, medium: 1, low: 2, unknown: 3 };
+function sortRowsByActivity(rows) {
+  const groups = [];
+  let cur = null;
+  for (const r of rows) {
+    const key = `${r.company}|${r.companyWebsite}|${r.companyUrl}`;
+    if (!cur || cur.key !== key) { cur = { key, rows: [] }; groups.push(cur); }
+    cur.rows.push(r);
+  }
+  const rank = (r) => (r.name && r.companyStatus === 'Found' ? (LABEL_RANK[String(r.activity || '').toLowerCase()] ?? 4) : -1);
+  const out = [];
+  for (const g of groups) out.push(...g.rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map((x) => x.r));
+  rows.splice(0, rows.length, ...out);
+  for (let i = 0; i < rows.length; i++) if (rows[i].name && rows[i].companyStatus === 'Found') rows[i].rank = i + 1;
+  return rows;
+}
+
 // Exactly what the researchers asked for: who, their designation, where
 // they are, the profile link; Activity is left blank for them to fill from
 // the profile (no data API has it). Company Status / Note explain rows
@@ -435,4 +455,4 @@ function exportRows(rows, format) {
   return { buffer: Buffer.from(toCsv(rows), 'utf8'), contentType: 'text/csv; charset=utf-8', extension: 'csv' };
 }
 
-module.exports = { runJob, personKey, companyRow, titleMatches, excludedTitle, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };
+module.exports = { runJob, personKey, companyRow, sortRowsByActivity, titleMatches, excludedTitle, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };
