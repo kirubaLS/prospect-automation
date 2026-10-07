@@ -70,7 +70,8 @@
   .del:hover { background: color-mix(in srgb, var(--bad) 12%, transparent); border-color: var(--bad); }
   .del:disabled { opacity: .5; cursor: default; }
   .del.rep { color: var(--accent); }
-  .acts { display: inline-flex; gap: 4px; }
+  .acts { display: inline-flex; gap: 4px; align-items: center; }
+  .pick { width: 15px; height: 15px; margin: 0 2px; cursor: pointer; }
   .pill.queued { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
   .pill.running { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
   .pill.done { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
@@ -213,6 +214,7 @@
         <div class="msg" id="actmsg"></div>
         <div class="scroll"><table class="tbl" id="actrows"><thead><tr><th>Company</th><th>Name</th><th>Activity</th><th>Why</th><th>Last</th><th>Connections</th><th>Followers</th><th>Proof</th><th></th></tr></thead><tbody><tr><td colspan="9" class="empty">Run a job, then check activity here.</td></tr></tbody></table></div>
       </div>
+      <div id="bulkbar" class="row" style="display:none;margin-top:8px;align-items:center;gap:8px"><span class="hint" id="bulkcount"></span><button class="del rep" onclick="bulkAction(true)">Replace selected</button><button class="del" onclick="bulkAction(false)">Delete selected</button><button class="btn secondary sm" onclick="clearPicks()">Clear</button></div>
       <div id="tab-people" class="scroll" style="margin-top:12px"><div class="hint" style="margin-bottom:6px">Replace = remove and fetch the next match for that company, skipping everyone already listed or removed (no Apollo credits with web search). Delete = remove for good, no new search. Best done before the activity check; if labels already exist, a replacement is checked automatically.</div><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th></th></tr></thead><tbody><tr><td colspan="6" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
     </section>
   </div>
@@ -453,6 +455,30 @@ async function removePerson(idx, btn, replace = true) {
   if ($('tab-final').style.display !== 'none') loadFinal();
   if ($('tab-activity').style.display !== 'none') loadActivity();
 }
+function picks() { return [...document.querySelectorAll('input.pick:checked')].map((c) => ({ idx: parseInt(c.dataset.idx, 10), name: c.dataset.name })); }
+function pickChanged() { const n = picks().length; $('bulkbar').style.display = n ? '' : 'none'; $('bulkcount').textContent = `${n} selected`; }
+function clearPicks() { document.querySelectorAll('input.pick:checked').forEach((c) => { c.checked = false; }); pickChanged(); }
+async function bulkAction(replace) {
+  if (!currentId) return;
+  const sel = picks().sort((a, b) => b.idx - a.idx); // highest index first: earlier rows keep their index
+  if (!sel.length) return;
+  if (!confirm(replace ? `Replace ${sel.length} selected: remove them and fetch the next match for each company?` : `Delete ${sel.length} selected permanently? No replacements will be searched.`)) return;
+  let done = 0, added = 0, failed = 0;
+  for (const { idx, name } of sel) {
+    setMsg(`${replace ? 'Replacing' : 'Deleting'} ${name}… (${done + 1}/${sel.length})`);
+    try {
+      const r = await api(`/jobs/${currentId}/rows/${idx}?name=${encodeURIComponent(name)}${replace ? '' : '&replace=0'}`, { method: 'DELETE' });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { done++; if (j.replacement) added++; } else failed++;
+    } catch { failed++; }
+  }
+  setMsg(`${done} ${replace ? 'replaced' : 'deleted'}${replace ? `, ${added} new people added` : ''}${failed ? `, ${failed} failed (list changed - refresh)` : ''}.`, failed ? 'err' : 'ok');
+  $('bulkbar').style.display = 'none';
+  rowsJob = null; rowsLoaded = 0;
+  await refresh();
+  if ($('tab-final').style.display !== 'none') loadFinal();
+  if ($('tab-activity').style.display !== 'none') loadActivity();
+}
 function setMsg(t, cls) { $('msg').textContent = t; $('msg').className = 'msg ' + (cls || ''); }
 
 let busy = { running: false, mine: false, queued: 0 };
@@ -507,7 +533,7 @@ async function loadRows(j) {
       tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="6"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`);
     }
     if (x.companyStatus === 'Found') {
-      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}${x.replaced ? `<div class="hint">replaces ${esc(x.replaced)}</div>` : ''}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : `<span class="muted">${esc(x.note || 'not resolved')}</span>`}</td><td>${canEdit ? `<span class="acts"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`);
+      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}${x.replaced ? `<div class="hint">replaces ${esc(x.replaced)}</div>` : ''}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : `<span class="muted">${esc(x.note || 'not resolved')}</span>`}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`);
     }
   });
   tb.dataset.lastCo = lastCo;
@@ -536,6 +562,7 @@ $('icp').addEventListener('input', icpSummary); setTimeout(icpSummary, 0);
 // ---- activity tab ----
 let apifyOn = false;
 function showTab(t) {
+  clearPicks();
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === t));
   $('tab-people').style.display = t === 'people' ? '' : 'none'; $('tab-activity').style.display = t === 'activity' ? '' : 'none'; $('tab-final').style.display = t === 'final' ? '' : 'none';
   if (t === 'activity') loadActivity();
@@ -554,7 +581,7 @@ async function loadFinal() {
   const cj = jobsCache.find((x) => x.id === currentId);
   const canEdit = cj && cj.status !== 'running' && cj.status !== 'queued' && !(cj.activity && cj.activity.status === 'running');
   tb.innerHTML = all.map((x, idx) => x.companyStatus === 'Found'
-    ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.activityPending ? '<span class="muted">checking…</span>' : ''}</td><td class="muted">${esc(x.activityReason || '')}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td><td>${canEdit ? `<span class="acts"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`
+    ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.activityPending ? '<span class="muted">checking…</span>' : ''}</td><td class="muted">${esc(x.activityReason || '')}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`
     : `<tr class="co"><td colspan="11"><span class="s-nf">${esc(x.companyStatus)}</span> · ${esc(x.company)}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">No rows.</td></tr>';
   const withAct = all.filter((x) => x.activity).length;
   $('finalhint').textContent = withAct ? `${withAct} people carry an activity label.` : 'Activity columns fill in after "Check activity" (Reach24).';
@@ -586,7 +613,7 @@ async function loadActivity() {
   if (a && a.status !== 'running') $('actmsg').textContent = a.status === 'done' ? 'Done — download Excel to get the Activity columns.' : a.status === 'failed' ? 'Failed: ' + a.error : 'Stopped.';
   const tb = $('actrows').querySelector('tbody');
   const canEdit = cur && cur.status !== 'running' && cur.status !== 'queued' && !(a && a.status === 'running');
-  tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.pending ? '<span class="muted">checking…</span>' : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td><b>${esc(x.connections)}</b></td><td>${esc(x.followers)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${canEdit ? `<span class="acts"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${x.idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${x.idx}, this, false)">Delete</button></span>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
+  tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.pending ? '<span class="muted">checking…</span>' : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td><b>${esc(x.connections)}</b></td><td>${esc(x.followers)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${x.idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${x.idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${x.idx}, this, false)">Delete</button></span>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 

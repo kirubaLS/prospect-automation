@@ -205,25 +205,26 @@ async function findPeople(apiKey, org, params, opts = {}) {
         for (const p of rest) if (!seen.has(keyOf(p))) { seen.add(keyOf(p)); similar.push({ p, tier }); }
       }
     }
-    for (const { p, tier } of similar) {
-      if (out.length >= want) break;
-      out.push({ ...sanitize(p, org, tier, false), match: `${tier.label} (similar title)` });
-    }
+    // People Apollo returned whose title matches none of the listed groups are
+    // never used: a company comes back short rather than padded with
+    // unrelated roles.
+    if (similar.length) logger.info(`    ${similar.length} people with unlisted titles ignored`);
   } else {
     const titles = expandKeywords(params.icpKeywords);
-    const tiers = [
-      { label: 'Decision makers · ICP titles', seniorities: DECISION_MAKERS, titles },
-      { label: 'Managers · ICP titles', seniorities: MANAGERS, titles },
-      { label: 'Decision makers · any title', seniorities: DECISION_MAKERS, titles: [], fallback: true }
-    ];
+    // With an ICP given, only titles that contain one of its words are used
+    // ("Finance" -> CFO, Finance Head, Financial Controller ... never HR or
+    // operations). The any-title fallback exists only for an empty ICP.
+    const tiers = titles.length
+      ? [{ label: 'Decision makers · ICP titles', seniorities: DECISION_MAKERS, titles }, { label: 'Managers · ICP titles', seniorities: MANAGERS, titles }]
+      : [{ label: 'Decision makers · any title', seniorities: DECISION_MAKERS, titles: [], fallback: true }];
     for (const tier of tiers) {
       if (out.length >= want) break;
-      if (!titles.length && tier.titles.length) continue;
       const { people, total } = await apollo.searchPeople(apiKey, org, { seniorities: tier.seniorities, titles: tier.titles, locations: params.locations, perPage }, opts);
       logger.info(`    ${tier.label}: ${people.length} returned (${total} in Apollo)`);
       const ranked = people
         .filter((p) => p.name && !seen.has(keyOf(p)) && !excludedTitle(p.title, titles))
         .map((p) => ({ p, icp: titles.length ? titleMatches(p.title, titles) : false }))
+        .filter(({ icp }) => icp || !titles.length)
         .sort((a, b) => Number(b.icp) - Number(a.icp) || (SENIORITY_RANK[a.p.seniority] ?? 9) - (SENIORITY_RANK[b.p.seniority] ?? 9));
       for (const { p, icp } of ranked) {
         if (out.length >= want) break;
