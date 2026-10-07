@@ -292,7 +292,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows|activity))?(?:\/(\d+))?$/);
-    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx', 'DELETE /jobs/:id/rows/:index', 'GET|POST|DELETE /jobs/:id/activity'] });
+    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx', 'DELETE /jobs/:id/rows/:index[?replace=0]', 'GET|POST|DELETE /jobs/:id/activity'] });
     const job = jobs.get(m[1]);
     if (!job) return send(404, { error: 'unknown or expired job (results are kept only while the server runs)' });
     if (job.owner !== owner) return send(403, { error: 'this job belongs to another user' });
@@ -357,6 +357,10 @@ const server = http.createServer(async (req, res) => {
       job.removed.push({ company: row.company, name: row.name, title: row.title, profileUrl: row.profileUrl, key: personKey(row) });
       job.rows.splice(idx, 1);
       job.progress.prospects = Math.max(0, (job.progress.prospects || 0) - 1);
+      if (url.searchParams.get('replace') === '0') { // permanent delete, no replacement search
+        logger.info(`Job ${job.id}: deleted ${row.name} (${row.company}), no replacement`);
+        return send(200, { removed: true, replacement: null, message: `${row.name} deleted` });
+      }
       const exclude = new Set([...job.removed.filter((r) => r.company === row.company).map((r) => r.key), ...job.rows.filter((r) => sameCompany(r) && r.name).map(personKey)]);
       const org = { id: row.apolloOrgId || null, domain: row.apolloDomain || null, name: row.company, industry: row.industry || '', employees: row.employees ?? null };
       if (!org.id && !org.domain) return send(200, { removed: true, replacement: null, message: 'removed; cannot search again for this company (no Apollo id or domain on the row)' });
