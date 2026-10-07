@@ -30,7 +30,33 @@
     "Karnataka, India",
     "Andhra Pradesh, India",
     "Telangana, India",
-    "Puducherry, India"
+    "Puducherry, India",
+    "Bengaluru, Karnataka, India",
+    "Greater Bengaluru Area, India",
+    "Mysuru, Karnataka, India",
+    "Mangaluru, Karnataka, India",
+    "Hubballi, Karnataka, India",
+    "Belagavi, Karnataka, India",
+    "Chennai, Tamil Nadu, India",
+    "Greater Chennai Area, India",
+    "Coimbatore, Tamil Nadu, India",
+    "Madurai, Tamil Nadu, India",
+    "Tiruchirappalli, Tamil Nadu, India",
+    "Salem, Tamil Nadu, India",
+    "Tiruppur, Tamil Nadu, India",
+    "Erode, Tamil Nadu, India",
+    "Vellore, Tamil Nadu, India",
+    "Hosur, Tamil Nadu, India",
+    "Tirunelveli, Tamil Nadu, India",
+    "Hyderabad, Telangana, India",
+    "Greater Hyderabad Area, India",
+    "Warangal, Telangana, India",
+    "Visakhapatnam, Andhra Pradesh, India",
+    "Vijayawada, Andhra Pradesh, India",
+    "Guntur, Andhra Pradesh, India",
+    "Nellore, Andhra Pradesh, India",
+    "Tirupati, Andhra Pradesh, India",
+    "Puducherry, Puducherry, India"
   ],
   "seniorityTiers": [
     {
@@ -301,7 +327,7 @@
     "Activity",
     "Open to work?"
   ],
-  "notes": "Titles are searched priority by priority (1 -> 2 -> 3) until targetPerCompany people are found; explicit Priority 3 titles (developers, admins, assistants, executives) are never excluded. Activity is not available from any data API; researchers fill it from the LinkedIn URL. Geography = Sales Navigator \"South India\" region (Tamil Nadu, Karnataka, Andhra Pradesh, Telangana, Puducherry) without Kerala.",
+  "notes": "Titles are searched priority by priority (1 -> 2 -> 3) until targetPerCompany people are found; explicit Priority 3 titles (developers, admins, assistants, executives) are never excluded. Activity is not available from any data API; researchers fill it from the LinkedIn URL. Geography = Sales Navigator \"South India\" (Tamil Nadu, Karnataka, Andhra Pradesh, Telangana, Puducherry and their metros/cities: Greater Bengaluru, Greater Chennai, Greater Hyderabad, Coimbatore, Visakhapatnam, Mysuru ...) without Kerala.",
   "titlePriorities": [
     {
       "label": "Priority 1 - Top seniority / executive leadership",
