@@ -161,6 +161,10 @@
         <div><b>Drop the CSV / Excel here</b> or click to choose</div>
         <div class="hint">Columns: <b>Website</b> (best, free) or <b>LinkedIn URL</b> (1 credit/company). Company name optional.</div>
       </div>
+      <details id="typebox" style="margin-top:8px"><summary class="hint" style="cursor:pointer">or type / paste the companies instead of uploading</summary>
+        <textarea id="typed" placeholder="One company per line: a website, a LinkedIn company URL, or a name&#10;sharp.com&#10;https://www.linkedin.com/company/acme/&#10;Acme Pvt Ltd, acme.in" style="min-height:96px;margin-top:6px"></textarea>
+        <div class="hint" id="typedhint">Website per line is best (0 credits). Name only = looked up by name (1 credit).</div>
+      </details>
       <div class="preview" id="preview"></div>
       <div class="row">
         <button class="btn" id="runbtn" onclick="startJob()">▶ Run</button>
@@ -375,8 +379,34 @@ async function setFile(f) {
 }
 
 // jobs
+// Typed/pasted companies become the same CSV the upload path expects.
+function typedToCsv(text) {
+  const q = (v) => '"' + String(v || '').replace(/"/g, '""') + '"';
+  const rows = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const parts = line.split(/[,\t;]+/).map((x) => x.trim()).filter(Boolean);
+    let name = '', site = '', li = '';
+    for (const p of parts) {
+      if (/linkedin\.com\/(company|school|showcase)\//i.test(p)) li = p;
+      else if (/^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(p)) site = p;
+      else name = name ? name + ' ' + p : p;
+    }
+    if (!name && !site && !li) continue;
+    rows.push([q(name), q(site), q(li)].join(','));
+  }
+  return rows.length ? 'Company Name,Website,LinkedIn URL\r\n' + rows.join('\r\n') + '\r\n' : '';
+}
+$('typed').addEventListener('input', () => {
+  const csv = typedToCsv($('typed').value);
+  const n = csv ? csv.split('\r\n').length - 2 : 0;
+  $('typedhint').textContent = n ? `${n} compan${n === 1 ? 'y' : 'ies'} typed - will be used instead of a file.` : 'Website per line is best (0 credits). Name only = looked up by name (1 credit).';
+});
 async function startJob() {
-  if (!selectedFile) { setMsg('Choose the companies file first.', 'err'); return; }
+  const typedCsv = typedToCsv($('typed').value);
+  if (!selectedFile && typedCsv) { selectedFile = new File([typedCsv], 'typed-companies.csv', { type: 'text/csv' }); }
+  if (!selectedFile) { setMsg('Choose the companies file or type the companies first.', 'err'); return; }
   if (!$('icp').value.trim()) { setMsg('Enter the ICP roles (after the semicolon).', 'err'); $('icp').focus(); return; }
   setMsg('Starting…');
   const sp = presets[$('preset').value];
@@ -390,7 +420,7 @@ async function startJob() {
     if (!r.ok) return setMsg('Error: ' + (j.error || r.status), 'err');
     currentId = j.job.id; localStorage.setItem('currentJob', currentId); rowsLoaded = 0; rowsJob = null;
     setMsg((j.job.ahead ? `Queued — ${j.job.ahead} ahead of you — ` : 'Started — ') + summary(j.job.params), 'ok');
-    selectedFile = null; fileInput.value = ''; $('preview').innerHTML = '';
+    selectedFile = null; fileInput.value = ''; $('preview').innerHTML = ''; $('typed').value = ''; $('typed').dispatchEvent(new Event('input'));
     $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) { setMsg('Request failed: ' + e.message + ' — is the server awake?', 'err'); }
   refresh();

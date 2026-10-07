@@ -28,9 +28,9 @@
   "personLocations": [
     "Tamil Nadu, India",
     "Karnataka, India",
-    "Kerala, India",
     "Andhra Pradesh, India",
-    "Telangana, India"
+    "Telangana, India",
+    "Puducherry, India"
   ],
   "seniorityTiers": [
     {
@@ -301,7 +301,7 @@
     "Activity",
     "Open to work?"
   ],
-  "notes": "Titles are searched priority by priority (1 -> 2 -> 3) until targetPerCompany people are found; explicit Priority 3 titles (developers, admins, assistants, executives) are never excluded. Activity is not available from any data API; researchers fill it from the LinkedIn URL.",
+  "notes": "Titles are searched priority by priority (1 -> 2 -> 3) until targetPerCompany people are found; explicit Priority 3 titles (developers, admins, assistants, executives) are never excluded. Activity is not available from any data API; researchers fill it from the LinkedIn URL. Geography = Sales Navigator \"South India\" region (Tamil Nadu, Karnataka, Andhra Pradesh, Telangana, Puducherry) without Kerala.",
   "titlePriorities": [
     {
       "label": "Priority 1 - Top seniority / executive leadership",
