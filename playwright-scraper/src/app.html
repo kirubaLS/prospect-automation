@@ -147,12 +147,13 @@
       <div>
         <label>LinkedIn URL via</label>
         <select id="resolve">
-          <option value="search">Free web search</option>
-          <option value="apollo+search">Apollo, then web search</option>
-          <option value="apollo">Apollo enrichment · credits</option>
-          <option value="none">None · preview only</option>
+          <option value="search">Apollo search + free web search · 0 credits</option>
+          <option value="none">Apollo search only · 0 credits, no LinkedIn URL</option>
+          <option value="apollo+search">Apollo enrichment, then web search · 1 credit/person</option>
+          <option value="apollo">Apollo enrichment only · 1 credit/person</option>
         </select>
       </div>
+      <div class="hint" id="resolvehint"></div>
     </div>
     <div class="hint" id="searchinfo"></div>
   </section>
@@ -251,7 +252,10 @@ let activityCheck = localStorage.getItem('form.activity') === '1';
 let activityScheme = localStorage.getItem('form.activityScheme') || 'standard';
 let activityMaxItems = localStorage.getItem('form.activityMaxItems') || '';
 ['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => { if (!presets[$('preset').value]) localStorage.setItem('form.' + id, $(id).value); }); });
-{ const v = localStorage.getItem('form.resolve'); if (v) $('resolve').value = v; $('resolve').addEventListener('change', () => localStorage.setItem('form.resolve', $('resolve').value)); }
+// Default is the free path. A credit mode is never remembered across page
+// loads: it must be picked again for each visit so it cannot linger unnoticed.
+{ const v = localStorage.getItem('form.resolve'); $('resolve').value = v === 'none' ? 'none' : 'search'; $('resolve').addEventListener('change', () => { localStorage.setItem('form.resolve', $('resolve').value); resolveHint(); }); }
+function resolveHint() { const v = $('resolve').value; $('resolvehint').textContent = v === 'search' ? 'People from Apollo search (0 credits); LinkedIn URL found by web search (0 Apollo credits).' : v === 'none' ? 'Names and designations only, no LinkedIn URL. 0 credits.' : v === 'apollo+search' ? 'Apollo enrichment costs 1 credit per person; web search only for people Apollo leaves without a URL.' : 'Apollo enrichment costs 1 credit per person.'; $('resolvehint').style.color = v.startsWith('apollo') ? 'var(--bad)' : ''; }
 const resolveValue = () => $('resolve').value || 'search';
 GEO_SHORTCUTS.forEach((g) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = g; c.onclick = () => { const cur = $('geography').value.trim(); $('geography').value = cur ? cur + '; ' + g : g; $('geography').dispatchEvent(new Event('input')); }; $('geochips').appendChild(c); });
 
@@ -265,8 +269,8 @@ async function loadPresets() {
   apifyOn = !!j.apify;
   $('searchinfo').textContent = sp.length ? `Web search: ${sp.join(', ')} · 0 credits` : 'Web search not set up on the server — Apollo enrichment will be used (1 credit per person).';
   ['search', 'apollo+search'].forEach((v) => { const o = $('resolve').querySelector(`option[value="${v}"]`); o.disabled = !sp.length; });
-  if (!sp.length && ['search', 'apollo+search'].includes($('resolve').value)) $('resolve').value = 'apollo';
-  if (sp.length && !localStorage.getItem('form.resolve')) $('resolve').value = 'search';
+  if (!sp.length) setMsg('Web search is not configured on the server - add SERPER_API_KEY (or Tavily/Brave/Google) on Render. Runs will fail rather than spend Apollo credits.', 'err');
+  resolveHint();
   presets = [...j.presets.map((p) => ({ ...p, source: 'server' })), ...localPresets().map((p) => ({ ...p, source: 'mine' }))];
   const sel = $('preset');
   const cur = sel.value;

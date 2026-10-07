@@ -149,7 +149,11 @@ function startJob({ owner, fileBuffer, filename, project = null, geography, icp,
   const locations = parseGeography(geography);
   const { industries, keywords, priorities } = parseIcp(icp);
   if (!keywords.length) throw new Error('ICP is empty - list the roles/functions to look for (e.g. "IT, Administration, Procurement, Finance")');
-  resolve = ['search', 'apollo', 'apollo+search', 'none'].includes(resolve) ? resolve : SEARCH_PROVIDERS.length ? 'search' : 'apollo';
+  // Default is always the free path: Apollo people search (0 credits) + web
+  // search for the LinkedIn URL. Credit-costing enrichment runs only when
+  // 'apollo' or 'apollo+search' is asked for explicitly; a missing web search
+  // key is an error, never a silent switch to credits.
+  resolve = ['search', 'apollo', 'apollo+search', 'none'].includes(resolve) ? resolve : 'search';
   if ((resolve === 'search' || resolve === 'apollo+search') && !SEARCH_PROVIDERS.length) throw new Error('web search is not configured on the server (SERPER_API_KEY, TAVILY_API_KEY, BRAVE_SEARCH_API_KEY or GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX) - choose Apollo enrichment or none');
 
   const id = crypto.randomBytes(6).toString('hex');
@@ -178,6 +182,7 @@ function startJob({ owner, fileBuffer, filename, project = null, geography, icp,
     if (v.status !== 'running' && v.status !== 'queued') jobs.delete(k);
   }
 
+  if (resolve === 'apollo' || resolve === 'apollo+search') logger.warn(`Job ${id}: Apollo enrichment chosen - 1 credit per person${resolve === 'apollo+search' ? ' Apollo fills in' : ''}`);
   logger.info(`Job ${id} "${job.label}" (owner ${owner.slice(0, 8)}${project ? `, project ${project.slug}` : ', custom settings'}): ${count}/company, resolve=${resolve}, geography=[${locations.join(' | ') || 'any'}], ICP=${priorities ? priorities.map((g, i) => `P${i + 1}[${g.join(', ')}]`).join(' > ') : `[${keywords.join(', ')}]`}${industries.length ? `, industries=[${industries.join(', ')}]` : ''}${runningId ? ` - queued behind ${queuePosition(job)} job(s)` : ''}`);
   keepAlive(true);
   pump();
