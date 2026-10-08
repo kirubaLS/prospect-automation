@@ -188,9 +188,12 @@ function classify({ activities = [], connections = null, now = Date.now(), profi
   return { label: 'LOW', reason: `LOW because ${nothing} and ${conn}`, proof: page, lastActivity: last ? fmtDate(last.ts) : '', counts, connections };
 }
 
-// Sharp scheme: two signals, 500+ connections and any activity (post, repost,
-// comment or reaction) within the last year.
-//   HIGH    both   MEDIUM  one of them   LOW  neither   (Unknown: nothing could be fetched)
+// Sharp scheme: activity within the last year (any post, repost, comment or
+// reaction) is required for HIGH and MEDIUM; connections decide which.
+//   HIGH    active within a year and 500+ connections
+//   MEDIUM  active within a year, under 500 connections (or count unknown)
+//   LOW     not active within a year, whatever the connection count
+//   Unknown nothing could be fetched
 const SHARP_DAYS = 365;
 function classifySharp({ activities = [], connections = null, now = Date.now(), profileUrl = '', dataOk = true, connectionsNote = '' }) {
   const cutoff = now - SHARP_DAYS * 86400000;
@@ -207,9 +210,9 @@ function classifySharp({ activities = [], connections = null, now = Date.now(), 
   const actTxt = recent ? `active in the last year: ${describe(recent)}` : last ? `not active in the last year (latest was ${describe(last)})` : `no activity found on ${checked}`;
   if (!dataOk && connections == null) return { label: 'Unknown', reason: `Unknown because neither the profile nor the activity could be fetched on ${checked}`, proof: page, lastActivity: '', counts, connections };
   const base = { proof: recent ? recent.url || page : page, lastActivity: last ? fmtDate(last.ts) : '', counts, connections };
-  if (wellConnected && recent) return { label: 'HIGH', reason: `HIGH because ${connTxt} and ${actTxt}`, ...base };
-  if (wellConnected || recent) return { label: 'MEDIUM', reason: `MEDIUM because ${connTxt} and ${actTxt} - only one of the two signals`, ...base };
-  return { label: 'LOW', reason: `LOW because ${connTxt} and ${actTxt}`, ...base };
+  if (recent && wellConnected) return { label: 'HIGH', reason: `HIGH because ${actTxt} and ${connTxt}`, ...base };
+  if (recent) return { label: 'MEDIUM', reason: `MEDIUM because ${actTxt} but ${connTxt}`, ...base };
+  return { label: 'LOW', reason: `LOW because ${actTxt}${wellConnected ? ` even though ${connTxt}` : `; ${connTxt}`} - activity within a year is required for HIGH or MEDIUM`, ...base };
 }
 
 // Yard scheme: LinkedIn activity as outreach probability. Only intentional

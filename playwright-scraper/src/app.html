@@ -612,7 +612,7 @@ async function loadActivity() {
   const sch = cur && cur.params && cur.params.activityScheme === 'yard';
   const sharp = cur && cur.params && cur.params.activityScheme === 'sharp';
   $('acthint').textContent = !apifyOn ? 'Set the four Apify tokens on the server to enable.' : sharp
-    ? 'Sharp scheme: HIGH = 500+ connections and active in the last year · MEDIUM = one of the two · LOW = neither. LOW people are swapped automatically until each company has 3 HIGH/MEDIUM.'
+    ? 'Sharp scheme: active in the last year (any post, repost, comment or reaction) is required. HIGH = active + 500+ connections · MEDIUM = active, under 500 · LOW = not active in a year. LOW people are swapped automatically until each company has 3 HIGH/MEDIUM.'
     : sch
     ? 'Yard scheme: High = post / 2+ activities / anything within 14 days, all in the last 30 days · Medium = one activity 15–30 days, last activity 31–90 days, or reactions only · Low = 91–180 days · Unknown = nothing in 6 months. Connections never count.'
     : 'Connections for everyone, then posts → comments → reactions. HIGH = original post in last 90 days · MEDIUM = repost/comment/reaction in last 90 days, or 500+ connections · LOW = nothing in 90 days and under 500.';

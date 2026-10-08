@@ -64,20 +64,20 @@ r = a.classify({ activities: [], connections: 499, now, profileUrl: pu }); asser
 assert.strictEqual(r.proof, 'https://www.linkedin.com/in/kingshuk/recent-activity/all/', 'LOW has a proof link too');
 r = a.classify({ activities: [], connections: null, now, profileUrl: pu }); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /connections unknown/);
 
-// ---- Sharp scheme: 500+ connections AND active within a year = HIGH; one = MEDIUM; neither = LOW ----
+// ---- Sharp scheme: activity within a year is required; 500+ connections lifts MEDIUM to HIGH ----
 {
   const pu = 'https://www.linkedin.com/in/kingshuk';
   const act = (kind, ago, url = 'u') => ({ kind, ts: now - ago * day, url });
   const sh = (activities, connections, extra = {}) => a.classifySharp({ activities, connections, now, profileUrl: pu, ...extra });
-  let r = sh([act('comment', 200, 'c1')], 900); assert.strictEqual(r.label, 'HIGH'); assert.match(r.reason, /HIGH because 900 connections \(500\+\) and active in the last year: a comment on /); assert.strictEqual(r.proof, 'c1');
+  let r = sh([act('comment', 200, 'c1')], 900); assert.strictEqual(r.label, 'HIGH'); assert.match(r.reason, /HIGH because active in the last year: a comment on .* and 900 connections \(500\+\)/); assert.strictEqual(r.proof, 'c1');
   r = sh([act('reaction', 10)], 500); assert.strictEqual(r.label, 'HIGH', 'a reaction counts as active; 500 counts as 500+');
-  r = sh([act('post', 400)], 900); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /not active in the last year \(latest was a post on /); assert.match(r.reason, /only one of the two signals/);
-  r = sh([act('post', 30)], 120); assert.strictEqual(r.label, 'MEDIUM');
-  r = sh([], 2000); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /no activity found on 2026-10-01/);
-  r = sh([act('post', 400)], 120); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /LOW because 120 connections \(under 500\) and not active in the last year/);
+  r = sh([act('post', 30)], 120); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /MEDIUM because active in the last year: a post on .* but 120 connections \(under 500\)/);
+  r = sh([act('post', 30)], null); assert.strictEqual(r.label, 'MEDIUM', 'active but connections unknown');
+  r = sh([act('post', 400)], 900); assert.strictEqual(r.label, 'LOW', '500+ connections without activity in a year is LOW'); assert.match(r.reason, /LOW because not active in the last year \(latest was a post on .*\) even though 900 connections \(500\+\)/);
+  r = sh([], 2000); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /no activity found on 2026-10-01/);
+  r = sh([act('post', 400)], 120); assert.strictEqual(r.label, 'LOW');
   r = sh([], 50); assert.strictEqual(r.label, 'LOW'); assert.strictEqual(r.proof, 'https://www.linkedin.com/in/kingshuk/recent-activity/all/');
   r = sh([], null, { dataOk: false }); assert.strictEqual(r.label, 'Unknown');
-  r = sh([act('post', 30)], null, { dataOk: true }); assert.strictEqual(r.label, 'MEDIUM', 'active but connections unknown: one signal');
 }
 
 // ---- Yard scheme ----
