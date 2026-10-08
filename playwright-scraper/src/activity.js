@@ -188,6 +188,30 @@ function classify({ activities = [], connections = null, now = Date.now(), profi
   return { label: 'LOW', reason: `LOW because ${nothing} and ${conn}`, proof: page, lastActivity: last ? fmtDate(last.ts) : '', counts, connections };
 }
 
+// Sharp scheme: two signals, 500+ connections and any activity (post, repost,
+// comment or reaction) within the last year.
+//   HIGH    both   MEDIUM  one of them   LOW  neither   (Unknown: nothing could be fetched)
+const SHARP_DAYS = 365;
+function classifySharp({ activities = [], connections = null, now = Date.now(), profileUrl = '', dataOk = true, connectionsNote = '' }) {
+  const cutoff = now - SHARP_DAYS * 86400000;
+  const checked = fmtDate(now);
+  const page = activityPage(profileUrl);
+  const sorted = activities.slice().sort((a, b) => b.ts - a.ts);
+  const last = sorted[0] || null;
+  const counts = { posts: 0, reposts: 0, comments: 0, reactions: 0 };
+  for (const a of sorted) counts[a.kind === 'post' ? 'posts' : a.kind === 'repost' ? 'reposts' : a.kind === 'comment' ? 'comments' : 'reactions']++;
+  const recent = sorted.find((a) => a.ts >= cutoff) || null;
+  const describe = (x) => `${x.kind === 'post' ? 'a post' : x.kind === 'repost' ? 'a repost' : x.kind === 'comment' ? 'a comment' : 'a reaction'} on ${fmtDate(x.ts)}`;
+  const wellConnected = connections != null && connections >= CONNECTIONS_MEDIUM;
+  const connTxt = connections == null ? `connections unknown${connectionsNote ? ` (${connectionsNote})` : ''}` : `${connections} connections (${wellConnected ? '500+' : 'under 500'})`;
+  const actTxt = recent ? `active in the last year: ${describe(recent)}` : last ? `not active in the last year (latest was ${describe(last)})` : `no activity found on ${checked}`;
+  if (!dataOk && connections == null) return { label: 'Unknown', reason: `Unknown because neither the profile nor the activity could be fetched on ${checked}`, proof: page, lastActivity: '', counts, connections };
+  const base = { proof: recent ? recent.url || page : page, lastActivity: last ? fmtDate(last.ts) : '', counts, connections };
+  if (wellConnected && recent) return { label: 'HIGH', reason: `HIGH because ${connTxt} and ${actTxt}`, ...base };
+  if (wellConnected || recent) return { label: 'MEDIUM', reason: `MEDIUM because ${connTxt} and ${actTxt} - only one of the two signals`, ...base };
+  return { label: 'LOW', reason: `LOW because ${connTxt} and ${actTxt}`, ...base };
+}
+
 // Yard scheme: LinkedIn activity as outreach probability. Only intentional
 // activity counts (posts, reposts, comments); reactions are weak evidence;
 // connections, followers, job changes and profile updates never count.
@@ -293,6 +317,20 @@ async function checkPerson(cfg, person, opts = {}) {
     return result;
   }
 
+  if (cfg.scheme === 'sharp') {
+    // Any activity inside a year decides, so stop at the first actor that shows one.
+    const cut = (opts.now || Date.now()) - SHARP_DAYS * 86400000;
+    const hit = (list) => list.some((x) => x.ts >= cut);
+    const po = await run('posts'); let acts = summarizePosts(po, self); let ok = po !== null;
+    let co = null, re = null;
+    if (!hit(acts)) { co = await run('comments'); acts = [...acts, ...summarizeComments(co)]; ok = ok || co !== null; }
+    if (!hit(acts)) { re = await run('reactions'); acts = [...acts, ...summarizeReactions(re)]; ok = ok || re !== null; }
+    const result = classifySharp({ activities: acts, connections, connectionsNote, now: opts.now, profileUrl: person.profileUrl, dataOk: ok });
+    result.followers = followers; result.checked = checked;
+    if (errors.length) result.errors = errors;
+    return result;
+  }
+
   // Stop at the first actor that shows activity inside the window; older
   // activity is kept for the note but does not decide, so the next actor runs.
   const cutoff = (opts.now || Date.now()) - WINDOW_DAYS * 86400000;
@@ -333,4 +371,4 @@ async function runActivityCheck(baseCfg, people, { onProgress = () => {}, should
 }
 
 module.exports = {
-  isSelf, configFromEnv, usernameOf, activityPage, runActor, classify, classifyYard, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, followersOf, tsOf, WINDOW_DAYS };
+  isSelf, classifySharp, SHARP_DAYS, configFromEnv, usernameOf, activityPage, runActor, classify, classifyYard, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, followersOf, tsOf, WINDOW_DAYS };

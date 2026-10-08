@@ -606,17 +606,21 @@ async function loadActivity() {
   if (!r.ok) return;
   const d = await r.json();
   const a = d.activity, p = (a && a.progress) || {};
-  $('actbtn').disabled = !apifyOn || (a && a.status === 'running');
-  $('actstop').disabled = !(a && a.status === 'running');
+  $('actbtn').disabled = !apifyOn || (a && (a.status === 'running' || a.status === 'filling'));
+  $('actstop').disabled = !(a && (a.status === 'running' || a.status === 'filling'));
   const cur = jobsCache.find((x) => x.id === currentId);
   const sch = cur && cur.params && cur.params.activityScheme === 'yard';
-  $('acthint').textContent = !apifyOn ? 'Set the four Apify tokens on the server to enable.' : sch
+  const sharp = cur && cur.params && cur.params.activityScheme === 'sharp';
+  $('acthint').textContent = !apifyOn ? 'Set the four Apify tokens on the server to enable.' : sharp
+    ? 'Sharp scheme: HIGH = 500+ connections and active in the last year · MEDIUM = one of the two · LOW = neither. LOW people are swapped automatically until each company has 3 HIGH/MEDIUM.'
+    : sch
     ? 'Yard scheme: High = post / 2+ activities / anything within 14 days, all in the last 30 days · Medium = one activity 15–30 days, last activity 31–90 days, or reactions only · Low = 91–180 days · Unknown = nothing in 6 months. Connections never count.'
     : 'Connections for everyone, then posts → comments → reactions. HIGH = original post in last 90 days · MEDIUM = repost/comment/reaction in last 90 days, or 500+ connections · LOW = nothing in 90 days and under 500.';
   $('actstats').innerHTML = a ? [['People', p.total], ['Checked', p.done], ['High', p.high], ['Medium', p.medium], ['Low', p.low], ['Unknown', p.unknown], ['Failed', p.failed]].map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('') : '';
-  if (a && a.status !== 'running') $('actmsg').textContent = a.status === 'done' ? 'Done — download Excel to get the Activity columns.' : a.status === 'failed' ? 'Failed: ' + a.error : 'Stopped.';
+  if (a && a.status === 'filling') { $('actmsg').textContent = 'Labels done — swapping LOW people for new matches… ' + (p.current || '') + (p.autofill ? ` (${p.autofill.swapped} swaps so far)` : ''); $('actmsg').className = 'msg'; }
+  else if (a && a.status !== 'running') $('actmsg').textContent = a.status === 'done' ? 'Done — download Excel to get the Activity columns.' + (p.autofill ? ` Auto-fill: ${p.autofill.swapped} swaps, ${p.autofill.filled}/${p.autofill.companies} companies reached the target.` : '') : a.status === 'failed' ? 'Failed: ' + a.error : 'Stopped.';
   const tb = $('actrows').querySelector('tbody');
-  const canEdit = cur && cur.status !== 'running' && cur.status !== 'queued' && !(a && a.status === 'running');
+  const canEdit = cur && cur.status !== 'running' && cur.status !== 'queued' && !(a && (a.status === 'running' || a.status === 'filling'));
   tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.pending ? '<span class="muted">checking…</span>' : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td><b>${esc(x.connections)}</b></td><td>${esc(x.followers)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${x.idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${x.idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${x.idx}, this, false)">Delete</button></span>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -633,8 +637,8 @@ async function refresh() {
   const actOn = !!(cur && cur.params && cur.params.activityCheck);
   $('acttab').style.display = actOn ? '' : 'none';
   if (!actOn && $('tab-activity').style.display !== 'none') showTab('people');
-  if (cur && cur.activity && cur.activity.status === 'running' && $('tab-activity').style.display !== 'none') loadActivity();
-  if (cur && $('tab-final').style.display !== 'none' && (cur.status === 'running' || (cur.activity && cur.activity.status === 'running'))) loadFinal();
+  if (cur && cur.activity && (cur.activity.status === 'running' || cur.activity.status === 'filling') && $('tab-activity').style.display !== 'none') loadActivity();
+  if (cur && $('tab-final').style.display !== 'none' && (cur.status === 'running' || (cur.activity && (cur.activity.status === 'running' || cur.activity.status === 'filling')))) loadFinal();
   $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${x.project ? `<span class="pill done">${esc(x.project.name)}</span> ` : ''}${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status === 'queued' ? `queued · ${x.ahead} ahead` : x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt || x.queuedAt).toLocaleString()}</td><td><a href="${dlUrl(x.id, 'xlsx')}">Excel</a><a href="${dlUrl(x.id, 'csv')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a>${x.status === 'running' || x.status === 'queued' ? `<a href="#" style="color:var(--bad)" onclick="stopJob('${x.id}');return false;">cancel</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);

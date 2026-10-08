@@ -64,6 +64,22 @@ r = a.classify({ activities: [], connections: 499, now, profileUrl: pu }); asser
 assert.strictEqual(r.proof, 'https://www.linkedin.com/in/kingshuk/recent-activity/all/', 'LOW has a proof link too');
 r = a.classify({ activities: [], connections: null, now, profileUrl: pu }); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /connections unknown/);
 
+// ---- Sharp scheme: 500+ connections AND active within a year = HIGH; one = MEDIUM; neither = LOW ----
+{
+  const pu = 'https://www.linkedin.com/in/kingshuk';
+  const act = (kind, ago, url = 'u') => ({ kind, ts: now - ago * day, url });
+  const sh = (activities, connections, extra = {}) => a.classifySharp({ activities, connections, now, profileUrl: pu, ...extra });
+  let r = sh([act('comment', 200, 'c1')], 900); assert.strictEqual(r.label, 'HIGH'); assert.match(r.reason, /HIGH because 900 connections \(500\+\) and active in the last year: a comment on /); assert.strictEqual(r.proof, 'c1');
+  r = sh([act('reaction', 10)], 500); assert.strictEqual(r.label, 'HIGH', 'a reaction counts as active; 500 counts as 500+');
+  r = sh([act('post', 400)], 900); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /not active in the last year \(latest was a post on /); assert.match(r.reason, /only one of the two signals/);
+  r = sh([act('post', 30)], 120); assert.strictEqual(r.label, 'MEDIUM');
+  r = sh([], 2000); assert.strictEqual(r.label, 'MEDIUM'); assert.match(r.reason, /no activity found on 2026-10-01/);
+  r = sh([act('post', 400)], 120); assert.strictEqual(r.label, 'LOW'); assert.match(r.reason, /LOW because 120 connections \(under 500\) and not active in the last year/);
+  r = sh([], 50); assert.strictEqual(r.label, 'LOW'); assert.strictEqual(r.proof, 'https://www.linkedin.com/in/kingshuk/recent-activity/all/');
+  r = sh([], null, { dataOk: false }); assert.strictEqual(r.label, 'Unknown');
+  r = sh([act('post', 30)], null, { dataOk: true }); assert.strictEqual(r.label, 'MEDIUM', 'active but connections unknown: one signal');
+}
+
 // ---- Yard scheme ----
 {
   const pu = 'https://www.linkedin.com/in/kingshuk';
@@ -151,6 +167,12 @@ r = a.classify({ activities: [], connections: null, now, profileUrl: pu }); asse
   f = makeFetch({ posts: 'crash', comments: [], reactions: [], profile: [{ basic_info: { connection_count: 900 } }] });
   res = await a.checkPerson(cfg, me, { fetchImpl: f.fetchImpl, now, retryDelayMs: 0 });
   assert.strictEqual(res.label, 'MEDIUM'); assert.deepStrictEqual(res.errors, ['posts: Apify apimaestro~linkedin-profile-posts 500: actor crashed']);
+  // sharp scheme: stops at the first actor with activity inside a year; an old post does not stop it
+  f = makeFetch({ profile: prof, posts: [{ post_type: 'regular', posted_at: { timestamp: now - 500 * day }, url: 'https://www.linkedin.com/posts/old', author: { username: 'kingshuk' } }], comments: [{ comment_text: 'hi', created_at: { timestamp: now - 100 * day }, comment_link: 'https://www.linkedin.com/feed/update/c9' }], reactions: [] });
+  res = await a.runActivityCheck(cfg, [me], { fetchImpl: f.fetchImpl, now, scheme: 'sharp' });
+  assert.strictEqual(res.results[0].label, 'HIGH'); assert.strictEqual(res.results[0].proof, 'https://www.linkedin.com/feed/update/c9');
+  assert.deepStrictEqual(f.calls, ['profile', 'posts', 'comments'], 'old post did not decide; reactions not needed after a recent comment');
+
   // profile actor failing is retried once and the error lands in the note
   f = makeFetch({ posts: [], comments: [], reactions: [], profile: 'crash' });
   res = await a.checkPerson(cfg, me, { fetchImpl: f.fetchImpl, now, retryDelayMs: 0 });

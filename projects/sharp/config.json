@@ -1,7 +1,7 @@
 {
   "name": "Sharp SSDI",
   "description": "South India; education, healthcare, retail. ICP: IT, Operations, Procurement/Purchase, Administration, Finance - Priority 1 executives, then Priority 2 department heads, then Priority 3 managers/execution roles.",
-  "targetPerCompany": 4,
+  "targetPerCompany": 3,
   "maxCandidatesPerCompany": 12,
   "prescreen": {
     "requireOrganizationFound": true,
@@ -327,7 +327,7 @@
     "Activity",
     "Open to work?"
   ],
-  "notes": "Titles are searched priority by priority (1 -> 2 -> 3) until targetPerCompany people are found; explicit Priority 3 titles (developers, admins, assistants, executives) are never excluded. Activity is not available from any data API; researchers fill it from the LinkedIn URL. Geography = Sales Navigator \"South India\" (Tamil Nadu, Karnataka, Andhra Pradesh, Telangana, Puducherry and their metros/cities: Greater Bengaluru, Greater Chennai, Greater Hyderabad, Coimbatore, Visakhapatnam, Mysuru ...) without Kerala.",
+  "notes": "Titles are searched priority by priority (1 -> 2 -> 3) until targetPerCompany people are found; explicit Priority 3 titles (developers, admins, assistants, executives) are never excluded. Activity is not available from any data API; researchers fill it from the LinkedIn URL. Geography = Sales Navigator \"South India\" (Tamil Nadu, Karnataka, Andhra Pradesh, Telangana, Puducherry and their metros/cities: Greater Bengaluru, Greater Chennai, Greater Hyderabad, Coimbatore, Visakhapatnam, Mysuru ...) without Kerala. LinkedIn activity (sharp scheme): HIGH = 500+ connections and active within a year; MEDIUM = one of the two; LOW = neither. Max 3 per company; LOW people are swapped automatically for new matches until 3 HIGH/MEDIUM.",
   "titlePriorities": [
     {
       "label": "Priority 1 - Top seniority / executive leadership",
@@ -430,5 +430,7 @@
       ]
     }
   ],
-  "activityCheck": false
+  "activityCheck": true,
+  "activityScheme": "sharp",
+  "activityAutoFill": true
 }

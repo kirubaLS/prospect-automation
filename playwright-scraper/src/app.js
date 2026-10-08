@@ -91,7 +91,8 @@ function presets() {
           peoplePerCompany: c.targetPerCompany || 4,
           activityCheck: !!c.activityCheck,
           activityScheme: c.activityScheme || 'standard',
-          activityMaxItems: c.activityMaxItems || null
+          activityMaxItems: c.activityMaxItems || null,
+          activityAutoFill: !!c.activityAutoFill
         };
       });
   } catch (err) {
@@ -122,6 +123,85 @@ function presetBySlug(slug) {
   return presets().find((p) => p.slug === slug) || null;
 }
 
+const sameCompanyAs = (row) => (r) => r.company === row.company && r.companyWebsite === row.companyWebsite && r.companyUrl === row.companyUrl;
+
+function applyActivityResult(job, row, a) {
+  if (!a) return;
+  row.activity = a.label; row.activityReason = a.reason; row.activityProof = a.proof; row.activityDate = a.lastActivity; row.connections = a.connections ?? ''; row.followers = a.followers ?? ''; row.activityCounts = a.counts;
+  const prog = (job.activity && job.activity.progress) || null;
+  if (prog && a.label) { prog.total = (prog.total || 0) + 1; prog.done = (prog.done || 0) + 1; const k = String(a.label).toLowerCase(); if (k in prog) prog[k]++; }
+}
+
+// Remove job.rows[idx] (remembered so it never comes back) and, unless
+// replace is false, search that company once more for someone new. With
+// awaitActivity the newcomer's label is fetched before returning; otherwise
+// it is fetched in the background when the job already carries labels.
+async function removeAndReplace(job, idx, { replace = true, awaitActivity = false } = {}) {
+  const row = job.rows[idx];
+  if (!row || row.companyStatus !== 'Found' || !row.name) throw new Error('no such person row');
+  const same = sameCompanyAs(row);
+  job.removed = job.removed || [];
+  job.removed.push({ company: row.company, name: row.name, title: row.title, profileUrl: row.profileUrl, key: personKey(row) });
+  job.rows.splice(idx, 1);
+  job.progress.prospects = Math.max(0, (job.progress.prospects || 0) - 1);
+  if (!replace) { logger.info(`Job ${job.id}: deleted ${row.name} (${row.company}), no replacement`); return { row, replacement: null, message: `${row.name} deleted` }; }
+  const exclude = new Set([...job.removed.filter((r) => r.company === row.company).map((r) => r.key), ...job.rows.filter((r) => same(r) && r.name).map(personKey)]);
+  const org = { id: row.apolloOrgId || null, domain: row.apolloDomain || null, name: row.company, industry: row.industry || '', employees: row.employees ?? null };
+  if (!org.id && !org.domain) return { row, replacement: null, message: 'removed; cannot search again for this company (no Apollo id or domain on the row)' };
+  const ledger = job.progress.apollo || null;
+  const people = await findPeople(APOLLO_API_KEY, org, { ...job.params, peoplePerCompany: 1 }, { exclude, ...(ledger ? { ledger } : {}) });
+  const p = people[0] || null;
+  if (!p) { logger.info(`Job ${job.id}: removed ${row.name} (${row.company}); no one left in Apollo`); return { row, replacement: null, message: `${row.name} removed; no one else in Apollo matches this company's geography/ICP` }; }
+  const companyBits = Object.fromEntries(Object.entries(row).filter(([k]) => ['company', 'companyUrl', 'companyWebsite', 'companyStatus', 'apolloOrg', 'apolloOrgId', 'apolloDomain', 'industry', 'employees', 'hq'].includes(k)));
+  const after = job.rows.map((r, i) => (same(r) ? i : -1)).filter((i) => i >= 0).pop();
+  const at = after == null ? Math.min(idx, job.rows.length) : after + 1;
+  const replacement = { ...companyBits, ...p, note: p.note || '', replaced: row.name };
+  job.rows.splice(at, 0, replacement);
+  job.progress.prospects = (job.progress.prospects || 0) + 1;
+  logger.info(`Job ${job.id}: removed ${row.name} (${row.company}); replacement: ${p.name} (${p.title})`);
+  const wantLabel = job.params.activityCheck && APIFY.configured && job.activity && replacement.profileUrl;
+  if (wantLabel) {
+    replacement.activityPending = true;
+    const check = activity.runActivityCheck(APIFY, [replacement], { scheme: job.params.activityScheme, maxItems: job.params.activityMaxItems })
+      .then(({ results }) => applyActivityResult(job, replacement, results[0]))
+      .catch((err) => { replacement.activityReason = `activity check failed: ${err.message}`; })
+      .finally(() => { delete replacement.activityPending; sortRowsByActivity(job.rows); });
+    if (awaitActivity) await check;
+  }
+  return { row, replacement, message: `${row.name} removed; ${p.name} (${p.title}) added` };
+}
+
+// Sharp-style auto fill: a company must end with `want` HIGH/MEDIUM people.
+// LOW (then Unknown) people are swapped for new matches, each labelled on
+// arrival, until the target is met, Apollo runs out, or the attempt cap hits.
+const AUTOFILL_MAX_SWAPS = 6;
+const isGood = (r) => ['high', 'medium'].includes(String(r.activity || '').toLowerCase());
+async function autoFill(job) {
+  const want = job.params.peoplePerCompany;
+  const stats = { companies: 0, swapped: 0, filled: 0, exhausted: 0 };
+  job.activity.progress.autofill = stats;
+  const keys = [...new Set(job.rows.filter((r) => r.companyStatus === 'Found' && r.name).map((r) => `${r.company}|${r.companyWebsite}|${r.companyUrl}`))];
+  for (const key of keys) {
+    if (job.activity.stopRequested) break;
+    const rowsOf = () => job.rows.filter((r) => `${r.company}|${r.companyWebsite}|${r.companyUrl}` === key && r.companyStatus === 'Found' && r.name);
+    let swaps = 0;
+    stats.companies++;
+    while (rowsOf().filter(isGood).length < want && swaps < AUTOFILL_MAX_SWAPS && !job.activity.stopRequested) {
+      const weak = rowsOf().find((r) => String(r.activity || '').toLowerCase() === 'low') || rowsOf().find((r) => !isGood(r) && !r.activityPending);
+      if (!weak) break; // nothing left to swap: fewer than `want` people in Apollo
+      const idx = job.rows.indexOf(weak);
+      job.activity.progress.current = `${weak.company}: swapping ${weak.name} (${weak.activity || 'no label'})`;
+      swaps++; stats.swapped++;
+      let res;
+      try { res = await removeAndReplace(job, idx, { replace: true, awaitActivity: true }); } catch (err) { logger.warn(`autofill ${weak.company}: ${err.message}`); break; }
+      if (!res.replacement) { stats.exhausted++; break; }
+    }
+    if (rowsOf().filter(isGood).length >= want) stats.filled++;
+  }
+  job.activity.progress.current = '';
+  logger.info(`Job ${job.id} autofill: ${stats.swapped} swaps over ${stats.companies} companies; ${stats.filled} reached ${want} HIGH/MEDIUM, ${stats.exhausted} ran out of people`);
+}
+
 function publicJob(j) {
   return {
     id: j.id,
@@ -130,7 +210,7 @@ function publicJob(j) {
     activity: j.activity ? { status: j.activity.status, progress: j.activity.progress, error: j.activity.error || null, startedAt: j.activity.startedAt, finishedAt: j.activity.finishedAt } : null,
     label: j.label,
     filename: j.filename,
-    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, activityCheck: !!j.params.activityCheck, activityScheme: j.params.activityScheme || 'standard', searchExhausted: !!j.params.searchExhausted },
+    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, activityCheck: !!j.params.activityCheck, activityScheme: j.params.activityScheme || 'standard', activityAutoFill: !!j.params.activityAutoFill, searchExhausted: !!j.params.searchExhausted },
     status: j.status,
     queuedAt: j.queuedAt || null,
     startedAt: j.startedAt,
@@ -141,7 +221,7 @@ function publicJob(j) {
   };
 }
 
-function startJob({ owner, fileBuffer, filename, project = null, geography, icp, peoplePerCompany, label, resolve, activityCheck = false, activityScheme = 'standard', activityMaxItems = null }) {
+function startJob({ owner, fileBuffer, filename, project = null, geography, icp, peoplePerCompany, label, resolve, activityCheck = false, activityScheme = 'standard', activityMaxItems = null, activityAutoFill = false }) {
   if (!owner) throw new Error('missing owner token - reload the page');
   if (queue.length >= MAX_QUEUED) throw new Error(`the queue is full (${MAX_QUEUED} jobs waiting) - try again later`);
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
@@ -165,7 +245,7 @@ function startJob({ owner, fileBuffer, filename, project = null, geography, icp,
     label: label || filename,
     filename,
     paramsText: { geography, icp },
-    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, activityScheme: activityScheme === 'yard' ? 'yard' : 'standard', activityMaxItems: parseInt(activityMaxItems, 10) || null, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
+    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, activityScheme: ['yard', 'sharp'].includes(activityScheme) ? activityScheme : 'standard', activityMaxItems: parseInt(activityMaxItems, 10) || null, activityAutoFill: !!activityAutoFill, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
     status: 'queued',
     queuedAt: new Date().toISOString(),
     startedAt: null,
@@ -279,7 +359,8 @@ const server = http.createServer(async (req, res) => {
         resolve: url.searchParams.get('resolve') || undefined,
         activityCheck: preset.activityCheck,
         activityScheme: preset.activityScheme,
-        activityMaxItems: preset.activityMaxItems
+        activityMaxItems: preset.activityMaxItems,
+        activityAutoFill: preset.activityAutoFill
       } : {
         owner,
         fileBuffer: body,
@@ -320,21 +401,25 @@ const server = http.createServer(async (req, res) => {
         if (!job.params.activityCheck) return send(400, { error: 'the LinkedIn activity check is not enabled for this project (set "activityCheck": true in its config.json)' });
         if (!APIFY.configured) return send(400, { error: `Apify tokens missing on the server: ${APIFY.missing.join(', ')}` });
         if (job.status === 'running' || job.status === 'queued') return send(409, { error: 'wait for the job to finish' });
-        if (activityRunning) return send(409, { error: 'an activity check is already running' });
+        if (activityRunning || (job.activity && job.activity.status === 'filling')) return send(409, { error: 'an activity check is already running' });
         const people = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl);
         if (!people.length) return send(400, { error: 'no people with a LinkedIn URL in this job' });
-        job.activity = { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, progress: { total: people.length, done: 0, high: 0, medium: 0, low: 0, unknown: 0, failed: 0, scheme: job.params.activityScheme }, stopRequested: false };
+        job.activity = { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, progress: { total: people.length, done: 0, high: 0, medium: 0, low: 0, unknown: 0, failed: 0, scheme: job.params.activityScheme, autofill: null }, stopRequested: false };
         activityRunning = job.id;
         keepAlive(true);
         logger.info(`Activity check for job ${job.id}: ${people.length} people via Apify (${Object.values(APIFY.actors).map((a) => a.id).join(', ')})`);
         activity.runActivityCheck(APIFY, people, { onProgress: (st) => { job.activity.progress = { ...st }; }, shouldStop: () => job.activity.stopRequested, scheme: job.params.activityScheme, maxItems: job.params.activityMaxItems })
-          .then(({ results, state }) => {
+          .then(async ({ results, state }) => {
             people.forEach((r, i) => {
               const a = results[i];
               if (!a) return;
               r.activity = a.label; r.activityReason = a.reason; r.activityProof = a.proof; r.activityDate = a.lastActivity; r.connections = a.connections ?? ''; r.followers = a.followers ?? ''; r.activityCounts = a.counts;
             });
             job.activity.progress = { ...state };
+            if (job.params.activityAutoFill && !job.activity.stopRequested) {
+              job.activity.status = 'filling';
+              await autoFill(job);
+            }
             job.activity.status = job.activity.stopRequested ? 'stopped' : 'done';
             sortRowsByActivity(job.rows);
           })
@@ -352,54 +437,17 @@ const server = http.createServer(async (req, res) => {
       // everyone already listed or removed. Same resolve mode as the job:
       // with web search this costs no Apollo credits.
       if (job.status === 'running' || job.status === 'queued') return send(409, { error: 'wait for the job to finish' });
-      if (job.activity && job.activity.status === 'running') return send(409, { error: 'wait for the activity check to finish' });
+      if (job.activity && (job.activity.status === 'running' || job.activity.status === 'filling')) return send(409, { error: 'wait for the activity check to finish' });
       if (job.replacing) return send(409, { error: 'another replacement is in progress - try again in a moment' });
       const idx = parseInt(m[3], 10);
       const row = job.rows[idx];
       if (!row || row.companyStatus !== 'Found' || !row.name) return send(404, { error: 'no such person row' });
       if (url.searchParams.get('name') && url.searchParams.get('name') !== row.name) return send(409, { error: 'the list changed - refresh and try again' });
-      const sameCompany = (r) => r.company === row.company && r.companyWebsite === row.companyWebsite && r.companyUrl === row.companyUrl;
-      job.removed = job.removed || [];
-      job.removed.push({ company: row.company, name: row.name, title: row.title, profileUrl: row.profileUrl, key: personKey(row) });
-      job.rows.splice(idx, 1);
-      job.progress.prospects = Math.max(0, (job.progress.prospects || 0) - 1);
-      if (url.searchParams.get('replace') === '0') { // permanent delete, no replacement search
-        logger.info(`Job ${job.id}: deleted ${row.name} (${row.company}), no replacement`);
-        return send(200, { removed: true, replacement: null, message: `${row.name} deleted` });
-      }
-      const exclude = new Set([...job.removed.filter((r) => r.company === row.company).map((r) => r.key), ...job.rows.filter((r) => sameCompany(r) && r.name).map(personKey)]);
-      const org = { id: row.apolloOrgId || null, domain: row.apolloDomain || null, name: row.company, industry: row.industry || '', employees: row.employees ?? null };
-      if (!org.id && !org.domain) return send(200, { removed: true, replacement: null, message: 'removed; cannot search again for this company (no Apollo id or domain on the row)' });
       job.replacing = true;
       keepAlive(true);
       try {
-        const ledger = job.progress.apollo || null;
-        const people = await findPeople(APOLLO_API_KEY, org, { ...job.params, peoplePerCompany: 1 }, { exclude, ...(ledger ? { ledger } : {}) });
-        const p = people[0] || null;
-        let replacement = null;
-        if (p) {
-          const companyBits = Object.fromEntries(Object.entries(row).filter(([k]) => ['company', 'companyUrl', 'companyWebsite', 'companyStatus', 'apolloOrg', 'apolloOrgId', 'apolloDomain', 'industry', 'employees', 'hq'].includes(k)));
-          const after = job.rows.map((r, i) => (sameCompany(r) ? i : -1)).filter((i) => i >= 0).pop();
-          const at = after == null ? Math.min(idx, job.rows.length) : after + 1;
-          replacement = { ...companyBits, ...p, note: p.note || '', replaced: row.name };
-          job.rows.splice(at, 0, replacement);
-          job.progress.prospects = (job.progress.prospects || 0) + 1;
-          // Labels already exist for this job: check the newcomer too, in the background.
-          if (job.params.activityCheck && APIFY.configured && job.activity && job.activity.status !== 'running' && replacement.profileUrl) {
-            replacement.activityPending = true;
-            activity.runActivityCheck(APIFY, [replacement], { scheme: job.params.activityScheme, maxItems: job.params.activityMaxItems })
-              .then(({ results }) => {
-                const a = results[0];
-                if (a) { replacement.activity = a.label; replacement.activityReason = a.reason; replacement.activityProof = a.proof; replacement.activityDate = a.lastActivity; replacement.connections = a.connections ?? ''; replacement.followers = a.followers ?? ''; replacement.activityCounts = a.counts; }
-                const prog = job.activity.progress || {};
-                if (a && a.label) { prog.total = (prog.total || 0) + 1; prog.done = (prog.done || 0) + 1; const k = String(a.label).toLowerCase(); if (k in prog) prog[k]++; }
-              })
-              .catch((err) => { replacement.activityReason = `activity check failed: ${err.message}`; })
-              .finally(() => { delete replacement.activityPending; sortRowsByActivity(job.rows); });
-          }
-        }
-        logger.info(`Job ${job.id}: removed ${row.name} (${row.company}); replacement: ${p ? `${p.name} (${p.title})` : 'none left in Apollo'}`);
-        return send(200, { removed: true, replacement, message: p ? `${row.name} removed; ${p.name} (${p.title}) added` : `${row.name} removed; no one else in Apollo matches this company's geography/ICP` });
+        const res = await removeAndReplace(job, idx, { replace: url.searchParams.get('replace') !== '0' });
+        return send(200, { removed: true, replacement: res.replacement, message: res.message });
       } catch (err) {
         return send(200, { removed: true, replacement: null, message: `${row.name} removed; replacement search failed: ${err.message}` });
       } finally {
