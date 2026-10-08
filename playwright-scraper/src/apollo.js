@@ -73,6 +73,9 @@ async function request(apiKey, method, path, body, { fetchImpl = fetch, query = 
     }
 
     const text = await res.text().catch(() => '');
+    if (res.status === 422 && /insufficient credits|CREDITS_EXHAUSTED/i.test(text)) {
+      throw new Error(`Apollo credits are exhausted and ${path} costs credits - this only happens in the "Apollo enrichment" modes or without a web search key; the default mode (Apollo search + web search) spends none`);
+    }
     if (res.status === 401 || res.status === 403) {
       throw new Error(`Apollo rejected the API key or plan for ${path} (${res.status}): ${text.slice(0, 300)}`);
     }

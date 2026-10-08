@@ -52,7 +52,7 @@ const fetchImpl = async (url, init) => {
     const sen = u.searchParams.getAll('person_seniorities[]');
     const titles = u.searchParams.getAll('person_titles[]');
     assert.ok(u.searchParams.getAll('person_locations[]').includes('Tamil Nadu, India'));
-    if (orgId === 'o3') d = { people: [], pagination: { total_entries: 0 } };
+    if (orgId === 'o3' || u.searchParams.get('q_organization_domains_list[]') === 'empty-ltd.com') d = { people: [], pagination: { total_entries: 0 } };
     else {
       const list = sen.includes('director') ? dm : mg;
       const f = titles.length ? list.filter((p) => titles.some((t) => new RegExp('\\b' + t + '\\b', 'i').test(p.title))) : list;
@@ -103,6 +103,11 @@ const fetchImpl = async (url, init) => {
       searchCalls.push(u.searchParams.get('q'));
       assert.strictEqual(init.headers['X-Subscription-Token'], 'brave-key');
       const q = u.searchParams.get('q');
+      if (/official website$/.test(q)) { // company website lookup (free path for rows without a Website column)
+        const co = /kosmoderma/i.test(q) ? [{ title: 'Kosmoderma Healthcare - Skin, Hair & Body Clinics', url: 'https://www.kosmoderma.com/', description: '' }, { title: 'Kosmoderma | LinkedIn', url: 'https://www.linkedin.com/company/kosmodermahealthcare', description: '' }]
+          : /empty/i.test(q) ? [{ title: 'Empty Ltd', url: 'https://empty-ltd.com/', description: '' }] : [];
+        return { ok: true, status: 200, json: async () => ({ web: { results: co } }), text: async () => '' };
+      }
       const m = q.match(/^"([^"]+)"/);
       const first = m[1];
       const person = all.find((p) => p.first_name === first);
@@ -119,9 +124,10 @@ const fetchImpl = async (url, init) => {
   const r4 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'search', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: searchFetch });
   assert.strictEqual(calls.enrich, before3, 'no Apollo enrichment in search mode');
   const k4 = r4.rows.filter((r) => r.companyStatus === 'Found');
-  assert.strictEqual(searchCalls.length, 3, 'one web search per kept person');
-  assert.match(searchCalls[0], /^"Priya" "IT Head" "Kosmoderma Healthcare" site:linkedin\.com\/in$/);
-  assert.strictEqual(r4.state.apollo.webSearches, 3);
+  assert.strictEqual(searchCalls.length, 6, 'one web search per company (website lookup, 0 credits) + one per kept person');
+  assert.match(searchCalls[0], /^Kosmoderma .* official website$/); assert.strictEqual(r4.state.apollo.orgEnrich, 0, 'no Apollo company lookup in the free mode'); assert.strictEqual(r4.state.apollo.estimatedCredits, 0);
+  assert.match(searchCalls[1], /^"Priya" "IT Head" "Kosmoderma Healthcare" site:linkedin\.com\/in$/);
+  assert.strictEqual(r4.state.apollo.webSearches, 6);
   assert.deepStrictEqual(k4.map((r) => r.name), ['Priya NxyzN', 'Anu PxyzP', 'Raj BxyzB'], 'surname verified against the mask (Na***d style) and the wrong-surname result rejected');
   assert.deepStrictEqual(k4.map((r) => r.profileUrl), ['https://in.linkedin.com/in/priya-real', 'https://in.linkedin.com/in/anu-real', 'https://in.linkedin.com/in/raj-real']);
   assert.deepStrictEqual([...new Set(k4.map((r) => r.location))], ['Bengaluru, Karnataka, India'], 'location parsed from the snippet');
@@ -136,8 +142,8 @@ const fetchImpl = async (url, init) => {
   web._cache.clear();
   const r5 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'search', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: quotaFetch });
   const k5 = r5.rows.filter((r) => r.companyStatus === 'Found');
-  assert.strictEqual(k5.filter((r) => r.profileUrl).length, 2);
-  assert.ok(k5.slice(2).every((r) => /quota/.test(r.note)), 'unresolved people carry the quota note');
+  assert.strictEqual(k5.filter((r) => r.profileUrl).length, 1, 'company lookup used the first search, Priya the second, then quota');
+  assert.ok(k5.slice(1).every((r) => /quota/.test(r.note)), 'unresolved people carry the quota note');
   assert.strictEqual(r5.params.searchExhausted, true);
 
   // a broken search response for one person is a note, not a company error.
@@ -151,7 +157,7 @@ const fetchImpl = async (url, init) => {
   const k5b = r5b.rows.filter((r) => r.companyStatus === 'Found');
   assert.strictEqual(k5b.length, 3, 'company still Found');
   assert.strictEqual(k5b.filter((r) => r.profileUrl).length, 3, 'the failed query is retried with the next, looser query');
-  assert.strictEqual(r5b.state.apollo.webSearches, 4);
+  assert.strictEqual(r5b.state.apollo.webSearches, 7);
   assert.strictEqual(r5b.state.errors, 0);
 
   // resolve: 'apollo+search' -> Apollo fills what it can; only the rest go to web search.
@@ -178,12 +184,13 @@ const fetchImpl = async (url, init) => {
   const prioCalls = [];
   const prioFetch = async (url, init) => {
     const u = new URL(url);
+    if (u.hostname === 'api.search.brave.com') return searchFetch(url, init);
     if (u.pathname.endsWith('/mixed_people/api_search')) {
       const titles = u.searchParams.getAll('person_titles[]');
       prioCalls.push(titles);
       assert.strictEqual(u.searchParams.get('include_similar_titles'), 'false');
       assert.strictEqual(u.searchParams.get('person_seniorities[]'), null, 'priority search is by title, not seniority');
-      if (u.searchParams.get('organization_ids[]') !== 'o1') return { ok: true, status: 200, json: async () => ({ total_entries: 0, people: [] }), text: async () => '' };
+      if (u.searchParams.get('organization_ids[]') !== 'o1' && u.searchParams.get('q_organization_domains_list[]') !== 'kosmoderma.com') return { ok: true, status: 200, json: async () => ({ total_entries: 0, people: [] }), text: async () => '' };
       const f = all.filter((p) => titles.some((t) => new RegExp('\\b' + t + '\\b', 'i').test(p.title)));
       // Apollo also returns one loosely-similar person for the P1 query
       const extra = titles.includes('CIO') ? [P('Loose', 'Match', 'IT Support Analyst', 'entry', [], 'loose')] : [];
@@ -193,7 +200,7 @@ const fetchImpl = async (url, init) => {
     return fetchImpl(url, init);
   };
   const pr = jobs.parseIcp('Healthcare; CIO, CTO > Head of Operations, IT Head > IT Manager, Software Developer, Purchase Manager');
-  const r7 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { locations: params.locations, industries: pr.industries, icpKeywords: pr.keywords, priorities: pr.priorities, peoplePerCompany: 4, resolve: 'none' }, fetchImpl: prioFetch });
+  const r7 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { locations: params.locations, industries: pr.industries, icpKeywords: pr.keywords, priorities: pr.priorities, peoplePerCompany: 4, resolve: 'none', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: prioFetch });
   const k7 = r7.rows.filter((r) => r.companyStatus === 'Found');
   assert.deepStrictEqual(prioCalls.slice(0, 3), [['CIO', 'CTO'], ['Head of Operations', 'IT Head'], ['IT Manager', 'Software Developer', 'Purchase Manager']], 'groups searched in order');
   assert.deepStrictEqual(k7.map((r) => [r.title, r.match]), [['Head of Operations', 'Priority 2'], ['IT Head', 'Priority 2'], ['IT Manager', 'Priority 3'], ['Software Developer', 'Priority 3']], 'P2 people before P3; developer kept because it is listed; Purchase Manager (P3, 5th) cut by the target of 4');
@@ -226,11 +233,11 @@ const fetchImpl = async (url, init) => {
   assert.strictEqual(repl.length, 1, 'exactly one replacement');
   assert.ok(!exclude.has(jobs.personKey(repl[0])), 'the replacement is nobody already listed');
   assert.ok(k7.every((r) => r.name !== repl[0].name), 'replacement differs from all four kept people');
-  assert.ok(k7[0].apolloOrgId === 'o1', 'rows carry the Apollo org id so a replacement search needs no company lookup');
+  assert.strictEqual(k7[0].apolloDomain, 'kosmoderma.com', 'rows carry the company domain so a replacement search needs no company lookup');
 
   // resolve: 'none' -> preview only, no bulk_match, masked names kept as-is.
   const before = calls.enrich;
-  const r2 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'none' }, fetchImpl });
+  const r2 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'none', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: searchFetch });
   assert.strictEqual(calls.enrich, before, 'no enrichment call when switched off');
   const k2 = r2.rows.filter((r) => r.companyStatus === 'Found');
   assert.strictEqual(k2[0].name, 'Priya N***N');

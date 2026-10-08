@@ -104,5 +104,20 @@ assert.deepStrictEqual(w.providersFromEnv({ GOOGLE_CSE_API_KEY: 'g' }), [], 'goo
   w._cache.clear();
   const hm = await w.findProfile(person, p2, { fetchImpl: mixed });
   assert.strictEqual(hm.provider, 'tavily'); assert.strictEqual(p2[0].exhausted, true);
-  console.log('PASS: web search profile resolution');
+    // company website lookup: skips LinkedIn/directories, wants the name in the domain or title
+  {
+    const calls = [];
+    const f = async (url) => { calls.push(url); return { ok: true, status: 200, json: async () => ({ web: { results: [
+      { title: 'NeenOpal Inc. | LinkedIn', url: 'https://www.linkedin.com/company/neenopal', description: '' },
+      { title: 'NeenOpal - Company profile', url: 'https://www.zoominfo.com/c/neenopal/1', description: '' },
+      { title: 'NeenOpal: Data Science & Analytics Consulting', url: 'https://www.neenopal.com/about-us', description: '' }
+    ] } }), text: async () => '' }; };
+    w._cache.clear();
+    const hit = await w.findCompanyDomain({ name: 'NeenOpal Inc.' }, [{ name: 'brave', key: 'k' }], { fetchImpl: f });
+    assert.strictEqual(hit.domain, 'neenopal.com'); assert.strictEqual(hit.url, 'https://www.neenopal.com/about-us');
+    assert.match(decodeURIComponent(calls[0]), /q=NeenOpal Inc\. official website/);
+    const none = await w.findCompanyDomain({ name: 'Ghost Co' }, [{ name: 'brave', key: 'k' }], { fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ web: { results: [{ title: 'Ghost | LinkedIn', url: 'https://www.linkedin.com/company/ghost' }] } }), text: async () => '' }) });
+    assert.strictEqual(none, null, 'a LinkedIn page is not a website');
+  }
+console.log('PASS: web search profile resolution');
 })().catch((e) => { console.error('FAIL:', e.stack || e.message); process.exit(1); });

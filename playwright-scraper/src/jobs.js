@@ -6,7 +6,7 @@ const XLSX = require('xlsx');
 const logger = require('./logger');
 const apollo = require('./apollo');
 const websearch = require('./websearch');
-const { parseCompaniesFile } = require('./files');
+const { nameFromLinkedInUrl, parseCompaniesFile } = require('./files');
 
 // Friendly geography names -> Apollo person_locations values.
 const GEO_ALIASES = {
@@ -351,8 +351,30 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
       if (company.Domain) {
         org = { id: null, domain: company.Domain, name: company['Company Name'] || company.Domain, industry: '', employees: null };
         matchedBy = 'domain';
-      } else {
+      } else if (params.resolve === 'apollo' || params.resolve === 'apollo+search') {
+        // Credit modes only: Apollo organization lookup (1 credit per company).
         ({ organization: org, matchedBy, reason } = await apollo.findOrganization(apiKey, company, opts));
+      } else {
+        // Free modes: find the company website by web search, then let People
+        // Search filter by that domain. No Apollo credit is ever spent here.
+        const providers = params.searchProviders || [];
+        const coName = company['Company Name'] || (company['LinkedIn URL'] ? nameFromLinkedInUrl(company['LinkedIn URL']) : '');
+        if (!providers.length) reason = 'no Website column and web search is not configured - add a Website column (0 credits) or choose Apollo enrichment (1 credit per company)';
+        else if (!coName) reason = 'no company name, website or LinkedIn URL';
+        else {
+          try {
+            const hit = await websearch.findCompanyDomain({ name: coName, linkedinUrl: company['LinkedIn URL'] || '' }, providers, { ...opts, gl: websearch.countryCode(params.locations), counter: opts.ledger });
+            if (hit) {
+              company.Website = company.Website || hit.url;
+              org = { id: null, domain: hit.domain, name: coName, industry: '', employees: null };
+              matchedBy = `website ${hit.domain} via ${hit.provider}`;
+            } else reason = `website not found by web search for "${coName}" - add a Website column`;
+          } catch (err) {
+            if (!err.quota) throw err;
+            params.searchExhausted = true;
+            reason = 'web search quota exhausted - add a Website column or rerun later';
+          }
+        }
       }
       if (!org) {
         logger.warn(`[${name}] not found: ${reason}`);

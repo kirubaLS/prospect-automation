@@ -49,7 +49,7 @@ async function webSearch(provider, q, opts = {}) {
     init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-KEY': provider.key }, body: JSON.stringify(body) };
   } else if (provider.name === 'tavily') {
     url = 'https://api.tavily.com/search';
-    init = { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.key}` }, body: JSON.stringify({ query: q, max_results: 10, include_domains: ['linkedin.com'], search_depth: 'basic' }) };
+    init = { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.key}` }, body: JSON.stringify({ query: q, max_results: 10, ...(opts.anyDomain ? {} : { include_domains: ['linkedin.com'] }), search_depth: 'basic' }) };
   } else if (provider.name === 'brave') {
     url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10&safesearch=off${opts.gl ? `&country=${opts.gl}` : ''}`;
     init.headers['X-Subscription-Token'] = provider.key;
@@ -227,4 +227,47 @@ async function findProfile(person, providers, opts = {}) {
   return null;
 }
 
-module.exports = { findProfile, providersFromEnv, webSearch, scoreResult, parseTitle, parseLocation, maskedToRegex, buildQuery, buildQueries, countryCode, shortCompany, _cache: cache };
+// Company website by web search (0 Apollo credits): the first result whose
+// domain or title carries the company's name, skipping social networks and
+// directories. Used when an input row has no Website column.
+const NOT_A_COMPANY_SITE = /(^|\.)(linkedin|facebook|instagram|twitter|x|youtube|wikipedia|crunchbase|zoominfo|apollo|glassdoor|indeed|ambitionbox|justdial|indiamart|tofler|zaubacorp|bloomberg|dnb|tracxn|g2|rocketreach|signalhire|naukri|google|amazon|flipkart|yelp|bbb|owler|craft|pitchbook|cbinsights|companycheck|opencorporates|economictimes|business-standard|reuters|forbes|medium|github|wikidata|yellowpages|sulekha|mca\.gov|thecompanycheck|tofler|kompass|europages|alibaba|tradeindia|exportersindia|angel|wellfound|clutch|goodfirms|trustpilot|mouthshut)\.(com|co|in|org|net|io|me|gov)$/i;
+function domainOfUrl(u) { try { return new URL(u).hostname.replace(/^www\./i, '').toLowerCase(); } catch { return ''; } }
+async function findCompanyDomain(company, providers, opts = {}) {
+  const name = String(company.name || '').trim();
+  if (!name) return null;
+  const key = `co|${name.toLowerCase()}`;
+  if (cache.has(key)) return cache.get(key);
+  const words = significantWords(name).filter((wd) => wd.length >= 3);
+  const q = `${name} official website`;
+  let searchedOk = false;
+  for (const provider of providers) {
+    if (provider.exhausted) continue;
+    let results;
+    try { results = await webSearch(provider, q, { ...opts, anyDomain: true }); } catch (err) {
+      if (err.quota) { provider.exhausted = true; logger.warn(`${provider.name}: ${err.message} - trying the next provider`); continue; }
+      throw err;
+    }
+    searchedOk = true;
+    let best = null;
+    for (const r of results) {
+      const d = domainOfUrl(r.url);
+      if (!d || NOT_A_COMPANY_SITE.test(d)) continue;
+      const dflat = d.replace(/[^a-z0-9]/g, '');
+      const inDomain = words.filter((wd) => dflat.includes(wd.replace(/[^a-z0-9]/g, ''))).length;
+      const inTitle = words.filter((wd) => norm(r.title).includes(wd)).length;
+      const score = inDomain * 3 + inTitle;
+      if (score > 0 && (!best || score > best.score)) best = { domain: d, url: r.url, title: r.title, score, provider: provider.name };
+    }
+    // a name word in the domain, or every name word in the title, is good enough
+    if (best && (best.score >= 3 || (words.length && best.score >= words.length))) {
+      if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
+      cache.set(key, best);
+      return best;
+    }
+    break;
+  }
+  if (!searchedOk) { const err = new Error('all web search providers are out of quota'); err.quota = true; throw err; }
+  return null;
+}
+
+module.exports = { findProfile, findCompanyDomain, providersFromEnv, webSearch, scoreResult, parseTitle, parseLocation, maskedToRegex, buildQuery, buildQueries, countryCode, shortCompany, _cache: cache };
