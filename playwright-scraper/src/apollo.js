@@ -82,7 +82,7 @@ async function request(apiKey, method, path, body, { fetchImpl = fetch, query = 
       await new Promise((r) => setTimeout(r, backoff));
       continue;
     }
-    throw new Error(`Apollo ${path} failed (${res.status}): ${text.slice(0, 300)}`);
+    throw new Error(`Apollo ${path} failed (${res.status}): ${text.slice(0, 300) || 'no details from Apollo (usually a filter Apollo did not accept or a too-long request)'}`);
   }
   throw new Error(`Apollo ${path} failed after ${maxAttempts} attempts`);
 }
@@ -208,22 +208,44 @@ function mapPerson(p, org) {
 // no LinkedIn URL), enrichPeople() fills in the rest for selected people.
 // `org` is either a matched Apollo organization ({id, name}) or a domain
 // stand-in ({domain, name}); by domain no company lookup call is needed.
+// Filters go in the query string (api_search takes no JSON body). A long
+// filter set - many titles and many locations - can push the URL past what
+// Apollo accepts (a 400), so the location list is split across several calls
+// (still 0 credits each) and the results merged.
+const MAX_QUERY_CHARS = 1800;
 async function searchPeople(apiKey, org, { seniorities, titles, locations, perPage = 25, page = 1, includeSimilar = true }, opts = {}) {
-  const query = {
-    page,
-    per_page: perPage
+  const build = (locs) => {
+    const query = { page, per_page: perPage };
+    if (seniorities && seniorities.length) query.person_seniorities = seniorities;
+    if (!includeSimilar) query.include_similar_titles = false;
+    if (org.id) query.organization_ids = [org.id];
+    else if (org.domain) query.q_organization_domains_list = [org.domain];
+    else throw new Error('searchPeople needs an organization id or a domain');
+    if (titles && titles.length) query.person_titles = titles;
+    if (locs && locs.length) query.person_locations = locs;
+    return query;
   };
-  if (seniorities && seniorities.length) query.person_seniorities = seniorities;
-  if (!includeSimilar) query.include_similar_titles = false;
-  if (org.id) query.organization_ids = [org.id];
-  else if (org.domain) query.q_organization_domains_list = [org.domain];
-  else throw new Error('searchPeople needs an organization id or a domain');
-  if (titles && titles.length) query.person_titles = titles;
-  if (locations && locations.length) query.person_locations = locations;
-
-  const data = await post(apiKey, '/mixed_people/api_search', {}, { ...opts, query });
-  const people = (data.people || data.contacts || []).map((p) => mapPerson(p, org));
-  const total = data.total_entries ?? (data.pagination ? data.pagination.total_entries : people.length);
+  const locs = locations && locations.length ? locations : [null];
+  let chunks = [locs];
+  while (chunks.length < locs.length && toQuery(build(chunks[0].filter(Boolean))).length > MAX_QUERY_CHARS) {
+    const size = Math.ceil(locs.length / (chunks.length + 1));
+    chunks = [];
+    for (let i = 0; i < locs.length; i += size) chunks.push(locs.slice(i, i + size));
+  }
+  if (chunks.length > 1) logger.info(`    ${locs.length} locations split over ${chunks.length} Apollo calls (URL length)`);
+  const seen = new Set();
+  const people = [];
+  let total = 0;
+  for (const c of chunks) {
+    const data = await post(apiKey, '/mixed_people/api_search', {}, { ...opts, query: build(c.filter(Boolean)) });
+    for (const p of (data.people || data.contacts || []).map((x) => mapPerson(x, org))) {
+      const k = p.apolloId || `${p.name}|${p.title}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      people.push(p);
+    }
+    total += data.total_entries ?? (data.pagination ? data.pagination.total_entries : 0);
+  }
   return { people, total };
 }
 
