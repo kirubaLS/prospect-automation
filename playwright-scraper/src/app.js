@@ -398,7 +398,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (m[2] === 'activity') {
       if (req.method === 'POST') {
-        if (!job.params.activityCheck) return send(400, { error: 'the LinkedIn activity check is not enabled for this project (set "activityCheck": true in its config.json)' });
+        // Any job may be checked once Apify is configured; the project's flag only
+        // picks the scheme and whether auto-fill runs.
         if (!APIFY.configured) return send(400, { error: `Apify tokens missing on the server: ${APIFY.missing.join(', ')}` });
         if (job.status === 'running' || job.status === 'queued') return send(409, { error: 'wait for the job to finish' });
         if (activityRunning || (job.activity && job.activity.status === 'filling')) return send(409, { error: 'an activity check is already running' });

@@ -552,8 +552,9 @@ function geoLabel(locs) {
 }
 function summary(p) {
   const icp = p.priorities ? `${p.priorities.length} priority groups · ${p.priorities.flat().length} titles` : `${(p.icpKeywords || []).length} titles`;
+  const act = p.activityCheck ? ` · activity ${p.activityScheme && p.activityScheme !== 'standard' ? p.activityScheme : 'standard'}${p.activityAutoFill ? ' + auto-fill' : ''}` : ' · activity: manual (click the LinkedIn activity tab)';
   const via = { search: 'web search', apollo: 'Apollo enrichment', 'apollo+search': 'Apollo + web search', none: 'preview only' }[p.resolve] || '';
-  return `${p.peoplePerCompany}/company · ${esc(geoLabel(p.locations))} · ${icp}${p.industries && p.industries.length ? ` · ${p.industries.length} industries` : ''}${via ? ' · ' + via : ''}`;
+  return `${p.peoplePerCompany}/company · ${esc(geoLabel(p.locations))} · ${icp}${p.industries && p.industries.length ? ` · ${p.industries.length} industries` : ''}${via ? ' · ' + via : ''}${act}`;
 }
 function icpSummary() {
   const raw = $('icp').value;
@@ -634,7 +635,7 @@ async function refresh() {
   const cur = j.jobs.find((x) => x.id === currentId) || j.jobs.find((x) => x.id === j.running) || j.jobs[0] || null;
   if (cur) currentId = cur.id;
   show(cur); loadRows(cur);
-  const actOn = !!(cur && cur.params && cur.params.activityCheck);
+  const actOn = !!(cur && apifyOn && cur.status !== 'queued');
   $('acttab').style.display = actOn ? '' : 'none';
   if (!actOn && $('tab-activity').style.display !== 'none') showTab('people');
   if (cur && cur.activity && (cur.activity.status === 'running' || cur.activity.status === 'filling') && $('tab-activity').style.display !== 'none') loadActivity();
