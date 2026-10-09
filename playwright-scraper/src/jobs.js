@@ -470,11 +470,21 @@ function toXlsx(rows) {
 }
 
 // format: 'csv' | 'xlsx' -> { buffer, contentType, extension }
+// Tab-separated, no quoting (tabs/newlines inside a cell become spaces):
+// pastes straight into a spreadsheet, one cell per column.
+function toTsv(rows) {
+  const cell = (v) => String(v ?? '').replace(/[\t\r\n]+/g, ' ');
+  const lines = [OUTPUT_COLUMNS.map(([h]) => h).join('\t')];
+  for (const r of rows) lines.push(OUTPUT_COLUMNS.map(([, k]) => cell(k === '_manual' ? '' : r[k])).join('\t'));
+  return lines.join('\n') + '\n';
+}
+
 function exportRows(rows, format) {
+  if (format === 'tsv') return { buffer: Buffer.from(toTsv(rows), 'utf8'), contentType: 'text/tab-separated-values; charset=utf-8', extension: 'tsv' };
   if (format === 'xlsx') {
     return { buffer: toXlsx(rows), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', extension: 'xlsx' };
   }
   return { buffer: Buffer.from(toCsv(rows), 'utf8'), contentType: 'text/csv; charset=utf-8', extension: 'csv' };
 }
 
-module.exports = { runJob, personKey, companyRow, sortRowsByActivity, titleMatches, excludedTitle, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };
+module.exports = { runJob, personKey, companyRow, sortRowsByActivity, toTsv, titleMatches, excludedTitle, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };

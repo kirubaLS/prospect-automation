@@ -162,14 +162,14 @@
   <div style="display:grid; gap:16px">
     <section class="card" id="companies">
       <h2><span class="step">2</span> Companies</h2>
-      <div class="drop" id="drop">
-        <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none">
-        <div><b>Drop the CSV / Excel here</b> or click to choose</div>
-        <div class="hint">Columns: <b>Website</b> (best), or <b>LinkedIn URL</b> / <b>Company Name</b> (website found by free web search). 0 Apollo credits in the default mode.</div>
-      </div>
-      <details id="typebox" style="margin-top:8px"><summary class="hint" style="cursor:pointer">or type / paste the companies instead of uploading</summary>
-        <textarea id="typed" placeholder="One company per line: a website, a LinkedIn company URL, or a name&#10;sharp.com&#10;https://www.linkedin.com/company/acme/&#10;Acme Pvt Ltd, acme.in" style="min-height:96px;margin-top:6px"></textarea>
-        <div class="hint" id="typedhint">Website per line is best. Name or LinkedIn URL only = website found by free web search.</div>
+      <textarea id="typed" placeholder="Paste the companies here, one per line - a website, a LinkedIn company URL, or a name:&#10;sharp.com&#10;https://www.linkedin.com/company/acme/&#10;Acme Pvt Ltd, acme.in" style="min-height:200px;font-size:14px"></textarea>
+      <div class="hint" id="typedhint">Website per line is best. Name or LinkedIn URL only = website found by free web search. 0 Apollo credits in the default mode.</div>
+      <details id="uploadbox" style="margin-top:8px"><summary class="hint" style="cursor:pointer">or upload a CSV / Excel file instead</summary>
+        <div class="drop" id="drop" style="margin-top:6px">
+          <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none">
+          <div><b>Drop the CSV / Excel here</b> or click to choose</div>
+          <div class="hint">Columns: <b>Website</b> (best), or <b>LinkedIn URL</b> / <b>Company Name</b>.</div>
+        </div>
       </details>
       <div class="preview" id="preview"></div>
       <div class="row">
@@ -190,7 +190,7 @@
       <div id="current" class="hint"></div>
       <div class="row">
         <a class="btn" id="dlx" href="#" style="display:none">⬇ Download Excel</a>
-        <a class="btn secondary" id="dl" href="#" style="display:none">⬇ Download CSV</a>
+        <button class="btn sm" onclick="copyTsv(this)" id="copybtn">⎘ Copy for spreadsheet</button><a class="btn secondary" id="dl" href="#" style="display:none">⬇ Download CSV</a>
         <span class="hint">Download when the job finishes — results are not kept after a restart.</span>
       </div>
       <div class="tabs" style="margin-top:14px">
@@ -200,8 +200,9 @@
       </div>
       <div id="tab-final" style="display:none">
         <div class="row" style="margin-top:10px">
-          <a class="btn" id="dlx2" href="#">⬇ Download Excel</a>
-          <a class="btn secondary" id="dl2" href="#">⬇ Download CSV</a>
+          <button class="btn" onclick="copyTsv(this)">⎘ Copy for spreadsheet</button>
+          <a class="btn secondary" id="dlx2" href="#">⬇ Excel</a>
+          <a class="btn secondary" id="dl2" href="#">⬇ CSV</a>
           <span class="hint" id="finalhint">People + LinkedIn activity, exactly as the file will contain them.</span>
         </div>
         <div class="scroll" style="margin-top:10px"><table class="tbl" id="finalrows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th>Activity</th><th>Note</th><th>Proof</th><th>Last</th><th>Conn.</th><th></th></tr></thead><tbody><tr><td colspan="11" class="empty">Run a job first.</td></tr></tbody></table></div>
@@ -211,6 +212,7 @@
           <button class="btn" id="actbtn" onclick="startActivity(false)">Check activity</button>
           <button class="btn secondary sm" id="actall" onclick="startActivity(true)" style="display:none" title="Discard existing labels and check everyone again">Recheck all</button>
           <button class="btn secondary" id="actstop" onclick="stopActivity()" disabled>Stop</button>
+          <button class="btn sm" onclick="copyTsv(this)">⎘ Copy for spreadsheet</button>
           <a class="btn secondary sm" id="dlx3" href="#">⬇ Excel</a>
           <span class="hint" id="acthint">Connections for everyone, then posts → comments → reactions. HIGH = original post in last 90 days · MEDIUM = repost/comment/reaction in last 90 days, or 500+ connections · LOW = nothing in 90 days and under 500.</span>
         </div>
@@ -417,8 +419,8 @@ $('typed').addEventListener('input', () => {
 });
 async function startJob() {
   const typedCsv = typedToCsv($('typed').value);
-  if (!selectedFile && typedCsv) { selectedFile = new File([typedCsv], 'typed-companies.csv', { type: 'text/csv' }); }
-  if (!selectedFile) { setMsg('Choose the companies file or type the companies first.', 'err'); return; }
+  if (typedCsv) { selectedFile = new File([typedCsv], 'pasted-companies.csv', { type: 'text/csv' }); } // pasted list is primary
+  if (!selectedFile) { setMsg('Paste the companies first (or upload a file).', 'err'); return; }
   if (!$('icp').value.trim()) { setMsg('Enter the ICP roles (after the semicolon).', 'err'); $('icp').focus(); return; }
   setMsg('Starting…');
   const sp = presets[$('preset').value];
@@ -494,6 +496,21 @@ async function nextRound(companyKey, round) {
   const j = await r.json().catch(() => ({}));
   setMsg(r.ok ? (j.message || `Round ${j.round} started for ${j.companies} compan${j.companies === 1 ? 'y' : 'ies'}…`) : 'Error: ' + (j.error || r.status), r.ok ? 'ok' : 'err');
   rowsJob = null; rowsLoaded = 0; refresh();
+}
+// Fetches the job as TSV and puts it on the clipboard: paste into Excel /
+// Google Sheets and it lands one cell per column, with the header row.
+async function copyTsv(btn) {
+  if (!currentId) return;
+  const was = btn.textContent; btn.disabled = true; btn.textContent = 'Copying…';
+  try {
+    const r = await api(`/jobs/${currentId}/download?format=tsv&inline=1`);
+    const text = await r.text();
+    try { await navigator.clipboard.writeText(text); }
+    catch { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+    const n = text.split('\n').filter(Boolean).length - 1;
+    btn.textContent = `Copied ${n} rows ✓`; setMsg(`${n} rows copied - paste into a spreadsheet (Ctrl+V).`, 'ok');
+  } catch (e) { btn.textContent = 'Copy failed'; setMsg('Copy failed: ' + e.message, 'err'); }
+  setTimeout(() => { btn.textContent = was; btn.disabled = false; }, 2500);
 }
 function setMsg(t, cls) { $('msg').textContent = t; $('msg').className = 'msg ' + (cls || ''); }
 

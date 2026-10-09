@@ -533,7 +533,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows|activity|auto))?(?:\/(\d+))?$/);
-    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx', 'DELETE /jobs/:id/rows/:index[?replace=0]', 'GET|POST|DELETE /jobs/:id/activity'] });
+    if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx|tsv', 'DELETE /jobs/:id/rows/:index[?replace=0]', 'GET|POST|DELETE /jobs/:id/activity'] });
     const job = jobs.get(m[1]);
     if (!job) return send(404, { error: 'unknown or expired job (results are kept only while the server runs)' });
     if (job.owner !== owner) return send(403, { error: 'this job belongs to another user' });
@@ -641,7 +641,13 @@ const server = http.createServer(async (req, res) => {
       return send(200, { total: job.rows.length, from, rows: job.rows.slice(from, from + 500) });
     }
     if (m[2] === 'download') {
-      const format = url.searchParams.get('format') === 'xlsx' ? 'xlsx' : 'csv';
+      const f = url.searchParams.get('format');
+      const format = f === 'xlsx' ? 'xlsx' : f === 'tsv' ? 'tsv' : 'csv';
+      if (format === 'tsv' && url.searchParams.get('inline') === '1') { // for the Copy button: plain text, no download
+        const { buffer } = exportRows(job.rows, 'tsv');
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': buffer.length });
+        return res.end(buffer);
+      }
       const { buffer, contentType, extension } = exportRows(job.rows, format);
       const base = (job.label || 'prospects').replace(/[^\w.-]+/g, '_').replace(/\.(csv|xlsx|xls)$/i, '');
       res.writeHead(200, {
