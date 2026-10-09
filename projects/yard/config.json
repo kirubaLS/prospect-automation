@@ -476,5 +476,8 @@
     }
   },
   "manualColumns": [],
-  "notes": "Two kinds of people: those who decide and those who know office requirements first. Founder/CEO is strongest below ~100-150 employees; Chief of Staff can be P1 in small startups; Talent Acquisition rises to P2 when rapid hiring is the trigger; Finance/Procurement enter late. CTO/VP Engineering only if setting up the Bengaluru engineering centre (manual). Activity scheme 'yard': High = meaningful (post/repost/comment) activity in 30 days (2+ or within 14 days especially); Medium = one activity 15-30 days, last activity 31-90 days, or reactions only; Low = 91-180 days; Unknown = nothing in 6 months or not accessible. Job changes, profile updates, followers, connections and single likes never count."
+  "notes": "Two kinds of people: those who decide and those who know office requirements first. Founder/CEO is strongest below ~100-150 employees; Chief of Staff can be P1 in small startups; Talent Acquisition rises to P2 when rapid hiring is the trigger; Finance/Procurement enter late. CTO/VP Engineering only if setting up the Bengaluru engineering centre (manual). Activity scheme 'yard': High = meaningful (post/repost/comment) activity in 30 days (2+ or within 14 days especially); Medium = one activity 15-30 days, last activity 31-90 days, or reactions only; Low = 91-180 days; Unknown = nothing in 6 months or not accessible. Job changes, profile updates, followers, connections and single likes never count.",
+  "auto": true,
+  "candidatePool": 7,
+  "autoRounds": 2
 }

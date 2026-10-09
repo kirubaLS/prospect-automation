@@ -443,5 +443,8 @@
     }
   },
   "manualColumns": [],
-  "notes": "Titles are searched priority by priority (1 -> 5) until targetPerCompany people are found. No industry filter. LinkedIn activity check (Apify) enabled: HIGH/MEDIUM/LOW with proof, connections for everyone."
+  "notes": "Titles are searched priority by priority (1 -> 5) until targetPerCompany people are found. No industry filter. LinkedIn activity check (Apify) enabled: HIGH/MEDIUM/LOW with proof, connections for everyone.",
+  "auto": true,
+  "candidatePool": 7,
+  "autoRounds": 2
 }

@@ -92,7 +92,10 @@ function presets() {
           activityCheck: !!c.activityCheck,
           activityScheme: c.activityScheme || 'standard',
           activityMaxItems: c.activityMaxItems || null,
-          activityAutoFill: !!c.activityAutoFill
+          activityAutoFill: !!c.activityAutoFill,
+          auto: c.auto !== false,
+          candidatePool: c.candidatePool || 7,
+          autoRounds: c.autoRounds || 2
         };
       });
   } catch (err) {
@@ -202,15 +205,152 @@ async function autoFill(job) {
   logger.info(`Job ${job.id} autofill: ${stats.swapped} swaps over ${stats.companies} companies; ${stats.filled} reached ${want} HIGH/MEDIUM, ${stats.exhausted} ran out of people`);
 }
 
+// ---- single-click automation ----
+// Round 1: the job itself fetched `candidatePool` people per company (priority
+// order, strict ICP). Label them; keep `finalTarget` HIGH/MEDIUM (HIGH first).
+// Short company: fetch `candidatePool` more (everyone seen so far excluded, so
+// the search moves on to the remaining priorities), label the newcomers, and
+// judge again. After `autoRounds` rounds a short company keeps its good people,
+// drops the rest, and waits for a human to press "Next round".
+const companyKey = (r) => `${r.company}|${r.companyWebsite}|${r.companyUrl}`;
+const foundRows = (job, key) => job.rows.filter((r) => companyKey(r) === key && r.companyStatus === 'Found' && r.name);
+const labelRank = (r) => (String(r.activity || '').toLowerCase() === 'high' ? 0 : 1);
+
+async function labelRows(job, people) {
+  if (!people.length || !APIFY.configured) return;
+  for (const p of people) p.activityPending = true;
+  try {
+    const { results } = await activity.runActivityCheck(APIFY, people, { onProgress: (st) => { job.activity.progress.current = `labelling ${st.done}/${people.length}`; }, shouldStop: () => job.activity.stopRequested, scheme: job.params.activityScheme, maxItems: job.params.activityMaxItems });
+    people.forEach((p, i) => applyActivityResult(job, p, results[i]));
+  } finally { for (const p of people) delete p.activityPending; }
+}
+
+async function fetchMore(job, key, n) {
+  const ref = foundRows(job, key)[0] || job.rows.find((r) => companyKey(r) === key);
+  if (!ref) return [];
+  const org = { id: ref.apolloOrgId || null, domain: ref.apolloDomain || null, name: ref.company, industry: ref.industry || '', employees: ref.employees ?? null };
+  if (!org.id && !org.domain) return [];
+  job.removed = job.removed || [];
+  const exclude = new Set([...job.removed.filter((r) => r.company === ref.company).map((r) => r.key), ...foundRows(job, key).map(personKey)]);
+  const ledger = job.progress.apollo || null;
+  const people = await findPeople(APOLLO_API_KEY, org, { ...job.params, peoplePerCompany: n }, { exclude, ...(ledger ? { ledger } : {}) });
+  if (!people.length) return [];
+  const bits = Object.fromEntries(Object.entries(ref).filter(([k]) => ['company', 'companyUrl', 'companyWebsite', 'apolloOrg', 'apolloOrgId', 'apolloDomain', 'industry', 'employees', 'hq'].includes(k)));
+  const last = job.rows.map((r, i) => (companyKey(r) === key ? i : -1)).filter((i) => i >= 0).pop();
+  const fresh = people.map((p) => ({ ...bits, companyStatus: 'Found', ...p, note: p.note || '', round: job.auto.round }));
+  // a company that had "No people found" now has people: drop the placeholder
+  if (ref.companyStatus !== 'Found') { job.rows.splice(job.rows.indexOf(ref), 1, ...fresh); job.progress.noPeople = Math.max(0, (job.progress.noPeople || 0) - 1); job.progress.found++; }
+  else job.rows.splice(last + 1, 0, ...fresh);
+  job.progress.prospects = (job.progress.prospects || 0) + fresh.length;
+  return fresh;
+}
+
+function dropRows(job, rows, why) {
+  job.removed = job.removed || [];
+  for (const r of rows) {
+    const i = job.rows.indexOf(r);
+    if (i < 0) continue;
+    job.removed.push({ company: r.company, name: r.name, title: r.title, profileUrl: r.profileUrl, key: personKey(r), why });
+    job.rows.splice(i, 1);
+    job.progress.prospects = Math.max(0, (job.progress.prospects || 0) - 1);
+  }
+}
+
+// Decide one company. Returns 'filled' or 'short'.
+function judgeCompany(job, key) {
+  const target = job.params.finalTarget;
+  const rows = foundRows(job, key);
+  const good = rows.filter(isGood).sort((x, y) => labelRank(x) - labelRank(y) || job.rows.indexOf(x) - job.rows.indexOf(y));
+  const comp = job.auto.companies[key] || (job.auto.companies[key] = { company: rows[0] ? rows[0].company : key, rounds: 0, good: 0 });
+  comp.good = good.length;
+  for (const r of rows) { delete r.needsRound; delete r.autoNote; }
+  if (good.length >= target) {
+    const keep = new Set(good.slice(0, target));
+    dropRows(job, rows.filter((r) => !keep.has(r)), 'not among the top HIGH/MEDIUM');
+    comp.state = 'filled';
+    for (const r of foundRows(job, key)) r.autoNote = `${target}/${target} HIGH/MEDIUM after round ${comp.rounds}`;
+  } else {
+    comp.state = 'short';
+  }
+  return comp.state;
+}
+
+async function autoStage(job, { fromRound, toRound, onlyKey = null }) {
+  job.auto = job.auto || { round: 0, stage: '', companies: {} };
+  job.activity = job.activity || { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, progress: { total: 0, done: 0, high: 0, medium: 0, low: 0, unknown: 0, failed: 0, scheme: job.params.activityScheme, autofill: null }, stopRequested: false };
+  job.activity.status = 'running'; job.activity.stopRequested = false;
+  job.status = 'automating';
+  while (activityRunning && activityRunning !== job.id) { job.auto.stage = 'waiting for another activity check to finish'; await new Promise((r) => setTimeout(r, 3000)); }
+  activityRunning = job.id;
+  keepAlive(true);
+  // companies with people, plus short ones whose only row is now a "Not filled" placeholder
+  const keys = onlyKey ? [onlyKey] : [...new Set([...job.rows.filter((r) => r.companyStatus === 'Found' && r.name).map(companyKey), ...Object.entries(job.auto.companies).filter(([, c]) => c.state === 'short').map(([k]) => k)])];
+  try {
+    for (let round = fromRound; round <= toRound; round++) {
+      if (job.stopRequested || job.activity.stopRequested) break;
+      job.auto.round = round;
+      const pending = keys.filter((k) => !job.auto.companies[k] || job.auto.companies[k].state !== 'filled');
+      if (!pending.length) break;
+      if (round > 1) {
+        job.auto.stage = `round ${round}: fetching ${job.params.candidatePool} more for ${pending.length} short compan${pending.length === 1 ? 'y' : 'ies'}`;
+        for (const k of pending) {
+          if (job.stopRequested) break;
+          const comp = job.auto.companies[k];
+          job.activity.progress.current = `${comp ? comp.company : k}: searching further priorities`;
+          try { const got = await fetchMore(job, k, job.params.candidatePool); if (!got.length && comp) comp.exhausted = true; } catch (err) { logger.warn(`auto round ${round} ${k}: ${err.message}`); }
+        }
+      }
+      job.auto.stage = `round ${round}: LinkedIn activity`;
+      const toLabel = job.rows.filter((r) => pending.includes(companyKey(r)) && r.companyStatus === 'Found' && r.profileUrl && !r.activity);
+      await labelRows(job, toLabel);
+      job.auto.stage = `round ${round}: judging`;
+      for (const k of pending) { const c = job.auto.companies[k] || (job.auto.companies[k] = { company: k.split('|')[0], rounds: 0, good: 0 }); c.rounds = round; judgeCompany(job, k); }
+    }
+    // after the allowed rounds: short companies keep their good people, lose the rest, and wait for a human
+    for (const k of keys) {
+      const c = job.auto.companies[k];
+      if (!c || c.state !== 'short') continue;
+      const rows = foundRows(job, k);
+      const sample = rows[0] || job.rows.find((r) => companyKey(r) === k) || {};
+      const bits = Object.fromEntries(Object.entries(sample).filter(([kk]) => ['company', 'companyUrl', 'companyWebsite', 'apolloOrg', 'apolloOrgId', 'apolloDomain', 'industry', 'employees', 'hq'].includes(kk)));
+      dropRows(job, rows.filter((r) => !isGood(r)), 'LOW/Unknown after the automatic rounds');
+      const left = foundRows(job, k);
+      c.needsRound = c.rounds + 1;
+      const msg = c.exhausted ? `${c.good}/${job.params.finalTarget} HIGH/MEDIUM - Apollo has nobody else for this geography/ICP` : `${c.good}/${job.params.finalTarget} HIGH/MEDIUM after ${c.rounds} round${c.rounds === 1 ? '' : 's'} - press Next round for further priorities`;
+      if (left.length) for (const r of left) { r.autoNote = msg; r.needsRound = c.exhausted ? 0 : c.needsRound; }
+      else {
+        const ref = job.rows.find((r) => companyKey(r) === k);
+        if (ref) { ref.companyStatus = 'Not filled'; ref.name = 'Not filled'; ref.title = ''; ref.location = ''; ref.profileUrl = ''; ref.activity = ''; ref.note = msg; ref.needsRound = c.exhausted ? 0 : c.needsRound; }
+        else job.rows.push({ company: k.split('|')[0], companyWebsite: k.split('|')[1], companyUrl: k.split('|')[2], ...bits, companyStatus: 'Not filled', name: 'Not filled', note: msg, needsRound: c.exhausted ? 0 : c.needsRound });
+      }
+    }
+    job.auto.stage = 'done';
+  } catch (err) {
+    job.auto.stage = `failed: ${err.message}`;
+    logger.error(`Job ${job.id} automation failed: ${err.message}`);
+  } finally {
+    job.status = job.stopRequested ? 'stopped' : 'done';
+    job.activity.status = job.activity.stopRequested ? 'stopped' : 'done';
+    job.activity.finishedAt = new Date().toISOString();
+    job.activity.progress.current = '';
+    activityRunning = null;
+    sortRowsByActivity(job.rows);
+    if (!runningId && !queue.length) keepAlive(false);
+    const cs = Object.values(job.auto.companies);
+    logger.info(`Job ${job.id} automation: round ${job.auto.round}; ${cs.filter((c) => c.state === 'filled').length} filled, ${cs.filter((c) => c.state === 'short').length} short`);
+  }
+}
+
 function publicJob(j) {
   return {
     id: j.id,
     project: j.project || null,
     ahead: queuePosition(j),
     activity: j.activity ? { status: j.activity.status, progress: j.activity.progress, error: j.activity.error || null, startedAt: j.activity.startedAt, finishedAt: j.activity.finishedAt } : null,
+    auto: j.auto ? { round: j.auto.round, stage: j.auto.stage, short: Object.values(j.auto.companies).filter((c) => c.state === 'short').length, filled: Object.values(j.auto.companies).filter((c) => c.state === 'filled').length } : null,
     label: j.label,
     filename: j.filename,
-    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, activityCheck: !!j.params.activityCheck, activityScheme: j.params.activityScheme || 'standard', activityAutoFill: !!j.params.activityAutoFill, searchExhausted: !!j.params.searchExhausted },
+    params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, activityCheck: !!j.params.activityCheck, activityScheme: j.params.activityScheme || 'standard', activityAutoFill: !!j.params.activityAutoFill, auto: !!j.params.auto, finalTarget: j.params.finalTarget || j.params.peoplePerCompany, candidatePool: j.params.candidatePool || null, autoRounds: j.params.autoRounds || null, searchExhausted: !!j.params.searchExhausted },
     status: j.status,
     queuedAt: j.queuedAt || null,
     startedAt: j.startedAt,
@@ -221,11 +361,15 @@ function publicJob(j) {
   };
 }
 
-function startJob({ owner, fileBuffer, filename, project = null, geography, icp, peoplePerCompany, label, resolve, activityCheck = false, activityScheme = 'standard', activityMaxItems = null, activityAutoFill = false }) {
+function startJob({ owner, fileBuffer, filename, project = null, geography, icp, peoplePerCompany, label, resolve, activityCheck = false, activityScheme = 'standard', activityMaxItems = null, activityAutoFill = false, auto = false, candidatePool = 7, autoRounds = 2 }) {
   if (!owner) throw new Error('missing owner token - reload the page');
   if (queue.length >= MAX_QUEUED) throw new Error(`the queue is full (${MAX_QUEUED} jobs waiting) - try again later`);
   if (!APOLLO_API_KEY) throw new Error('APOLLO_API_KEY is not set on the server');
-  const count = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 4));
+  const finalTarget = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(1, parseInt(peoplePerCompany, 10) || 4));
+  // Single-click automation searches a wider pool per company (7 by default),
+  // labels them, and keeps `finalTarget` HIGH/MEDIUM people.
+  const pool = Math.min(MAX_PEOPLE_PER_COMPANY, Math.max(finalTarget, parseInt(candidatePool, 10) || 7));
+  const count = auto ? pool : finalTarget;
   const locations = parseGeography(geography);
   const { industries, keywords, priorities } = parseIcp(icp);
   if (!keywords.length) throw new Error('ICP is empty - list the roles/functions to look for (e.g. "IT, Administration, Procurement, Finance")');
@@ -245,7 +389,7 @@ function startJob({ owner, fileBuffer, filename, project = null, geography, icp,
     label: label || filename,
     filename,
     paramsText: { geography, icp },
-    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, activityScheme: ['yard', 'sharp'].includes(activityScheme) ? activityScheme : 'standard', activityMaxItems: parseInt(activityMaxItems, 10) || null, activityAutoFill: !!activityAutoFill, searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
+    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, activityScheme: ['yard', 'sharp'].includes(activityScheme) ? activityScheme : 'standard', activityMaxItems: parseInt(activityMaxItems, 10) || null, activityAutoFill: !!activityAutoFill && !auto, auto: !!auto, finalTarget, candidatePool: pool, autoRounds: Math.max(1, parseInt(autoRounds, 10) || 2), searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
     status: 'queued',
     queuedAt: new Date().toISOString(),
     startedAt: null,
@@ -293,10 +437,16 @@ function pump() {
     shouldStop: () => job.stopRequested,
     rows: job.rows
   })
-    .then(({ state }) => {
+    .then(async ({ state }) => {
       job.progress = { ...state };
       job.status = state.fatal ? 'failed' : job.stopRequested ? 'stopped' : 'done';
       if (state.fatal) job.error = state.fatal;
+      if (job.params.auto && job.status === 'done' && APIFY.configured) {
+        runningId = null; pump(); // let the next queued job start its people search while this one labels
+        await autoStage(job, { fromRound: 1, toRound: job.params.autoRounds });
+      } else if (job.params.auto && job.status === 'done') {
+        job.auto = { round: 0, stage: 'skipped: Apify tokens missing on the server', companies: {} };
+      }
     })
     .catch((err) => {
       job.status = 'failed';
@@ -305,8 +455,7 @@ function pump() {
     })
     .finally(() => {
       job.finishedAt = new Date().toISOString();
-      runningId = null;
-      pump();
+      if (runningId === id) { runningId = null; pump(); } // automation may already have handed the slot on
     });
 }
 
@@ -360,7 +509,10 @@ const server = http.createServer(async (req, res) => {
         activityCheck: preset.activityCheck,
         activityScheme: preset.activityScheme,
         activityMaxItems: preset.activityMaxItems,
-        activityAutoFill: preset.activityAutoFill
+        activityAutoFill: preset.activityAutoFill,
+        auto: url.searchParams.get('auto') !== '0' && preset.auto,
+        candidatePool: preset.candidatePool,
+        autoRounds: preset.autoRounds
       } : {
         owner,
         fileBuffer: body,
@@ -372,12 +524,15 @@ const server = http.createServer(async (req, res) => {
         resolve: url.searchParams.get('resolve') || (url.searchParams.get('enrich') === '0' ? 'none' : undefined),
         activityCheck: url.searchParams.get('activity') === '1',
         activityScheme: url.searchParams.get('scheme') || 'standard',
-        activityMaxItems: url.searchParams.get('items') || null
+        activityMaxItems: url.searchParams.get('items') || null,
+        auto: url.searchParams.get('auto') === '1',
+        candidatePool: url.searchParams.get('pool') || 7,
+        autoRounds: url.searchParams.get('rounds') || 2
       });
       return send(202, { status: job.status === 'running' ? 'started' : 'queued', job: publicJob(job) });
     }
 
-    const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows|activity))?(?:\/(\d+))?$/);
+    const m = url.pathname.match(/^\/jobs\/([a-f0-9]+)(?:\/(stop|download|rows|activity|auto))?(?:\/(\d+))?$/);
     if (!m) return send(404, { error: 'not found', routes: ['/', '/healthz', '/presets', 'GET|POST /jobs', '/jobs/:id', '/jobs/:id/rows', 'POST /jobs/:id/stop', '/jobs/:id/download?format=csv|xlsx', 'DELETE /jobs/:id/rows/:index[?replace=0]', 'GET|POST|DELETE /jobs/:id/activity'] });
     const job = jobs.get(m[1]);
     if (!job) return send(404, { error: 'unknown or expired job (results are kept only while the server runs)' });
@@ -386,6 +541,7 @@ const server = http.createServer(async (req, res) => {
     if (!m[2]) return send(200, publicJob(job));
     if (m[2] === 'stop' && req.method === 'POST') {
       job.stopRequested = true;
+      if (job.activity && job.status === 'automating') job.activity.stopRequested = true;
       if (job.status === 'queued') {
         const i = queue.indexOf(job);
         if (i >= 0) queue.splice(i, 1);
@@ -396,12 +552,26 @@ const server = http.createServer(async (req, res) => {
       }
       return send(202, { status: job.status === 'running' ? 'stopping' : job.status });
     }
+    if (m[2] === 'auto' && req.method === 'POST') {
+      // One more round (further priorities) for one short company (?company=key) or all short ones.
+      if (!job.params.auto || !job.auto) return send(400, { error: 'this job did not run the single-click automation' });
+      if (job.status === 'running' || job.status === 'queued' || job.status === 'automating') return send(409, { error: 'wait for the job to finish' });
+      if (activityRunning) return send(409, { error: 'an activity check is already running' });
+      if (!APIFY.configured) return send(400, { error: `Apify tokens missing on the server: ${APIFY.missing.join(', ')}` });
+      const only = url.searchParams.get('company') || null;
+      const shortKeys = Object.entries(job.auto.companies).filter(([k, c]) => c.state === 'short' && (!only || k === only)).map(([k]) => k);
+      if (!shortKeys.length) return send(200, { status: 'nothing to do', message: 'no short companies' });
+      const next = job.auto.round + 1;
+      for (const k of shortKeys) delete job.auto.companies[k].needsRound;
+      autoStage(job, { fromRound: next, toRound: next, onlyKey: only }).catch((err) => logger.error(`next round failed: ${err.message}`));
+      return send(202, { status: 'started', round: next, companies: shortKeys.length });
+    }
     if (m[2] === 'activity') {
       if (req.method === 'POST') {
         // Any job may be checked once Apify is configured; the project's flag only
         // picks the scheme and whether auto-fill runs.
         if (!APIFY.configured) return send(400, { error: `Apify tokens missing on the server: ${APIFY.missing.join(', ')}` });
-        if (job.status === 'running' || job.status === 'queued') return send(409, { error: 'wait for the job to finish' });
+        if (job.status === 'running' || job.status === 'queued' || job.status === 'automating') return send(409, { error: 'wait for the job to finish' });
         if (activityRunning || (job.activity && job.activity.status === 'filling')) return send(409, { error: 'an activity check is already running' });
         // Incremental by default: only people without a label (new after a
         // Replace, or added later) are checked; ?all=1 rechecks everyone.
@@ -447,7 +617,7 @@ const server = http.createServer(async (req, res) => {
       // Remove one person and fetch the next match for that company, skipping
       // everyone already listed or removed. Same resolve mode as the job:
       // with web search this costs no Apollo credits.
-      if (job.status === 'running' || job.status === 'queued') return send(409, { error: 'wait for the job to finish' });
+      if (job.status === 'running' || job.status === 'queued' || job.status === 'automating') return send(409, { error: 'wait for the job to finish' });
       if (job.activity && (job.activity.status === 'running' || job.activity.status === 'filling')) return send(409, { error: 'wait for the activity check to finish' });
       if (job.replacing) return send(409, { error: 'another replacement is in progress - try again in a moment' });
       const idx = parseInt(m[3], 10);

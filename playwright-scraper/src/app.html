@@ -73,6 +73,7 @@
   .acts { display: inline-flex; gap: 4px; align-items: center; }
   .pick { width: 15px; height: 15px; margin: 0 2px; cursor: pointer; }
   .pill.queued { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .pill.automating { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   .pill.running { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
   .pill.done { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
   .pill.failed, .pill.stopped { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
@@ -173,6 +174,7 @@
       <div class="preview" id="preview"></div>
       <div class="row">
         <button class="btn" id="runbtn" onclick="startJob()">▶ Run</button>
+        <label class="hint" style="display:inline-flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="auto" checked> Single click: 7 per company → LinkedIn activity → keep the target HIGH/MEDIUM (2 rounds)</label>
         <button class="btn danger" id="stopbtn" onclick="stopJob()" disabled>Cancel job</button>
         <a class="btn secondary sm" id="tpl" href="#" download="companies-template.csv">Template CSV</a>
       </div>
@@ -181,7 +183,7 @@
     </section>
 
     <section class="card" id="results">
-      <h2><span class="step">3</span> Results <span id="jobpill" class="pill">no job</span> <button class="btn danger sm" id="cancelbtn" onclick="stopJob()" style="display:none;margin-left:auto">✕ Cancel job</button></h2>
+      <h2><span class="step">3</span> Results <span id="jobpill" class="pill">no job</span> <button class="btn sm" id="nextall" onclick="nextRound()" style="display:none;margin-left:auto"></button><button class="btn danger sm" id="cancelbtn" onclick="stopJob()" style="display:none;margin-left:auto">✕ Cancel job</button></h2>
       <div id="jobname" class="hint"></div>
       <div class="bar" style="margin:8px 0"><i id="barfill"></i></div>
       <div class="stats" id="stats"></div>
@@ -422,8 +424,8 @@ async function startJob() {
   const sp = presets[$('preset').value];
   const params = sp && sp.source === 'server'
     // Project run: only the slug goes up; the server reads that project's config.json itself.
-    ? new URLSearchParams({ filename: selectedFile.name, preset: sp.slug, label: $('label').value || `${sp.name} - ${selectedFile.name}`, resolve: resolveValue(), ...(presetEdited(sp) ? { geography: $('geography').value, icp: $('icp').value, count: $('count').value } : {}) })
-    : new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0', scheme: activityScheme, items: activityMaxItems });
+    ? new URLSearchParams({ filename: selectedFile.name, preset: sp.slug, label: $('label').value || `${sp.name} - ${selectedFile.name}`, resolve: resolveValue(), auto: $('auto').checked ? '1' : '0', ...(presetEdited(sp) ? { geography: $('geography').value, icp: $('icp').value, count: $('count').value } : {}) })
+    : new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0', scheme: activityScheme, items: activityMaxItems, auto: $('auto').checked ? '1' : '0' });
   try {
     const r = await api('/jobs?' + params, { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
@@ -484,6 +486,15 @@ async function bulkAction(replace) {
   if ($('tab-final').style.display !== 'none') loadFinal();
   if ($('tab-activity').style.display !== 'none') loadActivity();
 }
+async function nextRound(companyKey, round) {
+  if (!currentId) return;
+  const what = companyKey ? `Run round ${round} (further priorities) for this company?` : 'Run the next round (further priorities) for every short company?';
+  if (!confirm(what)) return;
+  const r = await api(`/jobs/${currentId}/auto${companyKey ? '?company=' + companyKey : ''}`, { method: 'POST' });
+  const j = await r.json().catch(() => ({}));
+  setMsg(r.ok ? (j.message || `Round ${j.round} started for ${j.companies} compan${j.companies === 1 ? 'y' : 'ies'}…`) : 'Error: ' + (j.error || r.status), r.ok ? 'ok' : 'err');
+  rowsJob = null; rowsLoaded = 0; refresh();
+}
 function setMsg(t, cls) { $('msg').textContent = t; $('msg').className = 'msg ' + (cls || ''); }
 
 let busy = { running: false, mine: false, queued: 0 };
@@ -491,7 +502,7 @@ function show(j) {
   $('jobpill').textContent = j ? (j.status === 'queued' ? `queued · ${j.ahead} ahead` : j.status) : 'no job';
   $('jobpill').className = 'pill ' + (j ? j.status : '');
   $('runbtn').disabled = false;
-  const cancellable = !!(j && (j.status === 'running' || j.status === 'queued'));
+  const cancellable = !!(j && (j.status === 'running' || j.status === 'queued' || j.status === 'automating'));
   $('stopbtn').disabled = !cancellable;
   $('stopbtn').textContent = j && j.status === 'queued' ? 'Cancel (queued)' : 'Cancel job';
   $('cancelbtn').style.display = cancellable ? '' : 'none';
@@ -503,7 +514,8 @@ function show(j) {
   $('stats').innerHTML = [['Companies', p.total], ['Processed', p.done], ['Found', p.found], ['Not found', p.notFound], ['No people', p.noPeople], ['Errors', p.errors], ['People', p.prospects]]
     .map(([k, v]) => `<div class="stat"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
   const a = p.apollo;
-  $('current').textContent = (j.status === 'queued' ? `Queued — ${j.ahead} job${j.ahead === 1 ? '' : 's'} ahead of you${busy.running && !busy.mine ? " (another user's job is running)" : ''}` : j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`))
+  $('nextall').style.display = j.auto && j.status === 'done' && j.auto.short ? '' : 'none'; $('nextall').textContent = j.auto && j.auto.short ? `▶ Next round for ${j.auto.short} short compan${j.auto.short === 1 ? 'y' : 'ies'}` : '';
+  $('current').textContent = (j.status === 'automating' ? `Automation · ${(j.auto && j.auto.stage) || ''}${j.activity && j.activity.progress && j.activity.progress.current ? ' · ' + j.activity.progress.current : ''}` : j.status === 'queued' ? `Queued — ${j.ahead} job${j.ahead === 1 ? '' : 's'} ahead of you${busy.running && !busy.mine ? " (another user's job is running)" : ''}` : j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`))
     + (a ? ` · Apollo credits ≈ ${a.estimatedCredits} · web searches ${a.webSearches || 0}` : '');
   $('dl').style.display = 'inline-flex'; $('dl').href = dlUrl(j.id, 'csv');
   $('dlx').style.display = 'inline-flex'; $('dlx').href = dlUrl(j.id, 'xlsx');
@@ -513,7 +525,7 @@ let jobsCache = [];
 let rowsBusy = false;
 async function loadRows(j) {
   if (!j || rowsBusy) return;
-  const editNow = String(j.status !== 'running' && j.status !== 'queued' && !(j.activity && j.activity.status === 'running'));
+  const editNow = String(j.status !== 'running' && j.status !== 'queued' && j.status !== 'automating' && !(j.activity && j.activity.status === 'running'));
   if (rowsJob === j.id && rowsLoaded && $('rows').querySelector('tbody').dataset.canEdit !== editNow) { rowsLoaded = 0; rowsJob = null; }
   if (rowsJob !== j.id) { rowsJob = j.id; rowsLoaded = 0; $('rows').querySelector('tbody').innerHTML = ''; $('rows').querySelector('tbody').dataset.lastCo = ''; }
   if (j.rows <= rowsLoaded) { if (!rowsLoaded) $('rows').querySelector('tbody').innerHTML = '<tr><td colspan="6" class="empty">' + (j.status === 'running' ? 'Waiting for the first company…' : 'No rows.') + '</td></tr>'; return; }
@@ -528,14 +540,16 @@ async function loadRows(j) {
   const tb = $('rows').querySelector('tbody');
   if (!rowsLoaded) { tb.innerHTML = ''; tb.dataset.lastCo = ''; }
   let lastCo = tb.dataset.lastCo || '';
-  const canEdit = j.status !== 'running' && j.status !== 'queued' && !(j.activity && j.activity.status === 'running');
+  const canEdit = j.status !== 'running' && j.status !== 'queued' && j.status !== 'automating' && !(j.activity && j.activity.status === 'running');
   if (!rowsLoaded) tb.dataset.canEdit = String(canEdit);
   d.rows.forEach((x, k) => {
     const idx = d.from + k;
     if (x.company !== lastCo) {
       lastCo = x.company;
-      const cls = x.companyStatus === 'Found' ? 's-found' : x.companyStatus === 'Company not found' ? 's-nf' : 's-np';
-      tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="6"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`);
+      const cls = x.companyStatus === 'Found' ? 's-found' : x.companyStatus === 'Company not found' || x.companyStatus === 'Not filled' ? 's-nf' : 's-np';
+      const ck = encodeURIComponent(`${x.company}|${x.companyWebsite || ''}|${x.companyUrl || ''}`);
+      const nxt = canEdit && x.needsRound ? ` <button class="del rep" onclick="nextRound('${ck}', ${x.needsRound})">Next round (${x.needsRound})</button>` : '';
+      tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="6"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}${x.autoNote ? ` <span class="muted">· ${esc(x.autoNote)}</span>` : ''}${nxt}</td></tr>`);
     }
     if (x.companyStatus === 'Found') {
       tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}${x.replaced ? `<div class="hint">replaces ${esc(x.replaced)}</div>` : ''}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : `<span class="muted">${esc(x.note || 'not resolved')}</span>`}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`);
@@ -553,9 +567,10 @@ function geoLabel(locs) {
 }
 function summary(p) {
   const icp = p.priorities ? `${p.priorities.length} priority groups · ${p.priorities.flat().length} titles` : `${(p.icpKeywords || []).length} titles`;
+  const auto = p.auto ? ` · single click ${p.candidatePool} → ${p.finalTarget} (${p.autoRounds} rounds)` : '';
   const act = p.activityCheck ? ` · activity ${p.activityScheme && p.activityScheme !== 'standard' ? p.activityScheme : 'standard'}${p.activityAutoFill ? ' + auto-fill' : ''}` : ' · activity: manual (click the LinkedIn activity tab)';
   const via = { search: 'web search', apollo: 'Apollo enrichment', 'apollo+search': 'Apollo + web search', none: 'preview only' }[p.resolve] || '';
-  return `${p.peoplePerCompany}/company · ${esc(geoLabel(p.locations))} · ${icp}${p.industries && p.industries.length ? ` · ${p.industries.length} industries` : ''}${via ? ' · ' + via : ''}${act}`;
+  return `${p.peoplePerCompany}/company · ${esc(geoLabel(p.locations))} · ${icp}${p.industries && p.industries.length ? ` · ${p.industries.length} industries` : ''}${via ? ' · ' + via : ''}${act}${auto}`;
 }
 function icpSummary() {
   const raw = $('icp').value;
@@ -585,10 +600,10 @@ async function loadFinal() {
   while (from < d.total) { const rr = await (await api(`/jobs/${currentId}/rows?from=${from}`)).json(); all.push(...rr.rows); from += rr.rows.length; if (!rr.rows.length) break; }
   const tb = $('finalrows').querySelector('tbody');
   const cj = jobsCache.find((x) => x.id === currentId);
-  const canEdit = cj && cj.status !== 'running' && cj.status !== 'queued' && !(cj.activity && cj.activity.status === 'running');
+  const canEdit = cj && cj.status !== 'running' && cj.status !== 'queued' && cj.status !== 'automating' && !(cj.activity && cj.activity.status === 'running');
   tb.innerHTML = all.map((x, idx) => x.companyStatus === 'Found'
     ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.activityPending ? '<span class="muted">checking…</span>' : ''}</td><td class="muted">${esc(x.activityReason || '')}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`
-    : `<tr class="co"><td colspan="11"><span class="s-nf">${esc(x.companyStatus)}</span> · ${esc(x.company)}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">No rows.</td></tr>';
+    : `<tr class="co"><td colspan="11"><span class="s-nf">${esc(x.companyStatus)}</span> · ${esc(x.company)}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}${x.autoNote ? ` <span class="muted">· ${esc(x.autoNote)}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">No rows.</td></tr>';
   const withAct = all.filter((x) => x.activity).length;
   $('finalhint').textContent = withAct ? `${withAct} people carry an activity label.` : 'Activity columns fill in after "Check activity" (Reach24).';
 }
@@ -627,7 +642,7 @@ async function loadActivity() {
   if (a && a.status === 'filling') { $('actmsg').textContent = 'Labels done — swapping LOW people for new matches… ' + (p.current || '') + (p.autofill ? ` (${p.autofill.swapped} swaps so far)` : ''); $('actmsg').className = 'msg'; }
   else if (a && a.status !== 'running') $('actmsg').textContent = a.status === 'done' ? 'Done — download Excel to get the Activity columns.' + (p.autofill ? ` Auto-fill: ${p.autofill.swapped} swaps, ${p.autofill.filled}/${p.autofill.companies} companies reached the target.` : '') : a.status === 'failed' ? 'Failed: ' + a.error : 'Stopped.';
   const tb = $('actrows').querySelector('tbody');
-  const canEdit = cur && cur.status !== 'running' && cur.status !== 'queued' && !(a && (a.status === 'running' || a.status === 'filling'));
+  const canEdit = cur && cur.status !== 'running' && cur.status !== 'queued' && cur.status !== 'automating' && !(a && (a.status === 'running' || a.status === 'filling'));
   tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.pending ? '<span class="muted">checking…</span>' : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td><b>${esc(x.connections)}</b></td><td>${esc(x.followers)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${x.idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${x.idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${x.idx}, this, false)">Delete</button></span>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -645,7 +660,7 @@ async function refresh() {
   $('acttab').style.display = actOn ? '' : 'none';
   if (!actOn && $('tab-activity').style.display !== 'none') showTab('people');
   if (cur && cur.activity && (cur.activity.status === 'running' || cur.activity.status === 'filling') && $('tab-activity').style.display !== 'none') loadActivity();
-  if (cur && $('tab-final').style.display !== 'none' && (cur.status === 'running' || (cur.activity && (cur.activity.status === 'running' || cur.activity.status === 'filling')))) loadFinal();
+  if (cur && $('tab-final').style.display !== 'none' && (cur.status === 'running' || cur.status === 'automating' || (cur.activity && (cur.activity.status === 'running' || cur.activity.status === 'filling')))) loadFinal();
   $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${x.project ? `<span class="pill done">${esc(x.project.name)}</span> ` : ''}${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status === 'queued' ? `queued · ${x.ahead} ahead` : x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt || x.queuedAt).toLocaleString()}</td><td><a href="${dlUrl(x.id, 'xlsx')}">Excel</a><a href="${dlUrl(x.id, 'csv')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a>${x.status === 'running' || x.status === 'queued' ? `<a href="#" style="color:var(--bad)" onclick="stopJob('${x.id}');return false;">cancel</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);

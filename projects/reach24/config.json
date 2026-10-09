@@ -605,5 +605,8 @@
     "Activity"
   ],
   "notes": "Titles are searched priority by priority (1 -> 2 -> 3) until targetPerCompany people are found. Industry list is a warning only (companies are not skipped). Activity is not available from any data API; researchers fill it from the LinkedIn URL.",
-  "activityCheck": true
+  "activityCheck": true,
+  "auto": true,
+  "candidatePool": 7,
+  "autoRounds": 2
 }

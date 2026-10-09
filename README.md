@@ -24,6 +24,29 @@ DOWNLOAD (Excel or CSV)                  Company, Status, Name, Designation, Loc
                                          researcher), Note; "Company not found" / "No people found" row otherwise
 ```
 
+## Single-click automation (default for every project)
+
+With "Single click" ticked (the default), one Run does the whole job:
+
+1. **Round 1** - People Search fetches a pool of 7 per company in priority
+   order (strict ICP, the project's geography), LinkedIn URLs by web search.
+2. **LinkedIn activity** for the pool, with the project's own scheme
+   (standard for Reach24/Scikiq, sharp for Sharp, yard for Yard).
+3. **Keep the target** (4, or 3 for Sharp) HIGH/MEDIUM people, HIGH first;
+   the rest are dropped and remembered so they are never fetched again.
+4. **Round 2** for a short company: 7 more people (everyone seen so far is
+   excluded, so the search moves on to the remaining priorities), labelled,
+   judged again.
+5. After 2 rounds a company still short keeps its HIGH/MEDIUM people, loses
+   the LOW/Unknown ones, and shows **Next round** - a human presses it to
+   run round 3 (and 4, ...) over the further priorities. A company Apollo
+   has nobody else for says so instead. One header button runs the next
+   round for every short company at once.
+
+`auto`, `candidatePool` (7) and `autoRounds` (2) in a project's config.json
+set this; the Replace/Delete controls and the manual activity check still
+work on the result.
+
 ## Several people using the site at once
 
 Jobs run **one at a time** in the order they arrive. A second upload is not
