@@ -403,20 +403,30 @@ const server = http.createServer(async (req, res) => {
         if (!APIFY.configured) return send(400, { error: `Apify tokens missing on the server: ${APIFY.missing.join(', ')}` });
         if (job.status === 'running' || job.status === 'queued') return send(409, { error: 'wait for the job to finish' });
         if (activityRunning || (job.activity && job.activity.status === 'filling')) return send(409, { error: 'an activity check is already running' });
-        const people = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl);
-        if (!people.length) return send(400, { error: 'no people with a LinkedIn URL in this job' });
-        job.activity = { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, progress: { total: people.length, done: 0, high: 0, medium: 0, low: 0, unknown: 0, failed: 0, scheme: job.params.activityScheme, autofill: null }, stopRequested: false };
+        // Incremental by default: only people without a label (new after a
+        // Replace, or added later) are checked; ?all=1 rechecks everyone.
+        const everyone = job.rows.filter((r) => r.companyStatus === 'Found' && r.profileUrl);
+        const all = url.searchParams.get('all') === '1';
+        const people = all ? everyone : everyone.filter((r) => !r.activity && !r.activityPending);
+        if (!everyone.length) return send(400, { error: 'no people with a LinkedIn URL in this job' });
+        if (!people.length) return send(200, { status: 'nothing to do', total: 0, message: 'everyone already has a label - use "Recheck all" to redo them' });
+        const prior = all ? [] : everyone.filter((r) => r.activity);
+        const count = (lbl) => prior.filter((r) => String(r.activity || '').toLowerCase() === lbl).length;
+        job.activity = { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, progress: { total: everyone.length, done: prior.length, high: count('high'), medium: count('medium'), low: count('low'), unknown: count('unknown'), failed: 0, scheme: job.params.activityScheme, autofill: null, incremental: !all, newPeople: people.length }, stopRequested: false };
+        if (all) for (const r of everyone) { r.activity = ''; r.activityReason = ''; r.activityProof = ''; r.activityDate = ''; }
         activityRunning = job.id;
         keepAlive(true);
-        logger.info(`Activity check for job ${job.id}: ${people.length} people via Apify (${Object.values(APIFY.actors).map((a) => a.id).join(', ')})`);
-        activity.runActivityCheck(APIFY, people, { onProgress: (st) => { job.activity.progress = { ...st }; }, shouldStop: () => job.activity.stopRequested, scheme: job.params.activityScheme, maxItems: job.params.activityMaxItems })
+        logger.info(`Activity check for job ${job.id}: ${people.length}${all ? '' : ' unlabelled'} people via Apify (${Object.values(APIFY.actors).map((a) => a.id).join(', ')})`);
+        const base = { ...job.activity.progress };
+        const merge = (st) => ({ ...base, ...st, total: base.total, done: base.done + (st.done || 0), high: base.high + (st.high || 0), medium: base.medium + (st.medium || 0), low: base.low + (st.low || 0), unknown: base.unknown + (st.unknown || 0) });
+        activity.runActivityCheck(APIFY, people, { onProgress: (st) => { job.activity.progress = merge(st); }, shouldStop: () => job.activity.stopRequested, scheme: job.params.activityScheme, maxItems: job.params.activityMaxItems })
           .then(async ({ results, state }) => {
             people.forEach((r, i) => {
               const a = results[i];
               if (!a) return;
               r.activity = a.label; r.activityReason = a.reason; r.activityProof = a.proof; r.activityDate = a.lastActivity; r.connections = a.connections ?? ''; r.followers = a.followers ?? ''; r.activityCounts = a.counts;
             });
-            job.activity.progress = { ...state };
+            job.activity.progress = merge(state);
             if (job.params.activityAutoFill && !job.activity.stopRequested) {
               job.activity.status = 'filling';
               await autoFill(job);
@@ -426,7 +436,7 @@ const server = http.createServer(async (req, res) => {
           })
           .catch((err) => { job.activity.status = 'failed'; job.activity.error = err.message; logger.error(`Activity check ${job.id} failed: ${err.message}`); })
           .finally(() => { job.activity.finishedAt = new Date().toISOString(); activityRunning = null; if (!runningId && !queue.length) keepAlive(false); });
-        return send(202, { status: 'started', total: people.length });
+        return send(202, { status: 'started', total: people.length, incremental: !all });
       }
       if (req.method === 'DELETE') { if (job.activity) job.activity.stopRequested = true; return send(202, { status: 'stopping' }); }
       const rows = job.rows.map((r, idx) => ({ r, idx })).filter(({ r }) => r.companyStatus === 'Found' && r.profileUrl).map(({ r, idx }) => ({ idx, pending: !!r.activityPending, company: r.company, name: r.name, title: r.title, profileUrl: r.profileUrl, activity: r.activity || '', reason: r.activityReason || '', proof: r.activityProof || '', date: r.activityDate || '', connections: r.connections ?? '', followers: r.followers ?? '', counts: r.activityCounts || null }));

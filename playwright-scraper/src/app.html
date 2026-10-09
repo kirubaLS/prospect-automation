@@ -206,7 +206,8 @@
       </div>
       <div id="tab-activity" style="display:none">
         <div class="row" style="margin-top:10px">
-          <button class="btn" id="actbtn" onclick="startActivity()">Check activity</button>
+          <button class="btn" id="actbtn" onclick="startActivity(false)">Check activity</button>
+          <button class="btn secondary sm" id="actall" onclick="startActivity(true)" style="display:none" title="Discard existing labels and check everyone again">Recheck all</button>
           <button class="btn secondary" id="actstop" onclick="stopActivity()" disabled>Stop</button>
           <a class="btn secondary sm" id="dlx3" href="#">⬇ Excel</a>
           <span class="hint" id="acthint">Connections for everyone, then posts → comments → reactions. HIGH = original post in last 90 days · MEDIUM = repost/comment/reaction in last 90 days, or 500+ connections · LOW = nothing in 90 days and under 500.</span>
@@ -591,12 +592,13 @@ async function loadFinal() {
   const withAct = all.filter((x) => x.activity).length;
   $('finalhint').textContent = withAct ? `${withAct} people carry an activity label.` : 'Activity columns fill in after "Check activity" (Reach24).';
 }
-async function startActivity() {
+async function startActivity(all) {
   if (!currentId) return;
+  if (all && !confirm('Discard the existing labels and check everyone again?')) return;
   $('actmsg').textContent = 'Starting…'; $('actmsg').className = 'msg';
-  const r = await api('/jobs/' + currentId + '/activity', { method: 'POST' });
+  const r = await api('/jobs/' + currentId + '/activity' + (all ? '?all=1' : ''), { method: 'POST' });
   const j = await r.json().catch(() => ({}));
-  $('actmsg').textContent = r.ok ? `Checking ${j.total} people…` : 'Error: ' + (j.error || r.status); $('actmsg').className = 'msg ' + (r.ok ? 'ok' : 'err');
+  $('actmsg').textContent = r.ok ? (j.message || `Checking ${j.total} ${j.incremental ? 'new ' : ''}people…`) : 'Error: ' + (j.error || r.status); $('actmsg').className = 'msg ' + (r.ok ? 'ok' : 'err');
   loadActivity();
 }
 async function stopActivity() { if (currentId) await api('/jobs/' + currentId + '/activity', { method: 'DELETE' }); }
@@ -607,7 +609,11 @@ async function loadActivity() {
   if (!r.ok) return;
   const d = await r.json();
   const a = d.activity, p = (a && a.progress) || {};
-  $('actbtn').disabled = !apifyOn || (a && (a.status === 'running' || a.status === 'filling'));
+  const busy = !!(a && (a.status === 'running' || a.status === 'filling'));
+  const unl = d.rows.filter((x) => !x.activity && !x.pending).length, lab = d.rows.length - unl;
+  $('actbtn').disabled = !apifyOn || busy || !unl;
+  $('actbtn').textContent = lab && unl ? `Check ${unl} new` : lab ? 'All labelled' : 'Check activity';
+  $('actall').style.display = lab && apifyOn ? '' : 'none'; $('actall').disabled = busy;
   $('actstop').disabled = !(a && (a.status === 'running' || a.status === 'filling'));
   const cur = jobsCache.find((x) => x.id === currentId);
   const sch = cur && cur.params && cur.params.activityScheme === 'yard';
