@@ -72,7 +72,7 @@ const fetchImpl = async (url, init) => {
 
   assert.deepStrictEqual({ total: state.total, found: state.found, notFound: state.notFound, noPeople: state.noPeople, prospects: state.prospects }, { total: 3, found: 1, notFound: 1, noPeople: 1, prospects: 3 });
   // LinkedIn-URL path: 1 credit per company found via enrichment (2 orgs found, Ghost not), plus 5 enriched people.
-  assert.deepStrictEqual({ ...state.apollo }, { peopleSearch: 4, orgSearch: 1, orgEnrich: 3, peopleEnrich: 1, peopleEnriched: 3, estimatedCredits: 6, webSearches: 0 });
+  assert.deepStrictEqual({ ...state.apollo }, { peopleSearch: 8, orgSearch: 1, orgEnrich: 3, peopleEnrich: 1, peopleEnriched: 3, estimatedCredits: 6, webSearches: 0 });
   const k = rows.filter((r) => r.companyStatus === 'Found');
   assert.deepStrictEqual(k.map((r) => r.name), ['Priya N', 'Anu P', 'Raj B'], 'only ICP-matching titles: the founder and the operations head are not IT/admin/procurement/finance/purchasing');
   assert.deepStrictEqual(k.map((r) => r.match), ['ICP match', 'ICP match', 'ICP match']);
@@ -274,10 +274,10 @@ const fetchImpl = async (url, init) => {
   const csvDomain = Buffer.from('Company Name,Website,LinkedIn URL\nKosmoderma,https://www.kosmoderma.com/about,https://www.linkedin.com/company/kosmodermahealthcare/\n');
   const r3 = await jobs.runJob({ apiKey: 'k', fileBuffer: csvDomain, filename: 'c.csv', params, fetchImpl: domainFetch });
   assert.deepStrictEqual(lookups, [], 'no company lookup when a website domain is present');
-  assert.deepStrictEqual({ ...r3.state.apollo }, { peopleSearch: 2, orgSearch: 0, orgEnrich: 0, peopleEnrich: 1, peopleEnriched: 3, estimatedCredits: 3, webSearches: 0 }, 'ledger: domain path costs only the enrichment');
+  assert.deepStrictEqual({ ...r3.state.apollo }, { peopleSearch: 4, orgSearch: 0, orgEnrich: 0, peopleEnrich: 1, peopleEnriched: 3, estimatedCredits: 3, webSearches: 0 }, 'ledger: domain path costs only the enrichment');
   const r3b = await jobs.runJob({ apiKey: 'k', fileBuffer: csvDomain, filename: 'c.csv', params: { ...params, resolve: 'none' }, fetchImpl: domainFetch });
   assert.strictEqual(r3b.state.apollo.estimatedCredits, 0, 'domain path + no resolution = 0 credits');
-  assert.strictEqual(r3b.state.apollo.peopleSearch, 2);
+  assert.strictEqual(r3b.state.apollo.peopleSearch, 4);
   const k3 = r3.rows.filter((r) => r.companyStatus === 'Found');
   assert.strictEqual(k3.length, 3);
   assert.strictEqual(k3[0].company, 'Kosmoderma');

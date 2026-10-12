@@ -53,7 +53,7 @@ function record(ledger, path, data) {
 }
 
 async function request(apiKey, method, path, body, { fetchImpl = fetch, query = null, ledger = null } = {}) {
-  const maxAttempts = 4;
+  const maxAttempts = 5; // 429/5xx (incl. 502/503/504 gateway timeouts): 5s, 10s, 20s, 30s
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await pace();
     const init = {
@@ -80,7 +80,7 @@ async function request(apiKey, method, path, body, { fetchImpl = fetch, query = 
       throw new Error(`Apollo rejected the API key or plan for ${path} (${res.status}): ${text.slice(0, 300)}`);
     }
     if ((res.status === 429 || res.status >= 500) && attempt < maxAttempts) {
-      const backoff = 5000 * attempt;
+      const backoff = [5000, 10000, 20000, 30000][attempt - 1] || 30000;
       logger.warn(`Apollo ${res.status} on ${path}, retrying in ${backoff / 1000}s (${attempt}/${maxAttempts})`);
       await new Promise((r) => setTimeout(r, backoff));
       continue;
@@ -216,6 +216,7 @@ function mapPerson(p, org) {
 // Apollo accepts (a 400), so the location list is split across several calls
 // (still 0 credits each) and the results merged.
 const MAX_QUERY_CHARS = 1800;
+const MAX_TITLES_PER_CALL = 12;
 async function searchPeople(apiKey, org, { seniorities, titles, locations, perPage = 25, page = 1, includeSimilar = true }, opts = {}) {
   const build = (locs) => {
     const query = { page, per_page: perPage };
@@ -229,18 +230,26 @@ async function searchPeople(apiKey, org, { seniorities, titles, locations, perPa
     return query;
   };
   const locs = locations && locations.length ? locations : [null];
+  // Big OR-title queries are slow on Apollo's side (gateway timeouts), so a
+  // title list is also split into groups of at most MAX_TITLES_PER_CALL.
+  const titleGroups = [];
+  const allTitles = titles && titles.length ? titles : [null];
+  for (let i = 0; i < allTitles.length; i += MAX_TITLES_PER_CALL) titleGroups.push(allTitles.slice(i, i + MAX_TITLES_PER_CALL));
+  const buildFor = (tg, locs2) => { const q = build(locs2); if (tg[0] !== null) q.person_titles = tg; else delete q.person_titles; return q; };
   let chunks = [locs];
-  while (chunks.length < locs.length && toQuery(build(chunks[0].filter(Boolean))).length > MAX_QUERY_CHARS) {
+  while (chunks.length < locs.length && toQuery(buildFor(titleGroups[0], chunks[0].filter(Boolean))).length > MAX_QUERY_CHARS) {
     const size = Math.ceil(locs.length / (chunks.length + 1));
     chunks = [];
     for (let i = 0; i < locs.length; i += size) chunks.push(locs.slice(i, i + size));
   }
-  if (chunks.length > 1) logger.info(`    ${locs.length} locations split over ${chunks.length} Apollo calls (URL length)`);
+  const calls = [];
+  for (const tg of titleGroups) for (const c of chunks) calls.push(buildFor(tg, c.filter(Boolean)));
+  if (calls.length > 1) logger.info(`    ${allTitles.length} titles x ${locs.length} locations split over ${calls.length} Apollo calls`);
   const seen = new Set();
   const people = [];
   let total = 0;
-  for (const c of chunks) {
-    const data = await post(apiKey, '/mixed_people/api_search', {}, { ...opts, query: build(c.filter(Boolean)) });
+  for (const query of calls) {
+    const data = await post(apiKey, '/mixed_people/api_search', {}, { ...opts, query });
     for (const p of (data.people || data.contacts || []).map((x) => mapPerson(x, org))) {
       const k = p.apolloId || `${p.name}|${p.title}`;
       if (seen.has(k)) continue;
