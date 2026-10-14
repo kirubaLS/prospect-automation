@@ -239,7 +239,11 @@ async function fetchMore(job, key, n) {
   const last = job.rows.map((r, i) => (companyKey(r) === key ? i : -1)).filter((i) => i >= 0).pop();
   const fresh = people.map((p) => ({ ...bits, companyStatus: 'Found', ...p, note: p.note || '', round: job.auto.round }));
   // a company that had "No people found" now has people: drop the placeholder
-  if (ref.companyStatus !== 'Found') { job.rows.splice(job.rows.indexOf(ref), 1, ...fresh); job.progress.noPeople = Math.max(0, (job.progress.noPeople || 0) - 1); job.progress.found++; }
+  if (ref.companyStatus !== 'Found') {
+    // "No people found" was never counted as found; a "Not filled" placeholder already was
+    if (ref.companyStatus === 'No people found') { job.progress.noPeople = Math.max(0, (job.progress.noPeople || 0) - 1); job.progress.found++; }
+    job.rows.splice(job.rows.indexOf(ref), 1, ...fresh);
+  }
   else job.rows.splice(last + 1, 0, ...fresh);
   job.progress.prospects = (job.progress.prospects || 0) + fresh.length;
   return fresh;

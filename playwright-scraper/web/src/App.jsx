@@ -17,7 +17,7 @@ export default function App() {
   const [theme, setTheme] = useStored('theme', document.documentElement.dataset.theme || '');
   useEffect(() => { if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme; }, [theme]);
   // Three looks share one app: "workspace" (dark sidebar), "clean" (all light), "focus" (top nav, one column).
-  const [skin, setSkin] = useStored('skin', (new URLSearchParams(location.search).get('skin')) || 'workspace');
+  const [skin, setSkin] = useStored('skin', (new URLSearchParams(location.search).get('skin')) || 'clean');
   useEffect(() => { document.documentElement.dataset.skin = skin; }, [skin]);
   const SkinPick = ({ cls }) => <div className={'skinpick ' + (cls || '')}>{['workspace', 'clean', 'focus', 'sheet', 'bold', 'warm'].map((k) => <button key={k} className={skin === k ? 'on' : ''} onClick={() => setSkin(k)} title={'Look: ' + k}>{k}</button>)}</div>;
 
@@ -64,7 +64,7 @@ export default function App() {
         <div className="side-foot">
           {info && !info.apolloKeySet && <Pill kind="bad">Apollo key missing on server</Pill>}
           {busyInfo && busyInfo.running && !busyInfo.mine && <span>Another user's run is in progress{busyInfo.queued ? ` · ${busyInfo.queued} waiting` : ''}. Yours will queue.</span>}
-          <button className="ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>◐ {theme === 'dark' ? 'Light' : 'Dark'} theme</button>
+          <button className="ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? '' : 'dark')}>◐ Theme: {theme === 'dark' ? 'dark' : theme === 'light' ? 'light' : 'system'}</button>
           <SkinPick />
           <button className="ghost" onClick={() => setLayout('wizard')}>Switch to step-by-step layout</button>
         </div>

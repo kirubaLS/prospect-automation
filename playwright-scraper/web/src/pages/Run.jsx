@@ -33,7 +33,7 @@ export function RunHeader({ job, run }) {
 export default function Run({ job, refresh }) {
   const run = useRun(job, refresh);
   const [tab, setTab] = useState('people');
-  const [view, setView] = useStored('resultsView', 'grid');
+  const [view, setView] = useStored('resultsView', 'split');
   const { rows, loading, people, withUrl, unlabelled, companies, live, canEdit, working } = run;
   const a = job.activity;
 
