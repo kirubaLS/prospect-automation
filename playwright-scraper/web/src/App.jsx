@@ -18,7 +18,7 @@ export default function App() {
   // Three looks share one app: "workspace" (dark sidebar), "clean" (all light), "focus" (top nav, one column).
   const [skin, setSkin] = useStored('skin', (new URLSearchParams(location.search).get('skin')) || 'workspace');
   useEffect(() => { document.documentElement.dataset.skin = skin; }, [skin]);
-  const SkinPick = ({ cls }) => <div className={'skinpick ' + (cls || '')}>{['workspace', 'clean', 'focus'].map((k) => <button key={k} className={skin === k ? 'on' : ''} onClick={() => setSkin(k)} title={'Look: ' + k}>{k}</button>)}</div>;
+  const SkinPick = ({ cls }) => <div className={'skinpick ' + (cls || '')}>{['workspace', 'clean', 'focus', 'sheet', 'bold', 'warm'].map((k) => <button key={k} className={skin === k ? 'on' : ''} onClick={() => setSkin(k)} title={'Look: ' + k}>{k}</button>)}</div>;
 
   const refresh = useCallback(async () => { try { const j = await api.jobs(); setJobs(j.jobs); setBusyInfo(j.busy); } catch {} }, []);
   useEffect(() => { api.presets().then(setInfo).catch((e) => toast('Could not load projects: ' + e.message, 'err')); refresh(); }, []); // eslint-disable-line
