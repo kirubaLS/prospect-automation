@@ -101,7 +101,7 @@ export default function Composer({ presets, serverInfo, onStarted, startJob, run
             <div className="field"><label>People to keep per company</label><input className="input" type="number" min="1" max="25" value={form.count} onChange={(e) => set('count', e.target.value)} /><div className="hint">Final list: this many active people (HIGH + MEDIUM).</div></div>
             <div className="field"><label>People checked per round</label><input className="input" type="number" min="1" max="25" value={form.pool} disabled={!auto} onChange={(e) => set('pool', e.target.value)} /><div className="hint">Found and checked before keeping the best.</div></div>
           </div>
-          <div className="hint" style={{ opacity: auto ? 1 : 0.5 }}>Each round: find {pool} people per company in priority order → check their LinkedIn activity → keep the {keep} most active (HIGH first, then MEDIUM). Still short after 2 rounds? A Next round button appears.</div>
+          <div className="hint" style={{ opacity: auto ? 1 : 0.5 }}>One click: designations are widened per company{serverInfo && serverInfo.llm ? ' (AI)' : ''}, Apollo lists everyone who matches (priority 1 first, 0 credits) into a reserve, then {pool} at a time get a LinkedIn link and an activity check until {keep} active people (HIGH first, then MEDIUM) are kept. The rounds continue by themselves while the reserve lasts.</div>
           <DesignationPanel icp={form.icp} />
           <details style={{ marginTop: 12 }}>
             <summary>Advanced: region, designations text, LinkedIn link lookup</summary>

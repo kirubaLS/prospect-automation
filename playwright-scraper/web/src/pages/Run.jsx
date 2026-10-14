@@ -24,7 +24,7 @@ export function RunHeader({ job, run }) {
       <div className="bar"><i style={{ width: p.total ? Math.round((p.done / p.total) * 100) + '%' : 0 }} /></div>
       <div className="stats"><Stat n={p.total} label="Companies" /><Stat n={p.found} label="Found" /><Stat n={p.notFound} label="Not found" /><Stat n={p.noPeople} label="No people" /><Stat n={run ? run.people.length : p.prospects} label="People kept" />{a && <><Stat n={ap.high} label={legend[0][1]} /><Stat n={ap.medium} label={legend[1][1]} /><Stat n={ap.low} label={legend[2][1]} /></>}</div>
       <div className="hint">{line}{credits}</div>
-      {a && job.auto && job.auto.stage === 'done' && <div className="hint">Automation: {job.auto.filled} compan{job.auto.filled === 1 ? 'y' : 'ies'} filled, {job.auto.short} short{job.auto.short ? ' - press Next round on a company, or the button in the top bar for all' : ''}.</div>}
+      {a && job.auto && job.auto.stage === 'done' && <div className="hint">Automation: {job.auto.filled} compan{job.auto.filled === 1 ? 'y' : 'ies'} filled, {job.auto.short} short{job.auto.short ? ' - press Next round on a company, or the button in the top bar for all' : ''}{job.auto.reserve ? ` · ${job.auto.reserve} people still in reserve` : ''}{job.expansions ? ` · designations widened for ${job.expansions} compan${job.expansions === 1 ? 'y' : 'ies'}` : ''}.</div>}
       <Legend scheme={scheme} />
     </div>
   );

@@ -12,7 +12,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
-const { runJob, exportRows, parseGeography, parseIcp, findPeople, personKey, sortRowsByActivity } = require('./jobs');
+const { runJob, exportRows, parseGeography, parseIcp, findPeople, resolvePeople, personKey, sortRowsByActivity } = require('./jobs');
+const llm = require('./llm');
 const { providersFromEnv } = require('./websearch');
 const activity = require('./activity');
 
@@ -25,6 +26,8 @@ const MAX_QUEUED = 10;
 const MAX_PEOPLE_PER_COMPANY = 25;
 const SEARCH_PROVIDERS = providersFromEnv();
 const APIFY = activity.configFromEnv();
+const LLM = llm.configFromEnv(); // Groq designation expansion (optional)
+const AUTO_MAX_ROUNDS = 10; // pool mode keeps drawing batches until the reserve is empty or this many rounds
 let activityRunning = null; // job id whose activity check is running
 // Render's free tier spins a web service down after 15 idle minutes, which
 // would kill a job mid-run if the browser tab polling /jobs is closed. While
@@ -135,6 +138,30 @@ function applyActivityResult(job, row, a) {
   if (prog && a.label) { prog.total = (prog.total || 0) + 1; prog.done = (prog.done || 0) + 1; const k = String(a.label).toLowerCase(); if (k in prog) prog[k]++; }
 }
 
+const companyKey = (r) => `${r.company}|${r.companyWebsite}|${r.companyUrl}`;
+const poolLeft = (job, key) => ((job.pools && job.pools[key]) || []).length;
+
+// The next `n` people for a company. In pool mode the job already holds every
+// Apollo match for the company (all priorities, AI-expanded designations) in
+// job.pools[key]; the next batch is taken from there and only then resolved
+// (web search for the LinkedIn URL), so nothing is spent on people that are
+// never looked at. Without a pool (older jobs, non-auto runs) Apollo is
+// searched again with everyone seen so far excluded.
+async function nextCandidates(job, key, org, n, exclude) {
+  const ledger = job.progress.apollo || null;
+  const opts = { exclude, ...(ledger ? { ledger } : {}) };
+  if (job.pools && job.pools[key]) {
+    const pool = job.pools[key];
+    const batch = [];
+    while (pool.length && batch.length < n) { const p = pool.shift(); if (!exclude.has(personKey(p))) batch.push(p); }
+    if (!batch.length) return [];
+    const people = await resolvePeople(APOLLO_API_KEY, org, batch, job.params, opts);
+    logger.info(`Job ${job.id}: ${org.name}: ${people.length} taken from the reserve, ${pool.length} left`);
+    return people;
+  }
+  return findPeople(APOLLO_API_KEY, org, { ...job.params, peoplePerCompany: n }, opts);
+}
+
 // Remove job.rows[idx] (remembered so it never comes back) and, unless
 // replace is false, search that company once more for someone new. With
 // awaitActivity the newcomer's label is fetched before returning; otherwise
@@ -151,8 +178,7 @@ async function removeAndReplace(job, idx, { replace = true, awaitActivity = fals
   const exclude = new Set([...job.removed.filter((r) => r.company === row.company).map((r) => r.key), ...job.rows.filter((r) => same(r) && r.name).map(personKey)]);
   const org = { id: row.apolloOrgId || null, domain: row.apolloDomain || null, name: row.company, industry: row.industry || '', employees: row.employees ?? null };
   if (!org.id && !org.domain) return { row, replacement: null, message: 'removed; cannot search again for this company (no Apollo id or domain on the row)' };
-  const ledger = job.progress.apollo || null;
-  const people = await findPeople(APOLLO_API_KEY, org, { ...job.params, peoplePerCompany: 1 }, { exclude, ...(ledger ? { ledger } : {}) });
+  const people = await nextCandidates(job, companyKey(row), org, 1, exclude);
   const p = people[0] || null;
   if (!p) { logger.info(`Job ${job.id}: removed ${row.name} (${row.company}); no one left in Apollo`); return { row, replacement: null, message: `${row.name} removed; no one else in Apollo matches this company's geography/ICP` }; }
   const companyBits = Object.fromEntries(Object.entries(row).filter(([k]) => ['company', 'companyUrl', 'companyWebsite', 'companyStatus', 'apolloOrg', 'apolloOrgId', 'apolloDomain', 'industry', 'employees', 'hq'].includes(k)));
@@ -212,7 +238,6 @@ async function autoFill(job) {
 // the search moves on to the remaining priorities), label the newcomers, and
 // judge again. After `autoRounds` rounds a short company keeps its good people,
 // drops the rest, and waits for a human to press "Next round".
-const companyKey = (r) => `${r.company}|${r.companyWebsite}|${r.companyUrl}`;
 const foundRows = (job, key) => job.rows.filter((r) => companyKey(r) === key && r.companyStatus === 'Found' && r.name);
 const labelRank = (r) => (String(r.activity || '').toLowerCase() === 'high' ? 0 : 1);
 
@@ -232,8 +257,7 @@ async function fetchMore(job, key, n) {
   if (!org.id && !org.domain) return [];
   job.removed = job.removed || [];
   const exclude = new Set([...job.removed.filter((r) => r.company === ref.company).map((r) => r.key), ...foundRows(job, key).map(personKey)]);
-  const ledger = job.progress.apollo || null;
-  const people = await findPeople(APOLLO_API_KEY, org, { ...job.params, peoplePerCompany: n }, { exclude, ...(ledger ? { ledger } : {}) });
+  const people = await nextCandidates(job, key, org, n, exclude);
   if (!people.length) return [];
   const bits = Object.fromEntries(Object.entries(ref).filter(([k]) => ['company', 'companyUrl', 'companyWebsite', 'apolloOrg', 'apolloOrgId', 'apolloDomain', 'industry', 'employees', 'hq'].includes(k)));
   const last = job.rows.map((r, i) => (companyKey(r) === key ? i : -1)).filter((i) => i >= 0).pop();
@@ -293,7 +317,8 @@ async function autoStage(job, { fromRound, toRound, onlyKey = null }) {
     for (let round = fromRound; round <= toRound; round++) {
       if (job.stopRequested || job.activity.stopRequested) break;
       job.auto.round = round;
-      const pending = keys.filter((k) => !job.auto.companies[k] || job.auto.companies[k].state !== 'filled');
+      let pending = keys.filter((k) => !job.auto.companies[k] || job.auto.companies[k].state !== 'filled');
+      if (round > 1) pending = pending.filter((k) => !(job.auto.companies[k] && job.auto.companies[k].exhausted));
       if (!pending.length) break;
       if (round > 1) {
         job.auto.stage = `round ${round}: fetching ${job.params.candidatePool} more for ${pending.length} short compan${pending.length === 1 ? 'y' : 'ies'}`;
@@ -320,7 +345,8 @@ async function autoStage(job, { fromRound, toRound, onlyKey = null }) {
       dropRows(job, rows.filter((r) => !isGood(r)), 'LOW/Unknown after the automatic rounds');
       const left = foundRows(job, k);
       c.needsRound = c.rounds + 1;
-      const msg = c.exhausted ? `${c.good}/${job.params.finalTarget} HIGH/MEDIUM - Apollo has nobody else for this geography/ICP` : `${c.good}/${job.params.finalTarget} HIGH/MEDIUM after ${c.rounds} round${c.rounds === 1 ? '' : 's'} - press Next round for further priorities`;
+      if (job.pools && job.pools[k] && !poolLeft(job, k)) c.exhausted = true;
+      const msg = c.exhausted ? `${c.good}/${job.params.finalTarget} HIGH/MEDIUM - every Apollo match for this geography/ICP (all priorities) has been checked` : `${c.good}/${job.params.finalTarget} HIGH/MEDIUM after ${c.rounds} round${c.rounds === 1 ? '' : 's'} - ${poolLeft(job, k)} more in reserve; press Next round to check the next batch`;
       if (left.length) for (const r of left) { r.autoNote = msg; r.needsRound = c.exhausted ? 0 : c.needsRound; }
       else {
         const ref = job.rows.find((r) => companyKey(r) === k);
@@ -351,7 +377,8 @@ function publicJob(j) {
     project: j.project || null,
     ahead: queuePosition(j),
     activity: j.activity ? { status: j.activity.status, progress: j.activity.progress, error: j.activity.error || null, startedAt: j.activity.startedAt, finishedAt: j.activity.finishedAt } : null,
-    auto: j.auto ? { round: j.auto.round, stage: j.auto.stage, short: Object.values(j.auto.companies).filter((c) => c.state === 'short').length, filled: Object.values(j.auto.companies).filter((c) => c.state === 'filled').length } : null,
+    auto: j.auto ? { round: j.auto.round, stage: j.auto.stage, short: Object.values(j.auto.companies).filter((c) => c.state === 'short').length, filled: Object.values(j.auto.companies).filter((c) => c.state === 'filled').length, reserve: Object.values(j.pools || {}).reduce((a, p) => a + p.length, 0) } : null,
+    expansions: j.expansions && Object.keys(j.expansions).length ? Object.keys(j.expansions).length : 0,
     label: j.label,
     filename: j.filename,
     params: { geography: j.paramsText.geography, icp: j.paramsText.icp, peoplePerCompany: j.params.peoplePerCompany, locations: j.params.locations, icpKeywords: j.params.icpKeywords, industries: j.params.industries, priorities: j.params.priorities || null, resolve: j.params.resolve, activityCheck: !!j.params.activityCheck, activityScheme: j.params.activityScheme || 'standard', activityAutoFill: !!j.params.activityAutoFill, auto: !!j.params.auto, finalTarget: j.params.finalTarget || j.params.peoplePerCompany, candidatePool: j.params.candidatePool || null, autoRounds: j.params.autoRounds || null, searchExhausted: !!j.params.searchExhausted },
@@ -393,7 +420,9 @@ function startJob({ owner, fileBuffer, filename, project = null, geography, icp,
     label: label || filename,
     filename,
     paramsText: { geography, icp },
-    params: { locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, activityScheme: ['yard', 'sharp'].includes(activityScheme) ? activityScheme : 'standard', activityMaxItems: parseInt(activityMaxItems, 10) || null, activityAutoFill: !!activityAutoFill && !auto, auto: !!auto, finalTarget, candidatePool: pool, autoRounds: Math.max(1, parseInt(autoRounds, 10) || 2), searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
+    pools: {}, // company key -> Apollo matches not yet looked at (auto mode)
+    expansions: {}, // company key -> [{ priority, added: [...designations] }]
+    params: { llm: LLM, locations, industries, icpKeywords: keywords, priorities, peoplePerCompany: count, resolve, activityCheck: !!activityCheck, activityScheme: ['yard', 'sharp'].includes(activityScheme) ? activityScheme : 'standard', activityMaxItems: parseInt(activityMaxItems, 10) || null, activityAutoFill: !!activityAutoFill && !auto, auto: !!auto, finalTarget, candidatePool: pool, autoRounds: Math.max(1, parseInt(autoRounds, 10) || 2), searchProviders: SEARCH_PROVIDERS.map((p) => ({ ...p })) },
     status: 'queued',
     queuedAt: new Date().toISOString(),
     startedAt: null,
@@ -439,7 +468,12 @@ function pump() {
       job.progress = { ...s };
     },
     shouldStop: () => job.stopRequested,
-    rows: job.rows
+    rows: job.rows,
+    onPool: (company, org, pool, expansions) => {
+      const key = `${(org && org.name) || company['Company Name'] || ''}|${company.Website || ''}|${company['LinkedIn URL'] || ''}`;
+      job.pools[key] = pool;
+      if (expansions && expansions.length) job.expansions[key] = expansions;
+    }
   })
     .then(async ({ state }) => {
       job.progress = { ...state };
@@ -447,7 +481,9 @@ function pump() {
       if (state.fatal) job.error = state.fatal;
       if (job.params.auto && job.status === 'done' && APIFY.configured) {
         runningId = null; pump(); // let the next queued job start its people search while this one labels
-        await autoStage(job, { fromRound: 1, toRound: job.params.autoRounds });
+        // with a reserve the rounds continue by themselves until every short company is filled or its reserve is empty
+        const rounds = Object.keys(job.pools).length ? Math.max(job.params.autoRounds, AUTO_MAX_ROUNDS) : job.params.autoRounds;
+        await autoStage(job, { fromRound: 1, toRound: rounds });
       } else if (job.params.auto && job.status === 'done') {
         job.auto = { round: 0, stage: 'skipped: Apify tokens missing on the server', companies: {} };
       }
@@ -492,7 +528,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, searchProviders: SEARCH_PROVIDERS.map((p) => p.name), apify: APIFY.configured, presets: presets() });
+    if (url.pathname === '/presets') return send(200, { apolloKeySet: !!APOLLO_API_KEY, searchProviders: SEARCH_PROVIDERS.map((p) => p.name), apify: APIFY.configured, llm: LLM.configured ? LLM.model : null, presets: presets() });
 
     const owner = ownerOf(req, url);
     if (url.pathname === '/jobs' && req.method === 'GET') {
@@ -686,7 +722,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   logger.info(`Frontend: ${HAS_DIST ? 'built app from ' + DIST : 'single-file page (web/dist not built)'}`);
-  logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR}; web search: ${SEARCH_PROVIDERS.map((p) => p.name).join(', ') || 'none configured'}; Apify activity: ${APIFY.configured ? 'configured' : 'missing ' + APIFY.missing.join(', ')})`);
+  logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR}; web search: ${SEARCH_PROVIDERS.map((p) => p.name).join(', ') || 'none configured'}; Apify activity: ${APIFY.configured ? 'configured' : 'missing ' + APIFY.missing.join(', ')}; Groq designations: ${LLM.configured ? LLM.model : 'off (GROQ_API_KEY not set)'})`);
   if (!APOLLO_API_KEY) logger.warn('APOLLO_API_KEY is not set - runs will fail until it is');
 });
 

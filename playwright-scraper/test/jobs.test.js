@@ -235,6 +235,40 @@ const fetchImpl = async (url, init) => {
   assert.ok(k7.every((r) => r.name !== repl[0].name), 'replacement differs from all four kept people');
   assert.strictEqual(k7[0].apolloDomain, 'kosmoderma.com', 'rows carry the company domain so a replacement search needs no company lookup');
 
+  // pool mode (single-click automation): Groq widens each priority, Apollo
+  // lists everyone (all priorities), the job resolves only the first batch
+  // and hands the rest to onPool; the next batch comes from that reserve.
+  const groqSeen = [];
+  const poolFetch = async (url, init) => {
+    const u = new URL(url);
+    if (u.hostname === 'api.groq.com') {
+      const body = JSON.parse(init.body); groqSeen.push(body.messages[1].content);
+      const variants = /Head of Operations/.test(body.messages[1].content) ? ['Operations Head', 'IT Head'] : [];
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ variants }) } }] }), text: async () => '' };
+    }
+    if (u.pathname.endsWith('/mixed_people/api_search') && !u.searchParams.has('include_similar_titles')) return { ok: true, status: 200, json: async () => ({ total_entries: 0, people: [] }), text: async () => '' };
+    return prioFetch(url, init);
+  };
+  const pools = [];
+  const llmCfg = { apiKey: 'g', model: 'm', configured: true };
+  const rp = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...prio, searchProviders: [{ name: 'brave', key: 'brave-key' }], llm: llmCfg, auto: true, candidatePool: 2, peoplePerCompany: 1, resolve: 'none' }, fetchImpl: poolFetch, onPool: (company, org, pool, expansions) => pools.push({ org, pool, expansions }) });
+  const kp = rp.rows.filter((r) => r.companyStatus === 'Found');
+  assert.strictEqual(kp.length, 2, 'only the first batch of 2 is listed');
+  assert.strictEqual(pools.length, 1, 'one reserve per company with people');
+  assert.strictEqual(pools[0].pool.length, 3, 'the other 3 matches wait in reserve');
+  assert.deepStrictEqual(pools[0].expansions, [{ priority: 2, added: ['Operations Head'] }], 'AI variants recorded; an original title is not counted as added');
+  assert.ok(groqSeen.some((m) => /Head of Operations, IT Head/.test(m)), 'the priority group goes to Groq');
+  assert.ok(prioCalls.some((t) => t.includes('Operations Head')), 'Apollo searched the widened list');
+  assert.ok(/in reserve/.test(kp[0].poolNote) && /AI added 1/.test(kp[0].poolNote));
+  assert.ok(rp.state.pooled === 3);
+  const callsBefore = prioCalls.length;
+  const next = await jobs.resolvePeople('k', org7, pools[0].pool.splice(0, 2), { ...prio, resolve: 'none' }, { fetchImpl: poolFetch });
+  assert.strictEqual(next.length, 2, 'next batch comes from the reserve without another Apollo search');
+  assert.strictEqual(pools[0].pool.length, 1);
+  assert.ok(next.every((n) => !kp.some((r) => jobs.personKey(r) === jobs.personKey(n))), 'reserve people differ from the listed ones');
+  assert.strictEqual(prioCalls.length, callsBefore, 'no extra Apollo call when taking from the reserve');
+  console.log('PASS: candidate reserve with AI-widened designations');
+
   // resolve: 'none' -> preview only, no bulk_match, masked names kept as-is.
   const before = calls.enrich;
   const r2 = await jobs.runJob({ apiKey: 'k', fileBuffer: csv, filename: 'c.csv', params: { ...params, resolve: 'none', searchProviders: [{ name: 'brave', key: 'brave-key' }] }, fetchImpl: searchFetch });

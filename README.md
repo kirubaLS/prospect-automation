@@ -38,26 +38,34 @@ npm run build                                      # -> web/dist, served by the 
 
 ## Single-click automation (default for every project)
 
-With "Single click" ticked (the default), one Run does the whole job:
+With "Single click" ticked (the default), one Run does the whole job for
+every company, for every project:
 
-1. **Round 1** - People Search fetches a pool of 7 per company in priority
-   order (strict ICP, the project's geography), LinkedIn URLs by web search.
-2. **LinkedIn activity** for the pool, with the project's own scheme
+1. **Designations** - for each priority group the typed designations are
+   widened by a free Groq model (`GROQ_API_KEY`; without it the typed list
+   is used as is). "Head of IT" becomes "IT Head", "Head - Information
+   Technology", "GM IT", ... for that company. The originals always stay
+   and the app's own title rules (exclusions, strict ICP) still decide who
+   counts, so a wild variant can at most waste one free Apollo call.
+2. **Apollo reserve** - People Search (0 credits) fetches *everyone* who
+   matches, priority 1 first, then 2, 3, ... The whole list is kept on the
+   server for the job (the "reserve"); nothing is looked up yet.
+3. **Batch of 7** - the first 7 from the reserve get LinkedIn URLs (web
+   search) and the LinkedIn activity check with the project's scheme
    (standard for Reach24/Scikiq, sharp for Sharp, yard for Yard).
-3. **Keep the target** (4, or 3 for Sharp) HIGH/MEDIUM people, HIGH first;
-   the rest are dropped and remembered so they are never fetched again.
-4. **Round 2** for a short company: 7 more people (everyone seen so far is
-   excluded, so the search moves on to the remaining priorities), labelled,
-   judged again.
-5. After 2 rounds a company still short keeps its HIGH/MEDIUM people, loses
-   the LOW/Unknown ones, and shows **Next round** - a human presses it to
-   run round 3 (and 4, ...) over the further priorities. A company Apollo
-   has nobody else for says so instead. One header button runs the next
-   round for every short company at once.
+4. **Keep the target** (4, or 3 for Sharp) HIGH/MEDIUM people, HIGH first;
+   the rest are dropped and remembered so they never come back.
+5. **Short company?** The next 7 from the reserve go through step 3 and 4.
+   Because the reserve is in priority order this walks priority 1 to its
+   end, then priority 2, and so on, automatically (up to 10 batches). A
+   company whose reserve runs out says so; **Next round** appears only when
+   a company is still short with people left in reserve.
 
-`auto`, `candidatePool` (7) and `autoRounds` (2) in a project's config.json
-set this; the Replace/Delete controls and the manual activity check still
-work on the result.
+`auto`, `candidatePool` (7) and `autoRounds` in a project's config.json set
+this; "People checked per round" on the page overrides the 7. The
+Replace/Delete controls draw from the same reserve (Replace = next person
+in reserve, 0 credits), and the manual activity check still works on the
+result.
 
 ## Several people using the site at once
 
@@ -188,6 +196,11 @@ Free-tier behaviour you should know:
   label, and asks each actor for at most 2 items per person
   (`APIFY_MAX_ITEMS`, default 2), the newest two being enough to judge
   the 90-day window.
+- **Designation widening** (optional): `GROQ_API_KEY` from console.groq.com
+  (free tier) and `GROQ_MODEL` (default `llama-3.1-8b-instant`). One call per
+  priority group per company, cached for the process; a failed call just
+  means the typed designations are searched as is. Only job titles and the
+  company name go to Groq, never people.
 
 Per-project presets: `projects/<name>/config.json` (see `projects/sharp`
 , `projects/reach24`, `projects/scikiq` and `projects/yard`, whose `titlePriorities` hold each client's

@@ -6,6 +6,7 @@ const XLSX = require('xlsx');
 const logger = require('./logger');
 const apollo = require('./apollo');
 const websearch = require('./websearch');
+const llm = require('./llm');
 const { nameFromLinkedInUrl, parseCompaniesFile } = require('./files');
 
 // Friendly geography names -> Apollo person_locations values.
@@ -171,54 +172,51 @@ function sanitize(p, org, tier, icpHit) {
 // `opts.exclude` (iterable of person keys, see personKey) skips people already
 // listed or removed, so a replacement search returns someone new.
 function personKey(p) { return p.apolloId || p.profileUrl || `${p.name}|${p.title}`; }
-async function findPeople(apiKey, org, params, opts = {}) {
-  const want = params.peoplePerCompany;
+// ---- Candidate pool (Apollo only, 0 credits) ----
+// Every person matching any priority group, priority 1 first, seniority
+// ranked inside a group. With a Groq key each group's designations are first
+// expanded for this company (opts.llm). Returns the pool and what was added.
+async function searchCandidates(apiKey, org, params, opts = {}) {
   const seen = new Set(opts.exclude || []);
-  const perPage = Math.min(50, Math.max((want + seen.size) * 2, 10));
-  // api_search may omit the LinkedIn URL (preview plans), so dedupe on
-  // the Apollo id and let enrichment fill the URL in afterwards.
   const keyOf = personKey;
-  let out = [];
+  const limit = opts.limit || Infinity; // stop once this many are collected (findPeople uses the target)
+  const perPage = Math.min(50, Math.max(((Number.isFinite(limit) ? limit : 10) + seen.size) * 2, 10));
+  const out = [];
+  const expansions = []; // [{ priority, added }] - only groups the model widened
+  const expanded = {}; // priority -> full title list, reused on the "similar" pass
 
   if (params.priorities && params.priorities.length) {
-    const similar = [];
-    // Pass 1: exact titles only. Pass 2 (only if still short, still 0 credits):
-    // ask Apollo for similar titles too, so "Sr. Vice President - Operations"
-    // is found for "Vice President Operations"; our own title check still
-    // decides what counts as exact.
     for (const includeSimilar of [false, true]) {
-      if (out.length >= want) break;
-      if (includeSimilar) logger.info(`    short (${out.length}/${want}) after exact titles - widening to similar titles`);
-      for (let i = 0; i < params.priorities.length && out.length < want; i++) {
-        const group = params.priorities[i];
+      if (out.length >= limit) break;
+      if (includeSimilar && Number.isFinite(limit)) logger.info(`    short (${out.length}/${limit}) after exact titles - widening to similar titles`);
+      for (let i = 0; i < params.priorities.length && out.length < limit; i++) {
+        let group = params.priorities[i];
         const tier = { label: `Priority ${i + 1}`, priority: i + 1 };
+        if (!includeSimilar && opts.llm && opts.llm.configured) {
+          const ex = await llm.expandTitles({ company: org.name, industry: org.industry, titles: group, priority: i + 1 }, opts.llm, { fetchImpl: opts.fetchImpl, counter: opts.ledger });
+          if (ex.added.length) { expansions.push({ priority: i + 1, added: ex.added }); logger.info(`    ${tier.label}: AI added ${ex.added.length} designation variants (${ex.added.slice(0, 5).join(', ')}${ex.added.length > 5 ? ', ...' : ''})`); }
+          group = ex.titles;
+          expanded[i + 1] = group;
+        } else if (expanded[i + 1]) group = expanded[i + 1];
         const { people, total } = await apollo.searchPeople(apiKey, org, { titles: group, locations: params.locations, perPage, includeSimilar }, opts);
         logger.info(`    ${tier.label}${includeSimilar ? ' (similar)' : ''}: ${people.length} returned (${total} in Apollo)`);
         const fresh = people.filter((p) => p.name && !seen.has(keyOf(p)));
         const exact = fresh.filter((p) => titleMatches(p.title, group) && !excludedTitle(p.title, group)).sort((a, b) => (SENIORITY_RANK[a.seniority] ?? 9) - (SENIORITY_RANK[b.seniority] ?? 9));
-        const rest = fresh.filter((p) => !titleMatches(p.title, group) && !excludedTitle(p.title));
         for (const p of exact) {
-          if (out.length >= want) break;
+          if (out.length >= limit) break;
           seen.add(keyOf(p));
           out.push({ ...sanitize(p, org, tier, true), match: tier.label });
         }
-        for (const p of rest) if (!seen.has(keyOf(p))) { seen.add(keyOf(p)); similar.push({ p, tier }); }
+        for (const p of fresh) if (!seen.has(keyOf(p)) && !titleMatches(p.title, group)) seen.add(keyOf(p)); // unlisted titles are never used
       }
     }
-    // People Apollo returned whose title matches none of the listed groups are
-    // never used: a company comes back short rather than padded with
-    // unrelated roles.
-    if (similar.length) logger.info(`    ${similar.length} people with unlisted titles ignored`);
   } else {
     const titles = expandKeywords(params.icpKeywords);
-    // With an ICP given, only titles that contain one of its words are used
-    // ("Finance" -> CFO, Finance Head, Financial Controller ... never HR or
-    // operations). The any-title fallback exists only for an empty ICP.
     const tiers = titles.length
       ? [{ label: 'Decision makers · ICP titles', seniorities: DECISION_MAKERS, titles }, { label: 'Managers · ICP titles', seniorities: MANAGERS, titles }]
       : [{ label: 'Decision makers · any title', seniorities: DECISION_MAKERS, titles: [], fallback: true }];
     for (const tier of tiers) {
-      if (out.length >= want) break;
+      if (out.length >= limit) break;
       const { people, total } = await apollo.searchPeople(apiKey, org, { seniorities: tier.seniorities, titles: tier.titles, locations: params.locations, perPage }, opts);
       logger.info(`    ${tier.label}: ${people.length} returned (${total} in Apollo)`);
       const ranked = people
@@ -227,12 +225,17 @@ async function findPeople(apiKey, org, params, opts = {}) {
         .filter(({ icp }) => icp || !titles.length)
         .sort((a, b) => Number(b.icp) - Number(a.icp) || (SENIORITY_RANK[a.p.seniority] ?? 9) - (SENIORITY_RANK[b.p.seniority] ?? 9));
       for (const { p, icp } of ranked) {
-        if (out.length >= want) break;
+        if (out.length >= limit) break;
         seen.add(keyOf(p));
         out.push(sanitize(p, org, tier, icp));
       }
     }
   }
+  return { pool: out, expansions };
+}
+
+// ---- Resolution (LinkedIn URL / full name) for a batch of people ----
+async function resolvePeople(apiKey, org, out, params, opts = {}) {
   // Only the people being kept are resolved, and only those whose preview
   // lacked a LinkedIn URL or full name:
   //   search  - web search API (Brave / Google), free, verified against the
@@ -294,6 +297,13 @@ async function findPeople(apiKey, org, params, opts = {}) {
   return out;
 }
 
+// Search up to the target and resolve them: the one-shot path used by
+// non-automatic runs, Replace, and tests.
+async function findPeople(apiKey, org, params, opts = {}) {
+  const { pool } = await searchCandidates(apiKey, org, params, { ...opts, limit: params.peoplePerCompany });
+  return resolvePeople(apiKey, org, pool, params, opts);
+}
+
 // "Healthcare" should match Apollo's "hospital & health care", "Retail" its
 // "retail" / "consumer goods & retail": compare letters only, both ways.
 function industryMatches(apolloIndustry, wanted) {
@@ -323,7 +333,7 @@ function companyRow(company, status, note, org) {
 
 // Runs the whole job. `onProgress(state)` is called after each company so
 // a UI can show live counts; `shouldStop()` lets a run end early.
-async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () => {}, shouldStop = () => false, fetchImpl, rows = [] }) {
+async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () => {}, shouldStop = () => false, fetchImpl, rows = [], onPool = null }) {
   if (!apiKey) throw new Error('APOLLO_API_KEY is not set on the server');
   const companies = parseCompaniesFile(fileBuffer, filename);
   // Every Apollo call is counted here so the job can show where credits went.
@@ -386,14 +396,27 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
           params.industries.length && org.industry && !industryMatches(org.industry, params.industries)
             ? `Industry "${org.industry}" not in ICP list`
             : '';
-        const people = await findPeople(apiKey, org, params, opts);
+        let people, poolNote = '';
+        if (params.auto && params.candidatePool) {
+          // Whole pool once (0 credits), then only the first batch goes through URL lookup now;
+          // later batches are drawn from the pool by the automation rounds.
+          const { pool, expansions } = await searchCandidates(apiKey, org, params, { ...opts, llm: params.llm || null });
+          const batch = pool.splice(0, params.candidatePool);
+          people = await resolvePeople(apiKey, org, batch, params, opts);
+          if (typeof onPool === 'function' && (batch.length || pool.length)) onPool(company, org, pool, expansions);
+          poolNote = pool.length ? `${pool.length} more candidate${pool.length === 1 ? '' : 's'} in reserve` : '';
+          if (expansions.length) poolNote = [poolNote, `AI added ${expansions.reduce((a, e) => a + e.added.length, 0)} designation variants`].filter(Boolean).join(' · ');
+          state.pooled = (state.pooled || 0) + pool.length;
+        } else {
+          people = await findPeople(apiKey, org, params, opts);
+        }
         // By domain the company's own name comes back on each person.
         if (!org.id && people.length && people[0].apolloOrgName && !company['Company Name']) org.name = people[0].apolloOrgName;
         if (!people.length) {
           rows.push({ ...companyRow(company, org.id ? 'No people found' : 'Company not found', [industryNote, org.id ? 'no one matched geography/ICP in Apollo' : `Apollo has no people for ${org.domain} matching the geography/ICP (or no such company)`].filter(Boolean).join('; '), org), name: org.id ? 'No people found' : 'Company not found' });
           if (org.id) state.noPeople++; else state.notFound++;
         } else {
-          people.forEach((p, i) => rows.push({ ...companyRow(company, 'Found', industryNote, org), ...p, note: [p.note, industryNote].filter(Boolean).join('; '), rank: i + 1 }));
+          people.forEach((p, i) => rows.push({ ...companyRow(company, 'Found', industryNote, org), ...p, note: [p.note, industryNote].filter(Boolean).join('; '), rank: i + 1, ...(i === 0 && poolNote ? { poolNote } : {}) }));
           state.found++;
           state.prospects += people.length;
           logger.info(`[${name}] ${people.length} people: ${people.map((p) => `${p.name} (${p.title})`).join('; ')}`);
@@ -487,4 +510,4 @@ function exportRows(rows, format) {
   return { buffer: Buffer.from(toCsv(rows), 'utf8'), contentType: 'text/csv; charset=utf-8', extension: 'csv' };
 }
 
-module.exports = { runJob, personKey, companyRow, sortRowsByActivity, toTsv, titleMatches, excludedTitle, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };
+module.exports = { runJob, searchCandidates, resolvePeople, personKey, companyRow, sortRowsByActivity, toTsv, titleMatches, excludedTitle, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };

@@ -41,6 +41,11 @@ services:
         sync: false
       - key: APIFY_PROFILE_TOKEN
         sync: false
+      # Free Groq model that widens each priority's designations per company (optional).
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.1-8b-instant
       - key: NODE_OPTIONS
         value: "--max-old-space-size=400"
       - key: PROJECTS_DIR
