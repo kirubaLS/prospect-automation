@@ -460,15 +460,31 @@ function pump() {
 }
 
 const PAGE = fs.readFileSync(path.join(__dirname, 'app.html'), 'utf8');
+// The built React app (web/dist) is served at / when present; the single-file
+// page stays at /legacy as a fallback. Hashed assets get long cache headers.
+const DIST = process.env.WEB_DIST || path.resolve(__dirname, '..', 'web', 'dist');
+const HAS_DIST = fs.existsSync(path.join(DIST, 'index.html'));
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2', '.map': 'application/json' };
+function serveStatic(res, rel) {
+  const file = path.join(DIST, path.normalize(rel).replace(/^(\.\.[\/\\])+/, ''));
+  if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return false;
+  const ext = path.extname(file).toLowerCase();
+  res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
+  fs.createReadStream(file).pipe(res);
+  return true;
+}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const send = (s, b) => sendJson(res, s, b);
 
   if (url.pathname === '/healthz') return send(200, { ok: true, uptimeMin: Math.round((Date.now() - processStartedAt) / 60000) });
-  if (url.pathname === '/') {
+  if (url.pathname === '/legacy' || (url.pathname === '/' && !HAS_DIST)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end(PAGE);
+  }
+  if (HAS_DIST && req.method === 'GET' && (url.pathname === '/' || url.pathname.startsWith('/assets/'))) {
+    if (serveStatic(res, url.pathname === '/' ? '/index.html' : url.pathname)) return;
   }
 
   try {
@@ -665,6 +681,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
+  logger.info(`Frontend: ${HAS_DIST ? 'built app from ' + DIST : 'single-file page (web/dist not built)'}`);
   logger.info(`Prospecting app on :${PORT} (${presets().length} presets from ${PROJECTS_DIR}; web search: ${SEARCH_PROVIDERS.map((p) => p.name).join(', ') || 'none configured'}; Apify activity: ${APIFY.configured ? 'configured' : 'missing ' + APIFY.missing.join(', ')})`);
   if (!APOLLO_API_KEY) logger.warn('APOLLO_API_KEY is not set - runs will fail until it is');
 });

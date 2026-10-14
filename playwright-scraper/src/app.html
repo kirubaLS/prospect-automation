@@ -3,275 +3,314 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Prospecting</title>
+<title>Prospect Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:,">
 <style>
   :root {
-    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f0f2f5; --ink: #16181d; --ink-2: #5b6270; --line: #e2e5ea;
-    --accent: #0a66c2; --accent-ink: #ffffff; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --info: #0550ae;
-    --radius: 12px; --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1);
+    --bg: #f7f7f8; --surface: #ffffff; --surface-2: #f3f4f6; --ink: #111318; --ink-2: #6b7280; --line: #e5e7eb;
+    --accent: #4f46e5; --accent-ink: #ffffff; --ok: #15803d; --warn: #b45309; --bad: #dc2626; --info: #2563eb;
+    --side: #0f1115; --side-ink: #d1d5db; --side-ink-2: #9ca3af; --side-line: #1f2937; --side-active: #1f2937;
+    --radius: 10px; --shadow: 0 1px 2px rgba(16,24,40,.05);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #0f1216; --surface: #171b21; --surface-2: #1f242c; --ink: #e8eaee; --ink-2: #9aa3b2; --line: #2a313b;
-      --accent: #4c9be8; --accent-ink: #0b1220; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --info: #58a6ff;
-      --shadow: 0 1px 2px rgba(0,0,0,.4);
+      --bg: #0b0d12; --surface: #13161d; --surface-2: #1a1e27; --ink: #e5e7eb; --ink-2: #9ca3af; --line: #262b36;
+      --accent: #818cf8; --accent-ink: #0b0d12; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --info: #60a5fa;
+      --side: #0b0d12; --side-line: #1f2430; --side-active: #1a1e27; --shadow: 0 1px 2px rgba(0,0,0,.5);
     }
   }
   :root[data-theme="dark"] {
-    --bg: #0f1216; --surface: #171b21; --surface-2: #1f242c; --ink: #e8eaee; --ink-2: #9aa3b2; --line: #2a313b;
-    --accent: #4c9be8; --accent-ink: #0b1220; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --info: #58a6ff;
-    --shadow: 0 1px 2px rgba(0,0,0,.4);
+    --bg: #0b0d12; --surface: #13161d; --surface-2: #1a1e27; --ink: #e5e7eb; --ink-2: #9ca3af; --line: #262b36;
+    --accent: #818cf8; --accent-ink: #0b0d12; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --info: #60a5fa;
+    --side: #0b0d12; --side-line: #1f2430; --side-active: #1a1e27; --shadow: 0 1px 2px rgba(0,0,0,.5);
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   a { color: var(--accent); }
-  header { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
-  header .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
-  .brand { font-weight: 700; letter-spacing: .2px; }
-  .brand small { font-weight: 400; color: var(--ink-2); margin-left: 8px; }
-  main.wrap { padding: 20px 16px 64px; display: grid; gap: 16px; grid-template-columns: 1fr; }
-  @media (min-width: 900px) { main.wrap { grid-template-columns: 380px 1fr; align-items: start; } .span2 { grid-column: 1 / -1; } }
+  .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  .side { background: var(--side); color: var(--side-ink); border-right: 1px solid var(--side-line); padding: 14px 12px; display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+  .brand { font-weight: 700; font-size: 15px; padding: 4px 6px 8px; color: #fff; letter-spacing: .2px; }
+  .brand::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--accent); margin-right: 9px; vertical-align: 1px; }
+  .side-h { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--side-ink-2); padding: 6px 6px 0; }
+  .navlist { display: flex; flex-direction: column; gap: 2px; }
+  .navitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; border-radius: 8px; color: var(--side-ink); cursor: pointer; font-size: 13px; border: 0; background: none; text-align: left; font: inherit; width: 100%; }
+  .navitem:hover { background: var(--side-active); color: #fff; }
+  .navitem.active { background: var(--side-active); color: #fff; font-weight: 600; }
+  .navitem small { color: var(--side-ink-2); font-size: 11px; }
+  .runs { flex: 1; min-height: 80px; }
+  .jobs { width: 100%; border-collapse: collapse; }
+  .jobs td { padding: 7px 8px; border-radius: 8px; font-size: 12.5px; color: var(--side-ink); vertical-align: top; }
+  .jobs tr:hover td { background: var(--side-active); }
+  .jobs .pill { background: var(--side-active); color: var(--side-ink-2); }
+  .jobs .pill.done { color: var(--ok); } .jobs .pill.running, .jobs .pill.automating { color: var(--info); } .jobs .pill.queued { color: var(--warn); } .jobs .pill.failed, .jobs .pill.stopped { color: var(--bad); }
+  .jobs a { color: var(--side-ink-2); margin-right: 8px; font-size: 12px; }
+  .jobs .empty { color: var(--side-ink-2); padding: 14px 8px; }
+  .jobs .muted { color: var(--side-ink-2); }
+  .side-foot { border-top: 1px solid var(--side-line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .side .hint { color: var(--side-ink-2); }
+  .toggle { background: none; border: 1px solid var(--side-line); border-radius: 8px; color: var(--side-ink-2); padding: 5px 9px; cursor: pointer; font-size: 12px; }
+  .mainwrap { min-width: 0; display: flex; flex-direction: column; }
+  .topbar { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .tb-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .tb-name { font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw; }
+  .tb-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .content { padding: 20px; display: grid; gap: 16px; }
+  .howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+  .howto div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; grid-template-columns: 26px 1fr; grid-template-rows: auto auto; column-gap: 10px; }
+  .howto b { grid-row: 1 / 3; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 12px; }
+  .howto span { font-weight: 600; font-size: 13.5px; }
+  .howto small { color: var(--ink-2); font-size: 12px; }
+  .composer-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 1000px) { .composer-grid { grid-template-columns: 420px 1fr; align-items: start; } }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; }
-  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
-  .step { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 700; }
-  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 5px; }
+  .card h2 { font-size: 15px; margin: 0 0 10px; }
+  label { display: block; font-size: 12.5px; font-weight: 600; margin: 12px 0 5px; }
   label small { font-weight: 400; color: var(--ink-2); }
-  input[type=text], input[type=number], input[type=password], select, textarea {
-    width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit;
-  }
-  input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); border-color: var(--accent); }
+  input[type=text], input[type=number], select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); border-color: var(--accent); }
   textarea { min-height: 64px; resize: vertical; }
-  .hint { color: var(--ink-2); font-size: 12.5px; margin-top: 4px; }
+  .hint { color: var(--ink-2); font-size: 12.5px; margin-top: 4px; line-height: 1.4; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); cursor: pointer; }
   .chip:hover { border-color: var(--accent); }
-  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 9px; border: 1px solid transparent; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
-  .btn.secondary { background: var(--surface-2); color: var(--ink); border-color: var(--line); }
-  #results h2, #setup h2 { display: flex; align-items: center; gap: 8px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 8px; border: 1px solid transparent; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .btn.secondary { background: var(--surface); color: var(--ink); border-color: var(--line); }
   .btn.danger { background: transparent; color: var(--bad); border-color: var(--line); }
-  .btn.sm { padding: 6px 10px; font-size: 13px; }
+  .btn.sm { padding: 6px 10px; font-size: 12.5px; }
+  .btn.big { padding: 12px 22px; font-size: 15px; }
+  .btn.full { width: 100%; justify-content: center; }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
-  .drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 22px; text-align: center; color: var(--ink-2); cursor: pointer; transition: .15s; background: var(--surface-2); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .panel { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); }
+  .panel-h { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .pgroup { margin-top: 8px; }
+  .pgroup .pn { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); margin-right: 6px; vertical-align: 1px; }
+  .pgroup .more { display: none; }
+  .morebtn { font: inherit; font-size: 12px; color: var(--accent); background: none; border: 0; cursor: pointer; padding: 2px 6px; }
+  .pgroup .t { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); margin: 2px 3px 2px 0; color: var(--ink); }
+  .pr { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); margin-left: 6px; vertical-align: 1px; }
+  .check { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-weight: 500; font-size: 13px; }
+  .check input { margin-top: 3px; }
+  .check small { color: var(--ink-2); font-weight: 400; }
+  .drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 18px; text-align: center; color: var(--ink-2); cursor: pointer; background: var(--surface-2); }
   .drop.over { border-color: var(--accent); color: var(--ink); }
   .drop b { color: var(--ink); }
   .preview { margin-top: 10px; font-size: 13px; }
   .preview table { width: 100%; border-collapse: collapse; }
   .preview th, .preview td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin: 10px 0; }
-  .stat { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
-  .stat b { display: block; font-size: 22px; line-height: 1.1; }
-  .stat span { font-size: 12px; color: var(--ink-2); }
-  .bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+  .results { padding: 0; overflow: hidden; }
+  .res-head { padding: 12px 16px 6px; border-bottom: 1px solid var(--line); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; margin: 8px 0; }
+  .stat { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+  .stat b { display: block; font-size: 20px; line-height: 1.1; }
+  .stat span { font-size: 11.5px; color: var(--ink-2); }
+  .bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
-  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--ink-2); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 4px; font-size: 12px; color: var(--ink-2); }
+  .legend .lbl { margin-right: 4px; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .tabs { display: flex; gap: 2px; }
+  .tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 12px; font: inherit; font-weight: 600; color: var(--ink-2); cursor: pointer; margin-bottom: -1px; font-size: 13px; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
+  .pill.queued { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .pill.automating, .pill.running { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+  .pill.done { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .pill.failed, .pill.stopped { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tbl th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); white-space: nowrap; }
+  .tbl td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tbl tr.co td { background: var(--surface-2); font-weight: 600; }
+  .tbl .s-found { color: var(--ok); } .tbl .s-nf { color: var(--bad); } .tbl .s-np { color: var(--warn); }
+  .tally { font-weight: 400; color: var(--ink-2); font-size: 12px; margin-left: 6px; }
+  .scroll { max-height: 70vh; overflow: auto; }
   .del { border: 1px solid var(--line); background: var(--surface); color: var(--bad); cursor: pointer; font-size: 12px; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
   .del:hover { background: color-mix(in srgb, var(--bad) 12%, transparent); border-color: var(--bad); }
   .del:disabled { opacity: .5; cursor: default; }
   .del.rep { color: var(--accent); }
   .acts { display: inline-flex; gap: 4px; align-items: center; }
   .pick { width: 15px; height: 15px; margin: 0 2px; cursor: pointer; }
-  .pill.queued { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
-  .pill.automating { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
-  .pill.running { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
-  .pill.done { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
-  .pill.failed, .pill.stopped { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
-  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .tbl th { position: sticky; top: 0; background: var(--surface); text-align: left; padding: 8px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--ink-2); }
-  .tbl td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .tbl tr.co td { background: var(--surface-2); font-weight: 600; }
-  .tbl .s-found { color: var(--ok); } .tbl .s-nf { color: var(--bad); } .tbl .s-np { color: var(--warn); }
-  .scroll { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
-  .msg { margin-top: 10px; font-size: 13.5px; min-height: 1.4em; }
+  .msg { margin-top: 10px; font-size: 13px; min-height: 1.4em; }
   .msg.err { color: var(--bad); } .msg.ok { color: var(--ok); }
   .muted { color: var(--ink-2); }
-  .toggle { background: none; border: 1px solid var(--line); border-radius: 8px; color: var(--ink-2); padding: 5px 9px; cursor: pointer; font-size: 13px; }
   details summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
-  .jobs td a { margin-right: 8px; }
   .empty { padding: 28px; text-align: center; color: var(--ink-2); }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  header { background: linear-gradient(90deg, var(--surface), color-mix(in srgb, var(--accent) 8%, var(--surface))); }
-  .brand::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--accent); margin-right: 9px; vertical-align: 1px; }
-  .card h2 { font-size: 16px; }
-  label { margin-top: 14px; }
-  .hint { line-height: 1.4; }
-  .sum { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
-  .sum span { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
-  .sum span b { color: var(--ink); font-weight: 600; }
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
-  .tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; font: inherit; font-weight: 600; color: var(--ink-2); cursor: pointer; margin-bottom: -1px; }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
   .lbl { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
   .lbl.HIGH { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
   .lbl.MEDIUM { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
   .lbl.LOW { background: var(--surface-2); color: var(--ink-2); }
   .lbl.UNKNOWN { background: var(--surface-2); color: var(--ink-2); border: 1px dashed var(--line); }
-  .howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
-  .howto div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; grid-template-columns: 28px 1fr; grid-template-rows: auto auto; column-gap: 10px; }
-  .howto b { grid-row: 1 / 3; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 13px; }
-  .howto span { font-weight: 600; font-size: 14px; }
-  .howto small { color: var(--ink-2); font-size: 12.5px; }
-  .panel { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); }
-  .panel-h { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-  .pgroup { margin-top: 8px; }
-  .pgroup .pn { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); margin-right: 6px; vertical-align: 1px; }
-  .pgroup .more { display: none; padding: 0; border: 0; background: none; }
-  .morebtn { font: inherit; font-size: 12px; color: var(--accent); background: none; border: 0; cursor: pointer; padding: 2px 6px; }
-  .pgroup .t { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); margin: 2px 3px 2px 0; color: var(--ink); }
-  .pr { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); margin-left: 6px; vertical-align: 1px; }
-  .btn.big { padding: 12px 22px; font-size: 16px; }
-  .check { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-weight: 500; font-size: 13.5px; }
-  .check input { margin-top: 3px; }
-  .check small { color: var(--ink-2); font-weight: 400; }
-  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 12.5px; color: var(--ink-2); }
-  .legend .lbl { margin-right: 4px; }
-  .tally { font-weight: 400; color: var(--ink-2); font-size: 12px; margin-left: 6px; }
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; }
+    .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .side .side-h, .side .runs, .side .side-foot .hint { display: none; }
+    .side .navlist { flex-direction: row; flex-wrap: wrap; }
+    .side .btn.full { width: auto; }
+    .side-foot { border: 0; padding: 0; flex-direction: row; }
+    .content { padding: 12px; }
+    .grid2 { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-<header><div class="wrap">
-  <div class="brand">Prospect Finder <small>paste companies, get the right people with LinkedIn links</small></div>
-  <div class="row" style="margin:0"><span id="keywarn" class="pill" style="display:none">Apollo key missing on the server</span><button class="toggle" id="theme" title="Switch light / dark">◐</button></div>
-</div></header>
-
-<main class="wrap">
-  <section class="howto span2">
-    <div><b>1</b><span>Choose the client project</span><small>Its designations, region and rules are already saved.</small></div>
-    <div><b>2</b><span>Paste the companies</span><small>One per line: website, LinkedIn company page, or name.</small></div>
-    <div><b>3</b><span>Press Find prospects</span><small>We find the people, check their LinkedIn activity and keep the most active ones.</small></div>
-    <div><b>4</b><span>Copy to your sheet</span><small>Copy for spreadsheet or download Excel.</small></div>
-  </section>
-
-  <section class="card" id="setup">
-    <h2><span class="step">1</span> Client project</h2>
-
-    <label>Project</label>
-    <div class="row" style="margin-top:0">
-      <select id="preset" style="flex:1"><option value="">— choose a client —</option></select>
-      <button class="btn secondary sm" onclick="resetPreset()" title="Put this project's saved settings back">Reset</button>
-      <button class="btn secondary sm" onclick="savePreset()" title="Save the current settings in this browser">Save</button>
-    </div>
-    <div class="hint" id="presethint"></div>
-
-    <label>Batch name <small>optional, to find this run later</small></label>
-    <input type="text" id="label" placeholder="e.g. Sharp – batch 3">
-
-    <div class="grid2">
-      <div>
-        <label>People to keep per company</label>
-        <input type="number" id="count" value="4" min="1" max="25">
-        <div class="hint">The final list: this many active people (HIGH + MEDIUM) per company.</div>
-      </div>
-      <div>
-        <label>People checked per round</label>
-        <input type="number" id="pool" value="7" min="1" max="25">
-        <div class="hint">How many we find and check before keeping the best. More = better odds, more LinkedIn checks.</div>
-      </div>
-    </div>
-    <div class="hint" id="poolhint"></div>
-
-    <div class="panel">
-      <div class="panel-h">Designations searched, in this order <span class="hint" id="icpsum" style="margin:0"></span></div>
-      <div id="icppanel" class="hint">Choose a project to see its designations.</div>
-    </div>
-
-    <details style="margin-top:12px"><summary>Advanced: region, designations text, LinkedIn link lookup</summary>
-      <label>Region of the person</label>
-      <textarea id="geography" placeholder="South India" style="min-height:44px"></textarea>
-      <div class="chips" id="geochips"></div>
-      <div class="hint">Empty = anywhere.</div>
-
-      <label>Designations <small>industries; Priority 1 titles &gt; Priority 2 &gt; Priority 3</small></label>
-      <textarea id="icp" placeholder="Healthcare; CIO, COO > Head of IT > IT Manager" style="min-height:64px"></textarea>
-      <div class="hint">Separate titles with commas and priority groups with <code>&gt;</code>. Priority 1 is searched first.</div>
-
-      <label>LinkedIn link lookup</label>
-      <select id="resolve">
-        <option value="search">Free (recommended) · 0 Apollo credits</option>
-        <option value="none">Names and designations only · no LinkedIn link</option>
-        <option value="apollo+search">Apollo enrichment, then free lookup · 1 credit per person</option>
-        <option value="apollo">Apollo enrichment only · 1 credit per person</option>
-      </select>
-      <div class="hint" id="resolvehint"></div>
-      <div class="hint" id="searchinfo"></div>
-    </details>
-  </section>
-
-  <div style="display:grid; gap:16px">
-    <section class="card" id="companies">
-      <h2><span class="step">2</span> Companies</h2>
-      <textarea id="typed" placeholder="Paste the companies here, one per line:&#10;sharp.com&#10;https://www.linkedin.com/company/acme/&#10;Acme Pvt Ltd" style="min-height:180px;font-size:14px"></textarea>
-      <div class="hint" id="typedhint">A website per line works best. A name or LinkedIn page is fine too: we find the website for free.</div>
-      <details id="uploadbox" style="margin-top:8px"><summary>or upload a CSV / Excel file instead</summary>
-        <div class="drop" id="drop" style="margin-top:6px">
-          <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none">
-          <div><b>Drop the CSV / Excel here</b> or click to choose</div>
-          <div class="hint">Columns: <b>Website</b> (best), or <b>LinkedIn URL</b> / <b>Company Name</b>. <a id="tpl" href="#" download="companies-template.csv">Template</a></div>
-        </div>
-      </details>
-      <div class="preview" id="preview"></div>
-      <div class="row">
-        <button class="btn big" id="runbtn" onclick="startJob()">▶ Find prospects</button>
-        <button class="btn danger" id="stopbtn" onclick="stopJob()" disabled>Cancel job</button>
-      </div>
-      <label class="check"><input type="checkbox" id="auto" checked> <span>Automatic: check LinkedIn activity and keep only the active people <small id="autohint">(7 checked → 4 kept, up to 2 rounds)</small></span></label>
-      <div class="msg" id="msg"></div>
+<div class="app">
+  <aside class="side">
+    <div class="brand">Prospect Finder</div>
+    <button class="btn full" onclick="newRun()">+ New run</button>
+    <div class="side-h">Projects</div>
+    <nav id="projnav" class="navlist"><div class="hint">Loading…</div></nav>
+    <div class="side-h">Runs <small class="hint" style="font-weight:400">this browser</small></div>
+    <div class="runs"><table class="jobs"><tbody id="jobs"></tbody></table></div>
+    <div class="side-foot">
+      <span id="keywarn" class="pill" style="display:none">Apollo key missing</span>
       <div class="hint" id="serverstate"></div>
-    </section>
+      <button class="toggle" id="theme" title="Switch light / dark">◐ Theme</button>
+    </div>
+  </aside>
 
-    <section class="card" id="results">
-      <h2><span class="step">3</span> Results <span id="jobpill" class="pill">no run yet</span> <button class="btn sm" id="nextall" onclick="nextRound()" style="display:none;margin-left:auto"></button><button class="btn danger sm" id="cancelbtn" onclick="stopJob()" style="display:none;margin-left:auto">✕ Cancel job</button></h2>
-      <div id="jobname" class="hint"></div>
-      <div class="bar" style="margin:8px 0"><i id="barfill"></i></div>
-      <div class="stats" id="stats"></div>
-      <div id="current" class="hint"></div>
-      <div class="row">
-        <button class="btn" onclick="copyTsv(this)" id="copybtn">⎘ Copy for spreadsheet</button>
-        <a class="btn secondary" id="dlx" href="#" style="display:none">⬇ Excel</a>
-        <a class="btn secondary" id="dl" href="#" style="display:none">⬇ CSV</a>
-        <span class="hint">Copy or download when the run finishes. Results are kept only while the server is up.</span>
+  <div class="mainwrap">
+    <div class="topbar">
+      <div class="tb-title"><span id="jobpill" class="pill">no run yet</span><div id="jobname" class="tb-name"></div></div>
+      <div class="tb-actions">
+        <button class="btn secondary sm" id="setupbtn" onclick="toggleComposer()" style="display:none">⚙ Setup</button>
+        <button class="btn sm" id="nextall" onclick="nextRound()" style="display:none"></button>
+        <button class="btn danger sm" id="cancelbtn" onclick="stopJob()" style="display:none">✕ Cancel job</button>
+        <button class="btn sm" onclick="copyTsv(this)" id="copybtn">⎘ Copy for spreadsheet</button>
+        <a class="btn secondary sm" id="dlx" href="#" style="display:none">⬇ Excel</a>
+        <a class="btn secondary sm" id="dl" href="#" style="display:none">⬇ CSV</a>
       </div>
-      <div class="legend" id="legend"></div>
-      <div class="tabs" style="margin-top:14px">
-        <button class="tab active" data-tab="people" onclick="showTab('people')">Found people</button>
-        <button class="tab" data-tab="activity" id="acttab" onclick="showTab('activity')" style="display:none">LinkedIn activity</button>
-        <button class="tab" data-tab="final" onclick="showTab('final')">Final list</button>
-      </div>
-      <div id="tab-final" style="display:none">
-        <div class="row" style="margin-top:10px">
-          <button class="btn" onclick="copyTsv(this)">⎘ Copy for spreadsheet</button>
-          <a class="btn secondary" id="dlx2" href="#">⬇ Excel</a>
-          <a class="btn secondary" id="dl2" href="#">⬇ CSV</a>
-          <span class="hint" id="finalhint">Exactly what the file will contain.</span>
+    </div>
+
+    <div class="content">
+      <section class="composer" id="composer">
+        <div class="howto">
+          <div><b>1</b><span>Choose the client project</span><small>Its designations, region and rules are saved.</small></div>
+          <div><b>2</b><span>Paste the companies</span><small>One per line: website, LinkedIn page or name.</small></div>
+          <div><b>3</b><span>Find prospects</span><small>We find people, check LinkedIn activity, keep the active ones.</small></div>
+          <div><b>4</b><span>Copy to your sheet</span><small>Copy for spreadsheet or download Excel.</small></div>
         </div>
-        <div class="scroll" style="margin-top:10px"><table class="tbl" id="finalrows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th>Activity</th><th>Why</th><th>Proof</th><th>Last</th><th>Conn.</th><th></th></tr></thead><tbody><tr><td colspan="11" class="empty">Run a search first.</td></tr></tbody></table></div>
-      </div>
-      <div id="tab-activity" style="display:none">
-        <div class="row" style="margin-top:10px">
-          <button class="btn" id="actbtn" onclick="startActivity(false)">Check activity</button>
-          <button class="btn secondary sm" id="actall" onclick="startActivity(true)" style="display:none" title="Discard existing labels and check everyone again">Recheck all</button>
-          <button class="btn secondary" id="actstop" onclick="stopActivity()" disabled>Stop</button>
-          <button class="btn sm" onclick="copyTsv(this)">⎘ Copy for spreadsheet</button>
-          <a class="btn secondary sm" id="dlx3" href="#">⬇ Excel</a>
+
+        <div class="composer-grid">
+          <section class="card" id="setup">
+            <h2>Client project</h2>
+            <label>Project</label>
+            <div class="row" style="margin-top:0">
+              <select id="preset" style="flex:1"><option value="">— choose a client —</option></select>
+              <button class="btn secondary sm" onclick="resetPreset()" title="Put this project's saved settings back">Reset</button>
+              <button class="btn secondary sm" onclick="savePreset()" title="Save the current settings in this browser">Save</button>
+            </div>
+            <div class="hint" id="presethint"></div>
+
+            <label>Batch name <small>optional</small></label>
+            <input type="text" id="label" placeholder="e.g. Sharp – batch 3">
+
+            <div class="grid2">
+              <div>
+                <label>People to keep per company</label>
+                <input type="number" id="count" value="4" min="1" max="25">
+                <div class="hint">Final list: this many active people (HIGH + MEDIUM).</div>
+              </div>
+              <div>
+                <label>People checked per round</label>
+                <input type="number" id="pool" value="7" min="1" max="25">
+                <div class="hint">Found and checked before keeping the best.</div>
+              </div>
+            </div>
+            <div class="hint" id="poolhint"></div>
+
+            <div class="panel">
+              <div class="panel-h">Designations searched, in this order <span class="hint" id="icpsum" style="margin:0"></span></div>
+              <div id="icppanel" class="hint">Choose a project to see its designations.</div>
+            </div>
+
+            <details style="margin-top:12px"><summary>Advanced: region, designations text, LinkedIn link lookup</summary>
+              <label>Region of the person</label>
+              <textarea id="geography" placeholder="South India" style="min-height:44px"></textarea>
+              <div class="chips" id="geochips"></div>
+              <div class="hint">Empty = anywhere.</div>
+              <label>Designations <small>industries; Priority 1 titles &gt; Priority 2 &gt; Priority 3</small></label>
+              <textarea id="icp" placeholder="Healthcare; CIO, COO > Head of IT > IT Manager" style="min-height:64px"></textarea>
+              <div class="hint">Commas between titles, <code>&gt;</code> between priority groups. Priority 1 is searched first.</div>
+              <label>LinkedIn link lookup</label>
+              <select id="resolve">
+                <option value="search">Free (recommended) · 0 Apollo credits</option>
+                <option value="none">Names and designations only · no LinkedIn link</option>
+                <option value="apollo+search">Apollo enrichment, then free lookup · 1 credit per person</option>
+                <option value="apollo">Apollo enrichment only · 1 credit per person</option>
+              </select>
+              <div class="hint" id="resolvehint"></div>
+              <div class="hint" id="searchinfo"></div>
+            </details>
+          </section>
+
+          <section class="card" id="companies">
+            <h2>Companies</h2>
+            <textarea id="typed" placeholder="Paste the companies here, one per line:&#10;sharp.com&#10;https://www.linkedin.com/company/acme/&#10;Acme Pvt Ltd" style="min-height:220px;font-size:14px"></textarea>
+            <div class="hint" id="typedhint">A website per line works best. A name or LinkedIn page is fine too: we find the website for free.</div>
+            <details id="uploadbox" style="margin-top:8px"><summary>or upload a CSV / Excel file instead</summary>
+              <div class="drop" id="drop" style="margin-top:6px">
+                <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none">
+                <div><b>Drop the CSV / Excel here</b> or click to choose</div>
+                <div class="hint">Columns: <b>Website</b> (best), or <b>LinkedIn URL</b> / <b>Company Name</b>. <a id="tpl" href="#" download="companies-template.csv">Template</a></div>
+              </div>
+            </details>
+            <div class="preview" id="preview"></div>
+            <div class="row">
+              <button class="btn big" id="runbtn" onclick="startJob()">▶ Find prospects</button>
+              <button class="btn danger" id="stopbtn" onclick="stopJob()" disabled>Cancel job</button>
+            </div>
+            <label class="check"><input type="checkbox" id="auto" checked> <span>Automatic: check LinkedIn activity and keep only the active people <small id="autohint">(7 checked → 4 kept, up to 2 rounds)</small></span></label>
+            <div class="msg" id="msg"></div>
+          </section>
         </div>
-        <div class="hint" id="acthint" style="margin-top:8px"></div>
-        <div class="stats" id="actstats"></div>
-        <div class="msg" id="actmsg"></div>
-        <div class="scroll"><table class="tbl" id="actrows"><thead><tr><th>Company</th><th>Name</th><th>Activity</th><th>Why</th><th>Last</th><th>Connections</th><th>Followers</th><th>Proof</th><th></th></tr></thead><tbody><tr><td colspan="9" class="empty">Run a search, then check activity here.</td></tr></tbody></table></div>
-      </div>
-      <div id="bulkbar" class="row" style="display:none;margin-top:8px;align-items:center;gap:8px"><span class="hint" id="bulkcount"></span><button class="del rep" onclick="bulkAction(true)">Replace selected</button><button class="del" onclick="bulkAction(false)">Delete selected</button><button class="btn secondary sm" onclick="clearPicks()">Clear</button></div>
-      <div id="tab-people" class="scroll" style="margin-top:12px"><div class="hint" style="margin:6px 8px"><b>Replace</b> = drop this person and fetch the next match for the company. <b>Delete</b> = drop for good. The P1 / P2 / P3 tag shows which priority group the designation came from.</div><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th></th></tr></thead><tbody><tr><td colspan="6" class="empty">People appear here as each company is processed.</td></tr></tbody></table></div>
-    </section>
+      </section>
+
+      <section class="card results" id="results">
+        <div class="res-head">
+          <div class="bar"><i id="barfill"></i></div>
+          <div class="stats" id="stats"></div>
+          <div id="current" class="hint"></div>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="toolbar">
+          <div class="tabs">
+            <button class="tab active" data-tab="people" onclick="showTab('people')">Found people</button>
+            <button class="tab" data-tab="activity" id="acttab" onclick="showTab('activity')" style="display:none">LinkedIn activity</button>
+            <button class="tab" data-tab="final" onclick="showTab('final')">Final list</button>
+          </div>
+          <div id="bulkbar" class="row" style="display:none;margin:0;align-items:center;gap:8px"><span class="hint" id="bulkcount"></span><button class="del rep" onclick="bulkAction(true)">Replace selected</button><button class="del" onclick="bulkAction(false)">Delete selected</button><button class="btn secondary sm" onclick="clearPicks()">Clear</button></div>
+        </div>
+        <div id="tab-final" style="display:none">
+          <div class="row" style="margin:10px 12px">
+            <button class="btn sm" onclick="copyTsv(this)">⎘ Copy for spreadsheet</button>
+            <a class="btn secondary sm" id="dlx2" href="#">⬇ Excel</a>
+            <a class="btn secondary sm" id="dl2" href="#">⬇ CSV</a>
+            <span class="hint" id="finalhint">Exactly what the file will contain.</span>
+          </div>
+          <div class="scroll"><table class="tbl" id="finalrows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th>Activity</th><th>Why</th><th>Proof</th><th>Last</th><th>Conn.</th><th></th></tr></thead><tbody><tr><td colspan="11" class="empty">Run a search first.</td></tr></tbody></table></div>
+        </div>
+        <div id="tab-activity" style="display:none">
+          <div class="row" style="margin:10px 12px">
+            <button class="btn sm" id="actbtn" onclick="startActivity(false)">Check activity</button>
+            <button class="btn secondary sm" id="actall" onclick="startActivity(true)" style="display:none" title="Discard existing labels and check everyone again">Recheck all</button>
+            <button class="btn secondary sm" id="actstop" onclick="stopActivity()" disabled>Stop</button>
+            <button class="btn sm" onclick="copyTsv(this)">⎘ Copy for spreadsheet</button>
+            <a class="btn secondary sm" id="dlx3" href="#">⬇ Excel</a>
+          </div>
+          <div class="hint" id="acthint" style="margin:0 12px 8px"></div>
+          <div class="stats" id="actstats" style="margin:0 12px"></div>
+          <div class="msg" id="actmsg" style="margin:0 12px 8px"></div>
+          <div class="scroll"><table class="tbl" id="actrows"><thead><tr><th>Company</th><th>Name</th><th>Activity</th><th>Why</th><th>Last</th><th>Connections</th><th>Followers</th><th>Proof</th><th></th></tr></thead><tbody><tr><td colspan="9" class="empty">Run a search, then check activity here.</td></tr></tbody></table></div>
+        </div>
+        <div id="tab-people" class="scroll"><div class="hint" style="margin:8px 12px"><b>Replace</b> = drop this person and fetch the next match for the company. <b>Delete</b> = drop for good. P1 / P2 / P3 = priority group of the designation.</div><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th></th></tr></thead><tbody><tr><td colspan="6" class="empty">People appear here as each company is processed.</td></tr></tbody></table></div>
+      </section>
+    </div>
   </div>
+</div>
 
-  <section class="card span2">
-    <details><summary>Previous runs</summary>
-      <div class="hint">Only runs started from this browser are listed.</div>
-      <table class="tbl jobs" style="margin-top:8px"><thead><tr><th>Name</th><th>File</th><th>Status</th><th>Companies</th><th>People</th><th>Started</th><th></th></tr></thead><tbody id="jobs"></tbody></table>
-    </details>
-  </section>
-</main>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -321,6 +360,7 @@ async function loadPresets() {
   const cur = sel.value;
   sel.innerHTML = '<option value="">— choose —</option>' + presets.map((p, i) => `<option value="${i}">${p.name}${p.source === 'mine' ? ' (saved)' : ''}</option>`).join('');
   sel.value = cur;
+  renderProjNav();
   // If the preset in use was changed on the server (a git push of
   // projects/<name>/config.json), refresh the form with the new values
   // instead of keeping what this browser remembered.
@@ -359,7 +399,18 @@ function currentPreset() { return presets[$('preset').value] || null; }
 function presetEdited(p) {
   return String($('geography').value) !== String(p.geography || '') || String($('icp').value) !== String(p.icp || '') || String($('count').value) !== String(p.peoplePerCompany || 4);
 }
+function renderProjNav() {
+  const cur = $('preset').value;
+  $('projnav').innerHTML = presets.map((p, i) => `<button class="navitem${String(i) === cur ? ' active' : ''}" onclick="pickProject(${i})"><span>${esc(p.name)}</span><small>${p.peoplePerCompany || 4}/co${p.activityCheck ? ' · activity' : ''}</small></button>`).join('') || '<div class="hint">No projects on the server.</div>';
+}
+function pickProject(i) { $('preset').value = String(i); $('preset').dispatchEvent(new Event('change')); $('composer').style.display = ''; document.getElementById('setup').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+// The composer (setup + paste) is the whole screen until a run exists; then
+// the results grid takes over and the composer sits behind "Setup" / "New run".
+let composerOpen = true;
+function toggleComposer(open) { composerOpen = open == null ? !composerOpen : open; $('composer').style.display = composerOpen ? '' : 'none'; $('setupbtn').textContent = composerOpen ? '▲ Hide setup' : '⚙ Setup'; }
+function newRun() { toggleComposer(true); $('typed').focus(); $('composer').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 function presetHint() {
+  renderProjNav();
   const p = currentPreset();
   if (!p) { $('presethint').textContent = 'No project chosen: the fields below are used as typed.'; return; }
   if (p.source !== 'server') { $('presethint').textContent = 'Saved preset from this browser.'; return; }
@@ -474,6 +525,7 @@ async function startJob() {
     if (!r.ok) return setMsg('Error: ' + (j.error || r.status), 'err');
     currentId = j.job.id; localStorage.setItem('currentJob', currentId); rowsLoaded = 0; rowsJob = null;
     setMsg((j.job.ahead ? `Queued — ${j.job.ahead} ahead of you — ` : 'Started — ') + summary(j.job.params), 'ok');
+    toggleComposer(false);
     selectedFile = null; fileInput.value = ''; $('preview').innerHTML = ''; $('typed').value = ''; $('typed').dispatchEvent(new Event('input'));
     $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) { setMsg('Request failed: ' + e.message + ' — is the server awake?', 'err'); }
@@ -564,8 +616,11 @@ function show(j) {
   $('stopbtn').textContent = j && j.status === 'queued' ? 'Cancel (queued)' : 'Cancel job';
   $('cancelbtn').style.display = cancellable ? '' : 'none';
   $('cancelbtn').textContent = j && j.status === 'queued' ? '✕ Cancel (queued)' : '✕ Cancel job';
-  if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; $('legend').innerHTML = ''; $('copybtn').style.display = 'none'; return; }
+  if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; $('legend').innerHTML = ''; $('copybtn').style.display = 'none'; $('setupbtn').style.display = 'none'; $('results').style.display = 'none'; return; }
+  $('results').style.display = '';
   $('copybtn').style.display = '';
+  $('setupbtn').style.display = '';
+  if (!show.seen) { show.seen = true; toggleComposer(false); }
   const p = j.progress || {};
   $('jobname').innerHTML = `${j.project ? `<span class="pill done">${esc(j.project.name)}${j.project.edited ? ' · edited' : ''}</span> ` : '<span class="pill">custom</span> '}<b>${esc(j.label)}</b> · ${summary(j.params)}${j.params.searchExhausted ? ' · <b style="color:var(--warn)">search quota ran out</b>' : ''}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
@@ -751,7 +806,7 @@ async function refresh() {
   if (!actOn && $('tab-activity').style.display !== 'none') showTab('people');
   if (cur && cur.activity && (cur.activity.status === 'running' || cur.activity.status === 'filling') && $('tab-activity').style.display !== 'none') loadActivity();
   if (cur && $('tab-final').style.display !== 'none' && (cur.status === 'running' || cur.status === 'automating' || (cur.activity && (cur.activity.status === 'running' || cur.activity.status === 'filling')))) loadFinal();
-  $('jobs').innerHTML = j.jobs.map((x) => `<tr><td>${x.project ? `<span class="pill done">${esc(x.project.name)}</span> ` : ''}${esc(x.label)}</td><td>${esc(x.filename)}</td><td><span class="pill ${x.status}">${x.status === 'queued' ? `queued · ${x.ahead} ahead` : x.status}</span></td><td>${x.progress.done}/${x.progress.total}</td><td>${x.progress.prospects}</td><td class="muted">${new Date(x.startedAt || x.queuedAt).toLocaleString()}</td><td><a href="${dlUrl(x.id, 'xlsx')}">Excel</a><a href="${dlUrl(x.id, 'csv')}">CSV</a><a href="#" onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();return false;">view</a>${x.status === 'running' || x.status === 'queued' ? `<a href="#" style="color:var(--bad)" onclick="stopJob('${x.id}');return false;">cancel</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
+  $('jobs').innerHTML = j.jobs.map((x) => `<tr onclick="currentId='${x.id}';localStorage.setItem('currentJob',currentId);rowsJob=null;refresh();" style="cursor:pointer"><td><div>${esc(x.label)}</div><div class="muted">${x.project ? esc(x.project.name) + ' · ' : ''}${x.progress.prospects} people · ${new Date(x.startedAt || x.queuedAt).toLocaleDateString()}</div></td><td style="text-align:right"><span class="pill ${x.status}">${x.status === 'queued' ? `queued · ${x.ahead}` : x.status === 'automating' ? 'checking' : x.status === 'running' ? 'finding' : x.status}</span>${x.status === 'running' || x.status === 'queued' || x.status === 'automating' ? `<div><a href="#" style="color:var(--bad)" onclick="event.stopPropagation();stopJob('${x.id}');return false;">cancel</a></div>` : ''}</td></tr>`).join('') || '<tr><td class="empty">No runs yet.</td></tr>';
 }
 loadPresets(); refresh(); setInterval(refresh, 3000);
 </script>

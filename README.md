@@ -24,6 +24,18 @@ DOWNLOAD (Excel or CSV)                  Company, Status, Name, Designation, Loc
                                          researcher), Note; "Company not found" / "No people found" row otherwise
 ```
 
+## Frontend
+
+The page is a React app in `playwright-scraper/web` (Vite). The Docker
+build compiles it and the server serves `web/dist` at `/`; the older
+single-file page stays at `/legacy`. Local development:
+
+```
+cd playwright-scraper && node src/app.js          # API on :3000
+cd playwright-scraper/web && npm install && npm run dev   # UI on :5173, proxies /jobs and /presets
+npm run build                                      # -> web/dist, served by the API
+```
+
 ## Single-click automation (default for every project)
 
 With "Single click" ticked (the default), one Run does the whole job:
