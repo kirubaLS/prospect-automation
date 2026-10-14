@@ -15,6 +15,10 @@ export default function App() {
   const [composer, setComposer] = useState(true);
   const [theme, setTheme] = useStored('theme', document.documentElement.dataset.theme || '');
   useEffect(() => { if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme; }, [theme]);
+  // Three looks share one app: "workspace" (dark sidebar), "clean" (all light), "focus" (top nav, one column).
+  const [skin, setSkin] = useStored('skin', (new URLSearchParams(location.search).get('skin')) || 'workspace');
+  useEffect(() => { document.documentElement.dataset.skin = skin; }, [skin]);
+  const SkinPick = ({ cls }) => <div className={'skinpick ' + (cls || '')}>{['workspace', 'clean', 'focus'].map((k) => <button key={k} className={skin === k ? 'on' : ''} onClick={() => setSkin(k)} title={'Look: ' + k}>{k}</button>)}</div>;
 
   const refresh = useCallback(async () => { try { const j = await api.jobs(); setJobs(j.jobs); setBusyInfo(j.busy); } catch {} }, []);
   useEffect(() => { api.presets().then(setInfo).catch((e) => toast('Could not load projects: ' + e.message, 'err')); refresh(); }, []); // eslint-disable-line
@@ -57,10 +61,20 @@ export default function App() {
           {info && !info.apolloKeySet && <Pill kind="bad">Apollo key missing on server</Pill>}
           {busyInfo && busyInfo.running && !busyInfo.mine && <span>Another user's run is in progress{busyInfo.queued ? ` · ${busyInfo.queued} waiting` : ''}. Yours will queue.</span>}
           <button className="ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>◐ {theme === 'dark' ? 'Light' : 'Dark'} theme</button>
+          <SkinPick />
         </div>
       </aside>
 
       <div className="main">
+        <div className="topnav">
+          <div className="brand"><i>⌕</i> Prospect Finder</div>
+          <div className="ptabs">{presets.map((p) => <button key={p.slug} className={'ptab' + (job && job.project && job.project.slug === p.slug ? ' active' : '')} onClick={() => { try { localStorage.setItem('form.presetSlug', p.slug); } catch {} setComposer(true); window.dispatchEvent(new CustomEvent('pick-project', { detail: p.slug })); }}>{p.name}</button>)}</div>
+          <div className="spacer" />
+          <button className="btn sm" onClick={() => { setComposer(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>+ New run</button>
+          {jobs.length > 0 && <select className="input" value={currentId || ''} onChange={(e) => { setCurrentId(e.target.value || null); setComposer(!e.target.value); }}><option value="">Runs…</option>{jobs.map((j) => <option key={j.id} value={j.id}>{j.label} · {j.status}</option>)}</select>}
+          <button className="btn ghost sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>◐</button>
+          <SkinPick />
+        </div>
         <div className="topbar">
           <div className="title">
             <Pill kind={job ? statusKind(job.status) : ''} live={busy(job)}>{statusText(job)}</Pill>
