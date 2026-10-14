@@ -107,105 +107,145 @@
   .lbl.MEDIUM { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
   .lbl.LOW { background: var(--surface-2); color: var(--ink-2); }
   .lbl.UNKNOWN { background: var(--surface-2); color: var(--ink-2); border: 1px dashed var(--line); }
+  .howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .howto div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; grid-template-columns: 28px 1fr; grid-template-rows: auto auto; column-gap: 10px; }
+  .howto b { grid-row: 1 / 3; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 13px; }
+  .howto span { font-weight: 600; font-size: 14px; }
+  .howto small { color: var(--ink-2); font-size: 12.5px; }
+  .panel { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); }
+  .panel-h { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .pgroup { margin-top: 8px; }
+  .pgroup .pn { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); margin-right: 6px; vertical-align: 1px; }
+  .pgroup .more { display: none; padding: 0; border: 0; background: none; }
+  .morebtn { font: inherit; font-size: 12px; color: var(--accent); background: none; border: 0; cursor: pointer; padding: 2px 6px; }
+  .pgroup .t { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); margin: 2px 3px 2px 0; color: var(--ink); }
+  .pr { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); margin-left: 6px; vertical-align: 1px; }
+  .btn.big { padding: 12px 22px; font-size: 16px; }
+  .check { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-weight: 500; font-size: 13.5px; }
+  .check input { margin-top: 3px; }
+  .check small { color: var(--ink-2); font-weight: 400; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 12.5px; color: var(--ink-2); }
+  .legend .lbl { margin-right: 4px; }
+  .tally { font-weight: 400; color: var(--ink-2); font-size: 12px; margin-left: 6px; }
 </style>
 </head>
 <body>
 <header><div class="wrap">
-  <div class="brand">Prospecting <small>companies in → decision makers out</small></div>
-  <div class="row" style="margin:0"><span id="keywarn" class="pill" style="display:none">no Apollo key on server</span><button class="toggle" id="theme" title="Toggle dark mode">◐</button></div>
+  <div class="brand">Prospect Finder <small>paste companies, get the right people with LinkedIn links</small></div>
+  <div class="row" style="margin:0"><span id="keywarn" class="pill" style="display:none">Apollo key missing on the server</span><button class="toggle" id="theme" title="Switch light / dark">◐</button></div>
 </div></header>
 
 <main class="wrap">
-  <section class="card" id="setup">
-    <h2><span class="step">1</span> Project</h2>
+  <section class="howto span2">
+    <div><b>1</b><span>Choose the client project</span><small>Its designations, region and rules are already saved.</small></div>
+    <div><b>2</b><span>Paste the companies</span><small>One per line: website, LinkedIn company page, or name.</small></div>
+    <div><b>3</b><span>Press Find prospects</span><small>We find the people, check their LinkedIn activity and keep the most active ones.</small></div>
+    <div><b>4</b><span>Copy to your sheet</span><small>Copy for spreadsheet or download Excel.</small></div>
+  </section>
 
-    <label>Preset</label>
+  <section class="card" id="setup">
+    <h2><span class="step">1</span> Client project</h2>
+
+    <label>Project</label>
     <div class="row" style="margin-top:0">
       <select id="preset" style="flex:1"><option value="">— choose a client —</option></select>
-      <button class="btn secondary sm" onclick="resetPreset()" title="Put this project's own geography, titles and count back">Reset</button>
+      <button class="btn secondary sm" onclick="resetPreset()" title="Put this project's saved settings back">Reset</button>
       <button class="btn secondary sm" onclick="savePreset()" title="Save the current settings in this browser">Save</button>
     </div>
     <div class="hint" id="presethint"></div>
 
-    <label>Batch name</label>
+    <label>Batch name <small>optional, to find this run later</small></label>
     <input type="text" id="label" placeholder="e.g. Sharp – batch 3">
-
-    <label>Geography of the person</label>
-    <textarea id="geography" placeholder="South India" style="min-height:44px"></textarea>
-    <div class="chips" id="geochips"></div>
-    <div class="hint">Empty = anywhere.</div>
-
-    <label>ICP <small>industries; titles</small></label>
-    <textarea id="icp" placeholder="Healthcare; CIO, COO > Head of IT > IT Manager" style="min-height:64px"></textarea>
-    <div class="hint">Use <code>&gt;</code> between priority groups — Priority 1 is searched first.</div>
-    <div id="icpsum" class="hint"></div>
 
     <div class="grid2">
       <div>
-        <label>People per company</label>
+        <label>People to keep per company</label>
         <input type="number" id="count" value="4" min="1" max="25">
+        <div class="hint">The final list: this many active people (HIGH + MEDIUM) per company.</div>
       </div>
       <div>
-        <label>LinkedIn URL via</label>
-        <select id="resolve">
-          <option value="search">Apollo search + free web search · 0 credits</option>
-          <option value="none">Apollo search only · 0 credits, no LinkedIn URL</option>
-          <option value="apollo+search">Apollo enrichment, then web search · 1 credit/person</option>
-          <option value="apollo">Apollo enrichment only · 1 credit/person</option>
-        </select>
+        <label>People checked per round</label>
+        <input type="number" id="pool" value="7" min="1" max="25">
+        <div class="hint">How many we find and check before keeping the best. More = better odds, more LinkedIn checks.</div>
       </div>
-      <div class="hint" id="resolvehint"></div>
     </div>
-    <div class="hint" id="searchinfo"></div>
+    <div class="hint" id="poolhint"></div>
+
+    <div class="panel">
+      <div class="panel-h">Designations searched, in this order <span class="hint" id="icpsum" style="margin:0"></span></div>
+      <div id="icppanel" class="hint">Choose a project to see its designations.</div>
+    </div>
+
+    <details style="margin-top:12px"><summary>Advanced: region, designations text, LinkedIn link lookup</summary>
+      <label>Region of the person</label>
+      <textarea id="geography" placeholder="South India" style="min-height:44px"></textarea>
+      <div class="chips" id="geochips"></div>
+      <div class="hint">Empty = anywhere.</div>
+
+      <label>Designations <small>industries; Priority 1 titles &gt; Priority 2 &gt; Priority 3</small></label>
+      <textarea id="icp" placeholder="Healthcare; CIO, COO > Head of IT > IT Manager" style="min-height:64px"></textarea>
+      <div class="hint">Separate titles with commas and priority groups with <code>&gt;</code>. Priority 1 is searched first.</div>
+
+      <label>LinkedIn link lookup</label>
+      <select id="resolve">
+        <option value="search">Free (recommended) · 0 Apollo credits</option>
+        <option value="none">Names and designations only · no LinkedIn link</option>
+        <option value="apollo+search">Apollo enrichment, then free lookup · 1 credit per person</option>
+        <option value="apollo">Apollo enrichment only · 1 credit per person</option>
+      </select>
+      <div class="hint" id="resolvehint"></div>
+      <div class="hint" id="searchinfo"></div>
+    </details>
   </section>
 
   <div style="display:grid; gap:16px">
     <section class="card" id="companies">
       <h2><span class="step">2</span> Companies</h2>
-      <textarea id="typed" placeholder="Paste the companies here, one per line - a website, a LinkedIn company URL, or a name:&#10;sharp.com&#10;https://www.linkedin.com/company/acme/&#10;Acme Pvt Ltd, acme.in" style="min-height:200px;font-size:14px"></textarea>
-      <div class="hint" id="typedhint">Website per line is best. Name or LinkedIn URL only = website found by free web search. 0 Apollo credits in the default mode.</div>
-      <details id="uploadbox" style="margin-top:8px"><summary class="hint" style="cursor:pointer">or upload a CSV / Excel file instead</summary>
+      <textarea id="typed" placeholder="Paste the companies here, one per line:&#10;sharp.com&#10;https://www.linkedin.com/company/acme/&#10;Acme Pvt Ltd" style="min-height:180px;font-size:14px"></textarea>
+      <div class="hint" id="typedhint">A website per line works best. A name or LinkedIn page is fine too: we find the website for free.</div>
+      <details id="uploadbox" style="margin-top:8px"><summary>or upload a CSV / Excel file instead</summary>
         <div class="drop" id="drop" style="margin-top:6px">
           <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none">
           <div><b>Drop the CSV / Excel here</b> or click to choose</div>
-          <div class="hint">Columns: <b>Website</b> (best), or <b>LinkedIn URL</b> / <b>Company Name</b>.</div>
+          <div class="hint">Columns: <b>Website</b> (best), or <b>LinkedIn URL</b> / <b>Company Name</b>. <a id="tpl" href="#" download="companies-template.csv">Template</a></div>
         </div>
       </details>
       <div class="preview" id="preview"></div>
       <div class="row">
-        <button class="btn" id="runbtn" onclick="startJob()">▶ Run</button>
-        <label class="hint" style="display:inline-flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="auto" checked> Single click: 7 per company → LinkedIn activity → keep the target HIGH/MEDIUM (2 rounds)</label>
+        <button class="btn big" id="runbtn" onclick="startJob()">▶ Find prospects</button>
         <button class="btn danger" id="stopbtn" onclick="stopJob()" disabled>Cancel job</button>
-        <a class="btn secondary sm" id="tpl" href="#" download="companies-template.csv">Template CSV</a>
       </div>
+      <label class="check"><input type="checkbox" id="auto" checked> <span>Automatic: check LinkedIn activity and keep only the active people <small id="autohint">(7 checked → 4 kept, up to 2 rounds)</small></span></label>
       <div class="msg" id="msg"></div>
       <div class="hint" id="serverstate"></div>
     </section>
 
     <section class="card" id="results">
-      <h2><span class="step">3</span> Results <span id="jobpill" class="pill">no job</span> <button class="btn sm" id="nextall" onclick="nextRound()" style="display:none;margin-left:auto"></button><button class="btn danger sm" id="cancelbtn" onclick="stopJob()" style="display:none;margin-left:auto">✕ Cancel job</button></h2>
+      <h2><span class="step">3</span> Results <span id="jobpill" class="pill">no run yet</span> <button class="btn sm" id="nextall" onclick="nextRound()" style="display:none;margin-left:auto"></button><button class="btn danger sm" id="cancelbtn" onclick="stopJob()" style="display:none;margin-left:auto">✕ Cancel job</button></h2>
       <div id="jobname" class="hint"></div>
       <div class="bar" style="margin:8px 0"><i id="barfill"></i></div>
       <div class="stats" id="stats"></div>
       <div id="current" class="hint"></div>
       <div class="row">
-        <a class="btn" id="dlx" href="#" style="display:none">⬇ Download Excel</a>
-        <button class="btn sm" onclick="copyTsv(this)" id="copybtn">⎘ Copy for spreadsheet</button><a class="btn secondary" id="dl" href="#" style="display:none">⬇ Download CSV</a>
-        <span class="hint">Download when the job finishes — results are not kept after a restart.</span>
+        <button class="btn" onclick="copyTsv(this)" id="copybtn">⎘ Copy for spreadsheet</button>
+        <a class="btn secondary" id="dlx" href="#" style="display:none">⬇ Excel</a>
+        <a class="btn secondary" id="dl" href="#" style="display:none">⬇ CSV</a>
+        <span class="hint">Copy or download when the run finishes. Results are kept only while the server is up.</span>
       </div>
+      <div class="legend" id="legend"></div>
       <div class="tabs" style="margin-top:14px">
-        <button class="tab active" data-tab="people" onclick="showTab('people')">People</button>
+        <button class="tab active" data-tab="people" onclick="showTab('people')">Found people</button>
         <button class="tab" data-tab="activity" id="acttab" onclick="showTab('activity')" style="display:none">LinkedIn activity</button>
-        <button class="tab" data-tab="final" onclick="showTab('final')">Final</button>
+        <button class="tab" data-tab="final" onclick="showTab('final')">Final list</button>
       </div>
       <div id="tab-final" style="display:none">
         <div class="row" style="margin-top:10px">
           <button class="btn" onclick="copyTsv(this)">⎘ Copy for spreadsheet</button>
           <a class="btn secondary" id="dlx2" href="#">⬇ Excel</a>
           <a class="btn secondary" id="dl2" href="#">⬇ CSV</a>
-          <span class="hint" id="finalhint">People + LinkedIn activity, exactly as the file will contain them.</span>
+          <span class="hint" id="finalhint">Exactly what the file will contain.</span>
         </div>
-        <div class="scroll" style="margin-top:10px"><table class="tbl" id="finalrows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th>Activity</th><th>Note</th><th>Proof</th><th>Last</th><th>Conn.</th><th></th></tr></thead><tbody><tr><td colspan="11" class="empty">Run a job first.</td></tr></tbody></table></div>
+        <div class="scroll" style="margin-top:10px"><table class="tbl" id="finalrows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th>Activity</th><th>Why</th><th>Proof</th><th>Last</th><th>Conn.</th><th></th></tr></thead><tbody><tr><td colspan="11" class="empty">Run a search first.</td></tr></tbody></table></div>
       </div>
       <div id="tab-activity" style="display:none">
         <div class="row" style="margin-top:10px">
@@ -214,20 +254,20 @@
           <button class="btn secondary" id="actstop" onclick="stopActivity()" disabled>Stop</button>
           <button class="btn sm" onclick="copyTsv(this)">⎘ Copy for spreadsheet</button>
           <a class="btn secondary sm" id="dlx3" href="#">⬇ Excel</a>
-          <span class="hint" id="acthint">Connections for everyone, then posts → comments → reactions. HIGH = original post in last 90 days · MEDIUM = repost/comment/reaction in last 90 days, or 500+ connections · LOW = nothing in 90 days and under 500.</span>
         </div>
+        <div class="hint" id="acthint" style="margin-top:8px"></div>
         <div class="stats" id="actstats"></div>
         <div class="msg" id="actmsg"></div>
-        <div class="scroll"><table class="tbl" id="actrows"><thead><tr><th>Company</th><th>Name</th><th>Activity</th><th>Why</th><th>Last</th><th>Connections</th><th>Followers</th><th>Proof</th><th></th></tr></thead><tbody><tr><td colspan="9" class="empty">Run a job, then check activity here.</td></tr></tbody></table></div>
+        <div class="scroll"><table class="tbl" id="actrows"><thead><tr><th>Company</th><th>Name</th><th>Activity</th><th>Why</th><th>Last</th><th>Connections</th><th>Followers</th><th>Proof</th><th></th></tr></thead><tbody><tr><td colspan="9" class="empty">Run a search, then check activity here.</td></tr></tbody></table></div>
       </div>
       <div id="bulkbar" class="row" style="display:none;margin-top:8px;align-items:center;gap:8px"><span class="hint" id="bulkcount"></span><button class="del rep" onclick="bulkAction(true)">Replace selected</button><button class="del" onclick="bulkAction(false)">Delete selected</button><button class="btn secondary sm" onclick="clearPicks()">Clear</button></div>
-      <div id="tab-people" class="scroll" style="margin-top:12px"><div class="hint" style="margin-bottom:6px">Replace = remove and fetch the next match for that company, skipping everyone already listed or removed (no Apollo credits with web search). Delete = remove for good, no new search. Best done before the activity check; if labels already exist, a replacement is checked automatically.</div><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th></th></tr></thead><tbody><tr><td colspan="6" class="empty">Results appear here as each company is processed.</td></tr></tbody></table></div>
+      <div id="tab-people" class="scroll" style="margin-top:12px"><div class="hint" style="margin:6px 8px"><b>Replace</b> = drop this person and fetch the next match for the company. <b>Delete</b> = drop for good. The P1 / P2 / P3 tag shows which priority group the designation came from.</div><table class="tbl" id="rows"><thead><tr><th>Company</th><th>Name</th><th>Designation</th><th>Location</th><th>LinkedIn</th><th></th></tr></thead><tbody><tr><td colspan="6" class="empty">People appear here as each company is processed.</td></tr></tbody></table></div>
     </section>
   </div>
 
   <section class="card span2">
-    <details><summary>Recent jobs</summary>
-      <div class="hint">Only jobs started from this browser are listed.</div>
+    <details><summary>Previous runs</summary>
+      <div class="hint">Only runs started from this browser are listed.</div>
       <table class="tbl jobs" style="margin-top:8px"><thead><tr><th>Name</th><th>File</th><th>Status</th><th>Companies</th><th>People</th><th>Started</th><th></th></tr></thead><tbody id="jobs"></tbody></table>
     </details>
   </section>
@@ -256,7 +296,7 @@ $('theme').onclick = () => { const cur = document.documentElement.dataset.theme 
 let activityCheck = localStorage.getItem('form.activity') === '1';
 let activityScheme = localStorage.getItem('form.activityScheme') || 'standard';
 let activityMaxItems = localStorage.getItem('form.activityMaxItems') || '';
-['label', 'geography', 'icp', 'count'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => { if (!presets[$('preset').value]) localStorage.setItem('form.' + id, $(id).value); }); });
+['label', 'geography', 'icp', 'count', 'pool'].forEach((id) => { const v = localStorage.getItem('form.' + id); if (v !== null) $(id).value = v; $(id).addEventListener('input', () => { if (!presets[$('preset').value]) localStorage.setItem('form.' + id, $(id).value); }); });
 // Default is the free path. A credit mode is never remembered across page
 // loads: it must be picked again for each visit so it cannot linger unnoticed.
 { const v = localStorage.getItem('form.resolve'); $('resolve').value = v === 'none' ? 'none' : 'search'; $('resolve').addEventListener('change', () => { localStorage.setItem('form.resolve', $('resolve').value); resolveHint(); }); }
@@ -299,13 +339,13 @@ async function loadPresets() {
 // (form.<slug>.geography/icp/count/label). Switching projects swaps the whole
 // set, so Sharp's edits never show up under Reach24. "Reset" puts the
 // project's server config back.
-const FIELDS = ['geography', 'icp', 'count', 'label'];
+const FIELDS = ['geography', 'icp', 'count', 'pool', 'label'];
 const keyFor = (p, f) => `form.${p.slug}.${f}`;
 function applyPreset(p, { fromServer = false } = {}) {
   activityCheck = !!p.activityCheck; localStorage.setItem('form.activity', activityCheck ? '1' : '0');
   activityScheme = p.activityScheme || 'standard'; localStorage.setItem('form.activityScheme', activityScheme);
   activityMaxItems = p.activityMaxItems || ''; localStorage.setItem('form.activityMaxItems', activityMaxItems);
-  const defaults = { geography: p.geography || '', icp: p.icp || '', count: String(p.peoplePerCompany || 4), label: p.name };
+  const defaults = { geography: p.geography || '', icp: p.icp || '', count: String(p.peoplePerCompany || 4), pool: String(p.candidatePool || 7), label: p.name };
   for (const f of FIELDS) {
     const saved = fromServer ? null : localStorage.getItem(keyFor(p, f));
     $(f).value = saved != null ? saved : defaults[f];
@@ -426,8 +466,8 @@ async function startJob() {
   const sp = presets[$('preset').value];
   const params = sp && sp.source === 'server'
     // Project run: only the slug goes up; the server reads that project's config.json itself.
-    ? new URLSearchParams({ filename: selectedFile.name, preset: sp.slug, label: $('label').value || `${sp.name} - ${selectedFile.name}`, resolve: resolveValue(), auto: $('auto').checked ? '1' : '0', ...(presetEdited(sp) ? { geography: $('geography').value, icp: $('icp').value, count: $('count').value } : {}) })
-    : new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0', scheme: activityScheme, items: activityMaxItems, auto: $('auto').checked ? '1' : '0' });
+    ? new URLSearchParams({ filename: selectedFile.name, preset: sp.slug, label: $('label').value || `${sp.name} - ${selectedFile.name}`, resolve: resolveValue(), auto: $('auto').checked ? '1' : '0', pool: $('pool').value, ...(presetEdited(sp) ? { geography: $('geography').value, icp: $('icp').value, count: $('count').value } : {}) })
+    : new URLSearchParams({ filename: selectedFile.name, label: $('label').value || selectedFile.name, geography: $('geography').value, icp: $('icp').value, count: $('count').value, resolve: resolveValue(), activity: activityCheck ? '1' : '0', scheme: activityScheme, items: activityMaxItems, auto: $('auto').checked ? '1' : '0', pool: $('pool').value });
   try {
     const r = await api('/jobs?' + params, { method: 'POST', body: selectedFile });
     const j = await r.json().catch(() => ({}));
@@ -516,7 +556,7 @@ function setMsg(t, cls) { $('msg').textContent = t; $('msg').className = 'msg ' 
 
 let busy = { running: false, mine: false, queued: 0 };
 function show(j) {
-  $('jobpill').textContent = j ? (j.status === 'queued' ? `queued · ${j.ahead} ahead` : j.status) : 'no job';
+  $('jobpill').textContent = j ? (j.status === 'queued' ? `queued · ${j.ahead} ahead` : j.status === 'automating' ? 'checking activity' : j.status === 'running' ? 'finding people' : j.status) : 'no run yet';
   $('jobpill').className = 'pill ' + (j ? j.status : '');
   $('runbtn').disabled = false;
   const cancellable = !!(j && (j.status === 'running' || j.status === 'queued' || j.status === 'automating'));
@@ -524,7 +564,8 @@ function show(j) {
   $('stopbtn').textContent = j && j.status === 'queued' ? 'Cancel (queued)' : 'Cancel job';
   $('cancelbtn').style.display = cancellable ? '' : 'none';
   $('cancelbtn').textContent = j && j.status === 'queued' ? '✕ Cancel (queued)' : '✕ Cancel job';
-  if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; return; }
+  if (!j) { $('jobname').textContent = ''; $('stats').innerHTML = ''; $('dl').style.display = 'none'; $('dlx').style.display = 'none'; $('barfill').style.width = '0'; $('current').textContent = ''; $('legend').innerHTML = ''; $('copybtn').style.display = 'none'; return; }
+  $('copybtn').style.display = '';
   const p = j.progress || {};
   $('jobname').innerHTML = `${j.project ? `<span class="pill done">${esc(j.project.name)}${j.project.edited ? ' · edited' : ''}</span> ` : '<span class="pill">custom</span> '}<b>${esc(j.label)}</b> · ${summary(j.params)}${j.params.searchExhausted ? ' · <b style="color:var(--warn)">search quota ran out</b>' : ''}`;
   $('barfill').style.width = p.total ? Math.round((p.done / p.total) * 100) + '%' : '0';
@@ -534,17 +575,30 @@ function show(j) {
   $('nextall').style.display = j.auto && j.status === 'done' && j.auto.short ? '' : 'none'; $('nextall').textContent = j.auto && j.auto.short ? `▶ Next round for ${j.auto.short} short compan${j.auto.short === 1 ? 'y' : 'ies'}` : '';
   $('current').textContent = (j.status === 'automating' ? `Automation · ${(j.auto && j.auto.stage) || ''}${j.activity && j.activity.progress && j.activity.progress.current ? ' · ' + j.activity.progress.current : ''}` : j.status === 'queued' ? `Queued — ${j.ahead} job${j.ahead === 1 ? '' : 's'} ahead of you${busy.running && !busy.mine ? " (another user's job is running)" : ''}` : j.status === 'running' ? (p.current ? 'Working on: ' + p.current : 'Starting…') : (j.error ? 'Failed: ' + j.error : `Finished ${new Date(j.finishedAt).toLocaleString()}`))
     + (a ? ` · Apollo credits ≈ ${a.estimatedCredits} · web searches ${a.webSearches || 0}` : '');
+  const sc = (j.params && j.params.activityScheme) || 'standard';
+  $('legend').innerHTML = sc === 'sharp'
+    ? '<span><span class="lbl HIGH">HIGH</span>active on LinkedIn in the last year and 500+ connections</span><span><span class="lbl MEDIUM">MEDIUM</span>active in the last year, under 500 connections</span><span><span class="lbl LOW">LOW</span>nothing on LinkedIn in the last year</span>'
+    : sc === 'yard'
+    ? '<span><span class="lbl HIGH">High</span>posted or 2+ actions in the last 30 days</span><span><span class="lbl MEDIUM">Medium</span>some activity in the last 90 days</span><span><span class="lbl LOW">Low</span>last activity 3-6 months ago</span><span><span class="lbl UNKNOWN">Unknown</span>nothing seen in 6 months</span>'
+    : '<span><span class="lbl HIGH">HIGH</span>posted on LinkedIn in the last 90 days</span><span><span class="lbl MEDIUM">MEDIUM</span>reposted, commented or reacted in the last 90 days, or 500+ connections</span><span><span class="lbl LOW">LOW</span>nothing in 90 days and under 500 connections</span>';
   $('dl').style.display = 'inline-flex'; $('dl').href = dlUrl(j.id, 'csv');
   $('dlx').style.display = 'inline-flex'; $('dlx').href = dlUrl(j.id, 'xlsx');
 }
 
 let jobsCache = [];
 let rowsBusy = false;
+let peopleRows = [];
+// "3 people · P1 ×1, P2 ×2" on each company header once the list is complete
+function tallyHeaders(tb) {
+  const by = {};
+  for (const x of peopleRows) { if (x.companyStatus !== 'Found' || !x.name) continue; const k = x.company; (by[k] = by[k] || { n: 0, p: {} }).n++; const m = String(x.match || '').match(/Priority (\d+)/); if (m) by[k].p['P' + m[1]] = (by[k].p['P' + m[1]] || 0) + 1; }
+  tb.querySelectorAll('tr.co .tally').forEach((el) => { const t = by[el.dataset.co]; el.textContent = t ? `${t.n} ${t.n === 1 ? 'person' : 'people'}${Object.keys(t.p).length ? ' · ' + Object.entries(t.p).sort().map(([k, v]) => `${k} ×${v}`).join(', ') : ''}` : ''; });
+}
 async function loadRows(j) {
   if (!j || rowsBusy) return;
   const editNow = String(j.status !== 'running' && j.status !== 'queued' && j.status !== 'automating' && !(j.activity && j.activity.status === 'running'));
   if (rowsJob === j.id && rowsLoaded && $('rows').querySelector('tbody').dataset.canEdit !== editNow) { rowsLoaded = 0; rowsJob = null; }
-  if (rowsJob !== j.id) { rowsJob = j.id; rowsLoaded = 0; $('rows').querySelector('tbody').innerHTML = ''; $('rows').querySelector('tbody').dataset.lastCo = ''; }
+  if (rowsJob !== j.id) { rowsJob = j.id; rowsLoaded = 0; peopleRows = []; $('rows').querySelector('tbody').innerHTML = ''; $('rows').querySelector('tbody').dataset.lastCo = ''; }
   if (j.rows <= rowsLoaded) { if (!rowsLoaded) $('rows').querySelector('tbody').innerHTML = '<tr><td colspan="6" class="empty">' + (j.status === 'running' ? 'Waiting for the first company…' : 'No rows.') + '</td></tr>'; return; }
   rowsBusy = true;
   let d;
@@ -555,7 +609,7 @@ async function loadRows(j) {
   } catch { return; } finally { rowsBusy = false; }
   if (rowsJob !== j.id) return;
   const tb = $('rows').querySelector('tbody');
-  if (!rowsLoaded) { tb.innerHTML = ''; tb.dataset.lastCo = ''; }
+  if (!rowsLoaded) { tb.innerHTML = ''; tb.dataset.lastCo = ''; peopleRows = []; }
   let lastCo = tb.dataset.lastCo || '';
   const canEdit = j.status !== 'running' && j.status !== 'queued' && j.status !== 'automating' && !(j.activity && j.activity.status === 'running');
   if (!rowsLoaded) tb.dataset.canEdit = String(canEdit);
@@ -566,15 +620,16 @@ async function loadRows(j) {
       const cls = x.companyStatus === 'Found' ? 's-found' : x.companyStatus === 'Company not found' || x.companyStatus === 'Not filled' ? 's-nf' : 's-np';
       const ck = encodeURIComponent(`${x.company}|${x.companyWebsite || ''}|${x.companyUrl || ''}`);
       const nxt = canEdit && x.needsRound ? ` <button class="del rep" onclick="nextRound('${ck}', ${x.needsRound})">Next round (${x.needsRound})</button>` : '';
-      tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="6"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}${x.autoNote ? ` <span class="muted">· ${esc(x.autoNote)}</span>` : ''}${nxt}</td></tr>`);
+      tb.insertAdjacentHTML('beforeend', `<tr class="co"><td colspan="6"><span class="${cls}">${x.companyStatus}</span> · ${esc(x.company)}<span class="tally" data-co="${esc(x.company)}"></span>${x.industry ? ` <span class="muted">· ${esc(x.industry)}${x.employees ? ` · ${x.employees} emp.` : ''}</span>` : ''}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}${x.autoNote ? ` <span class="muted">· ${esc(x.autoNote)}</span>` : ''}${nxt}</td></tr>`);
     }
     if (x.companyStatus === 'Found') {
-      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}${x.replaced ? `<div class="hint">replaces ${esc(x.replaced)}</div>` : ''}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : `<span class="muted">${esc(x.note || 'not resolved')}</span>`}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`);
+      tb.insertAdjacentHTML('beforeend', `<tr><td></td><td>${esc(x.name)}${x.replaced ? `<div class="hint">replaces ${esc(x.replaced)}</div>` : ''}</td><td>${esc(x.title)}${prTag(x)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : `<span class="muted">${esc(x.note || 'not resolved')}</span>`}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`);
     }
   });
   tb.dataset.lastCo = lastCo;
   rowsLoaded = d.from + d.rows.length;
-  if (rowsLoaded < d.total) loadRows(j);
+  peopleRows.push(...d.rows);
+  if (rowsLoaded < d.total) loadRows(j); else tallyHeaders(tb);
 }
 function geoLabel(locs) {
   if (!locs || !locs.length) return 'anywhere';
@@ -584,19 +639,35 @@ function geoLabel(locs) {
 }
 function summary(p) {
   const icp = p.priorities ? `${p.priorities.length} priority groups · ${p.priorities.flat().length} titles` : `${(p.icpKeywords || []).length} titles`;
-  const auto = p.auto ? ` · single click ${p.candidatePool} → ${p.finalTarget} (${p.autoRounds} rounds)` : '';
-  const act = p.activityCheck ? ` · activity ${p.activityScheme && p.activityScheme !== 'standard' ? p.activityScheme : 'standard'}${p.activityAutoFill ? ' + auto-fill' : ''}` : ' · activity: manual (click the LinkedIn activity tab)';
-  const via = { search: 'web search', apollo: 'Apollo enrichment', 'apollo+search': 'Apollo + web search', none: 'preview only' }[p.resolve] || '';
+  const auto = p.auto ? ` · automatic: ${p.candidatePool} checked → keep ${p.finalTarget} active (${p.autoRounds} rounds)` : '';
+  const act = p.activityCheck ? ` · LinkedIn activity rules: ${p.activityScheme && p.activityScheme !== 'standard' ? p.activityScheme : 'standard'}` : ' · LinkedIn activity: on request (LinkedIn activity tab)';
+  const via = { search: 'free LinkedIn lookup', apollo: 'Apollo enrichment (credits)', 'apollo+search': 'Apollo + free lookup (credits)', none: 'no LinkedIn links' }[p.resolve] || '';
   return `${p.peoplePerCompany}/company · ${esc(geoLabel(p.locations))} · ${icp}${p.industries && p.industries.length ? ` · ${p.industries.length} industries` : ''}${via ? ' · ' + via : ''}${act}${auto}`;
 }
-function icpSummary() {
+function icpGroups() {
   const raw = $('icp').value;
   const people = raw.includes(';') ? raw.split(';').slice(1).join(';') : raw;
-  const groups = people.split(/\s*>\s*/).map((g) => g.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean)).filter((g) => g.length);
+  return people.split(/\s*>\s*/).map((g) => g.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean)).filter((g) => g.length);
+}
+// The panel under the project: every designation, grouped by priority, in
+// the order they are searched - so anyone can see what a run looks for.
+function icpSummary() {
+  const groups = icpGroups();
   const n = groups.reduce((a, g) => a + g.length, 0);
-  $('icpsum').textContent = !n ? '' : groups.length > 1 ? groups.map((g, i) => `P${i + 1}: ${g.length}`).join(' · ') + ` · ${n} titles` : `${n} titles, no priorities`;
+  $('icpsum').textContent = !n ? '' : groups.length > 1 ? `${groups.length} priority groups · ${n} designations` : `${n} designations`;
+  $('icppanel').innerHTML = !n ? 'Choose a project to see its designations, or type them under Advanced.'
+    : groups.map((g, i) => `<div class="pgroup"><span class="pn">${groups.length > 1 ? 'P' + (i + 1) : 'All'}</span>${g.slice(0, 8).map((t) => `<span class="t">${esc(t)}</span>`).join('')}${g.length > 8 ? `<span class="more">${g.slice(8).map((t) => `<span class="t">${esc(t)}</span>`).join('')}</span><button class="morebtn" onclick="this.previousElementSibling.style.display='inline';this.remove()">+${g.length - 8} more</button>` : ''}</div>`).join('')
+      + `<div class="hint" style="margin-top:8px">${groups.length > 1 ? 'Priority 1 designations are searched first; the next group is used only when a company still needs people.' : 'Only these designations are accepted; nothing else is used as a filler.'}</div>`;
+  poolHint();
+}
+function poolHint() {
+  const keep = parseInt($('count').value, 10) || 4, pool = Math.max(keep, parseInt($('pool').value, 10) || 7);
+  $('poolhint').textContent = `Each round: find ${pool} people per company in priority order → check their LinkedIn activity → keep the ${keep} most active (HIGH first, then MEDIUM). Still short after 2 rounds? A Next round button appears.`;
+  $('autohint').textContent = `(${pool} checked → ${keep} kept, up to 2 rounds)`;
 }
 $('icp').addEventListener('input', icpSummary); setTimeout(icpSummary, 0);
+['count', 'pool'].forEach((id) => $(id).addEventListener('input', poolHint));
+$('auto').addEventListener('change', () => { $('poolhint').style.opacity = $('auto').checked ? '1' : '.5'; $('pool').disabled = !$('auto').checked; });
 // ---- activity tab ----
 let apifyOn = false;
 function showTab(t) {
@@ -619,7 +690,7 @@ async function loadFinal() {
   const cj = jobsCache.find((x) => x.id === currentId);
   const canEdit = cj && cj.status !== 'running' && cj.status !== 'queued' && cj.status !== 'automating' && !(cj.activity && cj.activity.status === 'running');
   tb.innerHTML = all.map((x, idx) => x.companyStatus === 'Found'
-    ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.activityPending ? '<span class="muted">checking…</span>' : ''}</td><td class="muted">${esc(x.activityReason || '')}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`
+    ? `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}</td><td>${esc(x.title)}${prTag(x)}</td><td>${esc(x.location)}</td><td>${x.profileUrl ? `<a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.activityPending ? '<span class="muted">checking…</span>' : ''}</td><td class="muted">${esc(x.activityReason || '')}</td><td>${x.activityProof ? `<a href="${esc(x.activityProof)}" target="_blank" rel="noopener">proof ↗</a>` : ''}</td><td>${esc(x.activityDate || '')}</td><td>${esc(x.connections ?? '')}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${idx}, this, false)">Delete</button></span>` : ''}</td></tr>`
     : `<tr class="co"><td colspan="11"><span class="s-nf">${esc(x.companyStatus)}</span> · ${esc(x.company)}${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}${x.autoNote ? ` <span class="muted">· ${esc(x.autoNote)}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">No rows.</td></tr>';
   const withAct = all.filter((x) => x.activity).length;
   $('finalhint').textContent = withAct ? `${withAct} people carry an activity label.` : 'Activity columns fill in after "Check activity" (Reach24).';
@@ -662,6 +733,8 @@ async function loadActivity() {
   const canEdit = cur && cur.status !== 'running' && cur.status !== 'queued' && cur.status !== 'automating' && !(a && (a.status === 'running' || a.status === 'filling'));
   tb.innerHTML = d.rows.map((x) => `<tr><td>${esc(x.company)}</td><td>${esc(x.name)}<div class="hint">${esc(x.title)}</div></td><td>${x.activity ? `<span class="lbl ${String(x.activity).toUpperCase()}">${esc(x.activity)}</span>` : x.pending ? '<span class="muted">checking…</span>' : '<span class="muted">—</span>'}</td><td class="muted">${esc(x.reason)}</td><td>${esc(x.date)}</td><td><b>${esc(x.connections)}</b></td><td>${esc(x.followers)}</td><td>${x.proof ? `<a href="${esc(x.proof)}" target="_blank" rel="noopener">open ↗</a>` : ''}</td><td>${canEdit ? `<span class="acts"><input type="checkbox" class="pick" data-idx="${x.idx}" data-name="${esc(x.name)}" onchange="pickChanged()"><button class="del rep" title="Remove and fetch the next match for this company" onclick="removePerson(${x.idx}, this, true)">Replace</button><button class="del" title="Delete permanently, no replacement" onclick="removePerson(${x.idx}, this, false)">Delete</button></span>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No people with a LinkedIn URL in this job.</td></tr>';
 }
+// "Priority 2" -> P2 tag; keyword ICPs show nothing.
+function prTag(x) { const m = String(x.match || '').match(/Priority (\d+)/); return m ? `<span class="pr" title="${esc(x.match)}">P${m[1]}</span>` : ''; }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 async function refresh() {

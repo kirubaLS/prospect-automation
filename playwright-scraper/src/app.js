@@ -511,7 +511,7 @@ const server = http.createServer(async (req, res) => {
         activityMaxItems: preset.activityMaxItems,
         activityAutoFill: preset.activityAutoFill,
         auto: url.searchParams.get('auto') !== '0' && preset.auto,
-        candidatePool: preset.candidatePool,
+        candidatePool: ov('pool') || preset.candidatePool,
         autoRounds: preset.autoRounds
       } : {
         owner,
