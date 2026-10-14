@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from './lib/api.js';
 import Composer from './pages/Composer.jsx';
 import Run from './pages/Run.jsx';
+import Wizard from './pages/Wizard.jsx';
 import { Pill, useToast, useConfirm, useInterval, useStored, statusKind, statusText, busy } from './components/ui.jsx';
 
 const STEPS = [['Choose the client project', 'Its designations, region and rules are saved.'], ['Paste the companies', 'One per line: website, LinkedIn page or name.'], ['Find prospects', 'We find people, check LinkedIn activity, keep the active ones.'], ['Copy to your sheet', 'Copy for spreadsheet or download Excel.']];
@@ -46,6 +47,9 @@ export default function App() {
   }
 
   const presets = (info && info.presets) || [];
+  // Layout: "app" (sidebar + grid/cards/split) or "wizard" (one step at a time).
+  const [layout, setLayout] = useStored('layout', (new URLSearchParams(location.search).get('layout')) || 'app');
+  if (layout === 'wizard') return <div style={{ minHeight: '100vh' }}><Wizard presets={presets} info={info} jobs={jobs} currentId={currentId} setCurrentId={setCurrentId} refresh={refresh} onSwitchLayout={() => setLayout('app')} theme={theme} setTheme={setTheme} /></div>;
   const summary = job && job.params ? `${job.params.peoplePerCompany}/company · ${job.params.locations?.length ? job.params.locations.length === 1 ? job.params.locations[0] : job.params.locations.length + ' regions' : 'anywhere'} · ${job.params.priorities ? job.params.priorities.length + ' priority groups' : (job.params.icpKeywords || []).length + ' designations'}${job.params.auto ? ` · automatic ${job.params.candidatePool} → ${job.params.finalTarget}` : ''}` : '';
 
   return (
@@ -62,6 +66,7 @@ export default function App() {
           {busyInfo && busyInfo.running && !busyInfo.mine && <span>Another user's run is in progress{busyInfo.queued ? ` · ${busyInfo.queued} waiting` : ''}. Yours will queue.</span>}
           <button className="ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>◐ {theme === 'dark' ? 'Light' : 'Dark'} theme</button>
           <SkinPick />
+          <button className="ghost" onClick={() => setLayout('wizard')}>Switch to step-by-step layout</button>
         </div>
       </aside>
 
