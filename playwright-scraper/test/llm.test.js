@@ -4,7 +4,7 @@ const assert = require('assert');
 const llm = require('../src/llm');
 
 assert.strictEqual(llm.configFromEnv({}).configured, false);
-assert.deepStrictEqual(llm.configFromEnv({ GROQ_API_KEY: 'k' }), { apiKey: 'k', model: 'llama-3.1-8b-instant', configured: true });
+assert.deepStrictEqual(llm.configFromEnv({ GROQ_API_KEY: 'k' }), { apiKey: 'k', model: 'openai/gpt-oss-20b', configured: true });
 assert.deepStrictEqual(llm.clean(['IT Head', ' it head ', 'Head of IT', '- GM IT', '{bad}', 'x'.repeat(70), 7], ['Head of IT']), ['IT Head', 'GM IT']);
 
 (async () => {
@@ -20,7 +20,7 @@ assert.deepStrictEqual(llm.clean(['IT Head', ' it head ', 'Head of IT', '- GM IT
   const r = await llm.expandTitles({ company: 'Acme', industry: 'retail', titles: ['Head of IT'], priority: 1 }, cfg, { fetchImpl, counter });
   assert.deepStrictEqual(r.added, ['IT Head', 'Head - Information Technology']);
   assert.deepStrictEqual(r.titles, ['Head of IT', 'IT Head', 'Head - Information Technology']);
-  assert.strictEqual(lastBody.model, 'llama-3.1-8b-instant');
+  assert.strictEqual(lastBody.model, 'openai/gpt-oss-20b');
   assert.ok(/Acme/.test(lastBody.messages[1].content) && /Head of IT/.test(lastBody.messages[1].content));
   assert.strictEqual(counter.llmCalls, 1);
   // cached: same company + titles = no second call

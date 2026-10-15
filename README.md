@@ -197,7 +197,7 @@ Free-tier behaviour you should know:
   (`APIFY_MAX_ITEMS`, default 2), the newest two being enough to judge
   the 90-day window.
 - **Designation widening** (optional): `GROQ_API_KEY` from console.groq.com
-  (free tier) and `GROQ_MODEL` (default `llama-3.1-8b-instant`). One call per
+  (free tier) and `GROQ_MODEL` (default `openai/gpt-oss-20b`). One call per
   priority group per company, cached for the process; a failed call just
   means the typed designations are searched as is. Only job titles and the
   company name go to Groq, never people.

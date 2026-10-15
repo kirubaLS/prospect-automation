@@ -13,7 +13,7 @@ const cache = new Map();
 const CACHE_MAX = 500;
 
 function configFromEnv(env = process.env) {
-  return { apiKey: env.GROQ_API_KEY || null, model: env.GROQ_MODEL || 'llama-3.1-8b-instant', configured: !!env.GROQ_API_KEY };
+  return { apiKey: env.GROQ_API_KEY || null, model: env.GROQ_MODEL || 'openai/gpt-oss-20b', configured: !!env.GROQ_API_KEY };
 }
 
 function clean(list, originals) {
