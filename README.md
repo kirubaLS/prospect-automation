@@ -61,6 +61,19 @@ every company, for every project:
    company whose reserve runs out says so; **Next round** appears only when
    a company is still short with people left in reserve.
 
+**Designations are never invented.** The Designation column carries what
+LinkedIn shows: the web-search result title when the profile is found,
+replaced by the profile's current position once the activity check has
+fetched it. Apollo's title is only the search key and sits in its own
+"Apollo Designation" column; "Designation Source" says which it was. The
+LinkedIn-seen title is re-checked against the designations searched (typed
+plus AI variants, same exclusions): someone whose LinkedIn says "Sales
+Executive" while Apollo said "CEO" is dropped, not written out (flagged
+NOT ICP on the page). A web-search result must also show the employer, so a
+namesake at another company, or someone who has moved, is not matched. The
+Groq variants only widen the Apollo search; they are never written as a
+person's designation, and assistant/deputy/junior forms are discarded.
+
 `auto`, `candidatePool` (7) and `autoRounds` in a project's config.json set
 this; "People checked per round" on the page overrides the 7. The
 Replace/Delete controls draw from the same reserve (Replace = next person

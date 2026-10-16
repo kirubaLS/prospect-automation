@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
-const { runJob, exportRows, parseGeography, parseIcp, findPeople, resolvePeople, personKey, sortRowsByActivity } = require('./jobs');
+const { runJob, exportRows, parseGeography, parseIcp, findPeople, resolvePeople, verifyTitle, personKey, sortRowsByActivity } = require('./jobs');
 const llm = require('./llm');
 const { providersFromEnv } = require('./websearch');
 const activity = require('./activity');
@@ -134,6 +134,14 @@ const sameCompanyAs = (row) => (r) => r.company === row.company && r.companyWebs
 function applyActivityResult(job, row, a) {
   if (!a) return;
   row.activity = a.label; row.activityReason = a.reason; row.activityProof = a.proof; row.activityDate = a.lastActivity; row.connections = a.connections ?? ''; row.followers = a.followers ?? ''; row.activityCounts = a.counts;
+  // The profile actor saw the person's current position: that is the
+  // designation written out. Outside the ICP -> flagged, never kept by the
+  // automation (a human sees why on the row).
+  if (a.currentTitle) {
+    const before = row.title;
+    if (verifyTitle(row, a.currentTitle, 'LinkedIn profile')) { delete row.icpMismatch; if (before !== row.title) row.note = [row.note, `designation from the LinkedIn profile (was "${before}")`].filter(Boolean).join('; '); }
+    else { row.icpMismatch = row.rejected; delete row.rejected; row.note = [row.note, `NOT ICP: ${row.icpMismatch}`].filter(Boolean).join('; '); }
+  }
   const prog = (job.activity && job.activity.progress) || null;
   if (prog && a.label) { prog.total = (prog.total || 0) + 1; prog.done = (prog.done || 0) + 1; const k = String(a.label).toLowerCase(); if (k in prog) prog[k]++; }
 }
@@ -152,10 +160,13 @@ async function nextCandidates(job, key, org, n, exclude) {
   const opts = { exclude, ...(ledger ? { ledger } : {}) };
   if (job.pools && job.pools[key]) {
     const pool = job.pools[key];
-    const batch = [];
-    while (pool.length && batch.length < n) { const p = pool.shift(); if (!exclude.has(personKey(p))) batch.push(p); }
-    if (!batch.length) return [];
-    const people = await resolvePeople(APOLLO_API_KEY, org, batch, job.params, opts);
+    const people = [];
+    while (pool.length && people.length < n) {
+      const batch = [];
+      while (pool.length && batch.length < n - people.length) { const p = pool.shift(); if (!exclude.has(personKey(p))) batch.push(p); }
+      if (!batch.length) break;
+      people.push(...await resolvePeople(APOLLO_API_KEY, org, batch, job.params, opts)); // rejected (non-ICP on LinkedIn) are not returned, so draw again
+    }
     logger.info(`Job ${job.id}: ${org.name}: ${people.length} taken from the reserve, ${pool.length} left`);
     return people;
   }
@@ -204,7 +215,7 @@ async function removeAndReplace(job, idx, { replace = true, awaitActivity = fals
 // LOW (then Unknown) people are swapped for new matches, each labelled on
 // arrival, until the target is met, Apollo runs out, or the attempt cap hits.
 const AUTOFILL_MAX_SWAPS = 6;
-const isGood = (r) => ['high', 'medium'].includes(String(r.activity || '').toLowerCase());
+const isGood = (r) => !r.icpMismatch && ['high', 'medium'].includes(String(r.activity || '').toLowerCase());
 async function autoFill(job) {
   const want = job.params.peoplePerCompany;
   const stats = { companies: 0, swapped: 0, filled: 0, exhausted: 0 };
@@ -295,6 +306,7 @@ function judgeCompany(job, key) {
   if (good.length >= target) {
     const keep = new Set(good.slice(0, target));
     dropRows(job, rows.filter((r) => !keep.has(r)), 'not among the top HIGH/MEDIUM');
+    for (const r of foundRows(job, key)) if (r.icpMismatch) dropRows(job, [r], r.icpMismatch);
     comp.state = 'filled';
     for (const r of foundRows(job, key)) r.autoNote = `${target}/${target} HIGH/MEDIUM after round ${comp.rounds}`;
   } else {

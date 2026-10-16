@@ -3,7 +3,7 @@ import { companyKey } from '../lib/api.js';
 import { prTag, isGood, LEGENDS } from '../lib/icp.js';
 import { Label, Stat, Empty, useStored } from '../components/ui.jsx';
 import { useRun } from '../lib/useRun.js';
-import { CardsView, SplitView, Link, PersonActions, BulkBar, Legend } from './views.jsx';
+import { CardsView, SplitView, Link, PersonActions, BulkBar, Legend, TitleTag } from './views.jsx';
 
 function Grid({ cols, children }) {
   return <div className="grid-wrap"><table className="grid"><thead><tr>{cols.map((c, i) => <th key={i} className={c.num ? 'num' : ''}>{c.label ?? c}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
@@ -39,16 +39,16 @@ export default function Run({ job, refresh }) {
 
   const grid = tab === 'people' ? (
     <Grid cols={['Company', 'Name', 'Designation', 'Location', 'LinkedIn', '']}>
-      {companies.map((c) => [<CompanyRow key={c.key} c={c} span={6} run={run} />, ...c.people.map((r) => <tr key={c.key + r.name + r.title}><td /><td>{r.name}{r.replaced && <div className="hint" style={{ margin: 0 }}>replaces {r.replaced}</div>}</td><td>{r.title}{prTag(r) && <span className="tag">{prTag(r)}</span>}</td><td>{r.location}</td><td className="nw">{r.profileUrl ? <Link href={r.profileUrl}>open</Link> : <span className="hint" style={{ margin: 0 }}>{r.note || 'not resolved'}</span>}</td><td><PersonActions r={r} run={run} /></td></tr>)])}
+      {companies.map((c) => [<CompanyRow key={c.key} c={c} span={6} run={run} />, ...c.people.map((r) => <tr key={c.key + r.name + r.title}><td /><td>{r.name}{r.replaced && <div className="hint" style={{ margin: 0 }}>replaces {r.replaced}</div>}</td><td>{r.title}<TitleTag r={r} />{prTag(r) && <span className="tag">{prTag(r)}</span>}</td><td>{r.location}</td><td className="nw">{r.profileUrl ? <Link href={r.profileUrl}>open</Link> : <span className="hint" style={{ margin: 0 }}>{r.note || 'not resolved'}</span>}</td><td><PersonActions r={r} run={run} /></td></tr>)])}
     </Grid>
   ) : tab === 'activity' ? (
     <Grid cols={['Company', 'Name', 'Activity', 'Why', 'Last', { label: 'Connections', num: true }, { label: 'Followers', num: true }, 'Proof', '']}>
-      {withUrl.length ? withUrl.map((r) => <tr key={rows.indexOf(r)}><td>{r.company}</td><td>{r.name}<div className="hint" style={{ margin: 0 }}>{r.title}</div></td><td className="nw">{r.activity ? <Label value={r.activity} /> : r.activityPending ? <span className="hint" style={{ margin: 0 }}>checking…</span> : '—'}</td><td className="why">{r.activityReason}</td><td className="nw">{r.activityDate}</td><td className="num"><b>{r.connections ?? ''}</b></td><td className="num">{r.followers ?? ''}</td><td className="nw">{r.activityProof ? <Link href={r.activityProof}>open</Link> : null}</td><td><PersonActions r={r} run={run} /></td></tr>)
+      {withUrl.length ? withUrl.map((r) => <tr key={rows.indexOf(r)}><td>{r.company}</td><td>{r.name}<div className="hint" style={{ margin: 0 }}>{r.title}<TitleTag r={r} /></div></td><td className="nw">{r.activity ? <Label value={r.activity} /> : r.activityPending ? <span className="hint" style={{ margin: 0 }}>checking…</span> : '—'}</td><td className="why">{r.activityReason}</td><td className="nw">{r.activityDate}</td><td className="num"><b>{r.connections ?? ''}</b></td><td className="num">{r.followers ?? ''}</td><td className="nw">{r.activityProof ? <Link href={r.activityProof}>open</Link> : null}</td><td><PersonActions r={r} run={run} /></td></tr>)
       : <tr><td colSpan={9}><Empty title="No LinkedIn links yet">Activity can be checked once people have LinkedIn links.</Empty></td></tr>}
     </Grid>
   ) : (
     <Grid cols={['Company', 'Name', 'Designation', 'Location', 'LinkedIn', 'Activity', 'Why', 'Proof', 'Last', { label: 'Conn.', num: true }, '']}>
-      {companies.map((c) => c.people.length ? c.people.map((r) => <tr key={c.key + r.name}><td>{r.company}</td><td>{r.name}</td><td>{r.title}{prTag(r) && <span className="tag">{prTag(r)}</span>}</td><td>{r.location}</td><td className="nw">{r.profileUrl ? <Link href={r.profileUrl}>open</Link> : null}</td><td className="nw">{r.activity ? <Label value={r.activity} /> : r.activityPending ? <span className="hint" style={{ margin: 0 }}>checking…</span> : null}</td><td className="why">{r.activityReason}</td><td className="nw">{r.activityProof ? <Link href={r.activityProof}>proof</Link> : null}</td><td className="nw">{r.activityDate}</td><td className="num">{r.connections ?? ''}</td><td><PersonActions r={r} run={run} /></td></tr>) : <CompanyRow key={c.key} c={c} span={11} run={run} />)}
+      {companies.map((c) => c.people.length ? c.people.map((r) => <tr key={c.key + r.name}><td>{r.company}</td><td>{r.name}</td><td>{r.title}<TitleTag r={r} />{prTag(r) && <span className="tag">{prTag(r)}</span>}</td><td>{r.location}</td><td className="nw">{r.profileUrl ? <Link href={r.profileUrl}>open</Link> : null}</td><td className="nw">{r.activity ? <Label value={r.activity} /> : r.activityPending ? <span className="hint" style={{ margin: 0 }}>checking…</span> : null}</td><td className="why">{r.activityReason}</td><td className="nw">{r.activityProof ? <Link href={r.activityProof}>proof</Link> : null}</td><td className="nw">{r.activityDate}</td><td className="num">{r.connections ?? ''}</td><td><PersonActions r={r} run={run} /></td></tr>) : <CompanyRow key={c.key} c={c} span={11} run={run} />)}
     </Grid>
   );
 

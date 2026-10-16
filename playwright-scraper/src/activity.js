@@ -154,6 +154,27 @@ function followersOf(item) {
   for (const sub of ['basic_info', 'basicInfo', 'profile', 'data']) if (item[sub] && typeof item[sub] === 'object') { const v = followersOf(item[sub]); if (v != null) return v; }
   return null;
 }
+// Current job title from a profile-details item: the first experience entry
+// (or a current_* field), only when it names this employer or no employer at
+// all. The headline is free text and is never used as a designation.
+function currentTitleOf(item, company = '') {
+  if (!item || typeof item !== 'object') return '';
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const words = norm(company).split(' ').filter((w) => w.length >= 3 && !['the', 'and', 'ltd', 'limited', 'pvt', 'private', 'inc', 'llc', 'llp', 'group', 'company'].includes(w));
+  const sameCo = (c) => !words.length || !c || words.some((w) => norm(c).includes(w));
+  const pick = (e) => e && typeof e === 'object' ? String(e.title || e.position || e.role || e.job_title || '').trim() : '';
+  for (const list of [item.experience, item.experiences, item.positions, item.basic_info && item.basic_info.experience]) {
+    if (!Array.isArray(list) || !list.length) continue;
+    const cur = list.find((e) => e && (e.is_current || e.current || /present/i.test(String(e.end_date || e.duration || '')) || e.end_date == null)) || list[0];
+    const t = pick(cur);
+    if (t && sameCo(cur.company || cur.company_name || cur.companyName || cur.organization)) return t;
+    return '';
+  }
+  const bi = item.basic_info || item.basicInfo || item;
+  for (const k of ['current_title', 'currentTitle', 'current_position', 'job_title', 'position']) if (bi[k] && typeof bi[k] === 'string') return bi[k].trim();
+  if (bi.current_company && typeof bi.current_company === 'object' && bi.current_company.title && sameCo(bi.current_company.name)) return String(bi.current_company.title).trim();
+  return '';
+}
 function toCount(v) {
   if (typeof v === 'number') return v;
   const m = String(v).replace(/,/g, '').match(/(\d+)(\+?)/);
@@ -291,6 +312,7 @@ async function checkPerson(cfg, person, opts = {}) {
   const info = profile && profile.length ? profile[0] : null;
   const connections = info ? connectionsOf(info) : null;
   const followers = info ? followersOf(info) : null;
+  const currentTitle = info ? currentTitleOf(info, person.company) : '';
   const profileErr = errors.filter((e) => e.startsWith('profile:')).pop();
   const connectionsNote = connections != null ? '' : profileErr ? `profile actor failed: ${profileErr.slice(9, 120)}` : !info ? 'profile actor returned no data for this URL' : 'no connection count in the profile data';
   const bi = (info && (info.basic_info || info.basicInfo)) || info || {};
@@ -302,6 +324,7 @@ async function checkPerson(cfg, person, opts = {}) {
   const finish = (activities) => {
     const result = classify({ activities, connections, connectionsNote, now: opts.now, profileUrl: person.profileUrl });
     result.followers = followers;
+    result.currentTitle = currentTitle;
     result.checked = checked;
     if (errors.length) result.errors = errors;
     if (errors.length === checked.length && !activities.length && connections == null) { result.label = ''; result.reason = 'check failed: ' + errors.join('; '); }
@@ -314,7 +337,7 @@ async function checkPerson(cfg, person, opts = {}) {
     const activities = [...summarizePosts(po, self), ...summarizeComments(co), ...summarizeReactions(re)];
     const dataOk = [po, co, re].some((x) => x !== null);
     const result = classifyYard({ activities, connections, now: opts.now, profileUrl: person.profileUrl, dataOk });
-    result.followers = followers;
+    result.followers = followers; result.currentTitle = currentTitle;
     result.checked = checked;
     if (errors.length) result.errors = errors;
     return result;
@@ -329,7 +352,7 @@ async function checkPerson(cfg, person, opts = {}) {
     if (!hit(acts)) { co = await run('comments'); acts = [...acts, ...summarizeComments(co)]; ok = ok || co !== null; }
     if (!hit(acts)) { re = await run('reactions'); acts = [...acts, ...summarizeReactions(re)]; ok = ok || re !== null; }
     const result = classifySharp({ activities: acts, connections, connectionsNote, now: opts.now, profileUrl: person.profileUrl, dataOk: ok });
-    result.followers = followers; result.checked = checked;
+    result.followers = followers; result.currentTitle = currentTitle; result.checked = checked;
     if (errors.length) result.errors = errors;
     return result;
   }
@@ -373,5 +396,5 @@ async function runActivityCheck(baseCfg, people, { onProgress = () => {}, should
   return { results, state };
 }
 
-module.exports = {
+module.exports = { currentTitleOf,
   isSelf, classifySharp, SHARP_DAYS, configFromEnv, usernameOf, activityPage, runActor, classify, classifyYard, checkPerson, runActivityCheck, summarizePosts, summarizeComments, summarizeReactions, connectionsOf, followersOf, tsOf, WINDOW_DAYS };

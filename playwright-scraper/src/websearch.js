@@ -156,9 +156,11 @@ function scoreResult(r, person) {
   const companyHit = companyWords.length ? companyWords.filter((w) => hay.includes(w)).length / companyWords.length : 0;
   const titleWords = significantWords(person.title);
   const titleHit = titleWords.length ? titleWords.filter((w) => hay.includes(w)).length / titleWords.length : 0;
-  if (companyHit === 0 && titleHit === 0) return null;
+  // The result must show the employer: a namesake with the same title at
+  // another company, or someone who has since moved, is not this person.
+  if (companyHit === 0) return null;
   score += companyHit * 3 + titleHit * 2;
-  return { score, fullName: parsed.name.trim(), profileUrl: r.url.split('?')[0], location: parseLocation(r.snippet), titleSeen: parsed.title };
+  return { score, fullName: parsed.name.trim(), profileUrl: r.url.split('?')[0], location: parseLocation(r.snippet), titleSeen: parsed.title, companySeen: parsed.company, titleHit, companyHit };
 }
 
 // Three queries, strict to loose; the search stops at the first one that

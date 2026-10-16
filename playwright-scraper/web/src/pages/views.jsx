@@ -2,6 +2,14 @@ import { useState } from 'react';
 import { Label, Empty } from '../components/ui.jsx';
 import { prTag, isGood, LEGENDS } from '../lib/icp.js';
 
+// Where the designation came from: LinkedIn (verified) or Apollo only.
+export function TitleTag({ r }) {
+  if (r.icpMismatch) return <span className="tag bad" title={r.icpMismatch}>NOT ICP</span>;
+  if (!r.titleSource || /^apollo/i.test(r.titleSource)) return r.profileUrl ? <span className="tag muted" title={r.titleSource || 'Apollo designation, not verified on LinkedIn'}>Apollo</span> : null;
+  return <span className="tag ok" title={r.titleSource + (r.apolloTitle && r.apolloTitle !== r.title ? ` (Apollo listed "${r.apolloTitle}")` : '')}>LinkedIn</span>;
+}
+
+
 export const Link = ({ href, children }) => href ? <a href={href} target="_blank" rel="noopener">{children} ↗</a> : <span className="hint" style={{ margin: 0 }}>—</span>;
 export function PersonActions({ r, run }) {
   if (!run.canEdit) return null;
@@ -35,7 +43,7 @@ export function CardsView({ run, job }) {
               {(c.note || c.autoNote) && <div className="cnote">{[c.note, c.autoNote].filter(Boolean).join(' · ')}</div>}
               {c.people.length > 0 && <ul className="plist">{c.people.map((p) => (
                 <li key={p.name + p.title}>
-                  <div className="pmain"><div className="pname">{p.name}{prTag(p) && <span className="tag">{prTag(p)}</span>}</div><div className="ptitle">{p.title}{p.location ? ` · ${p.location}` : ''}</div>{p.activityReason && <div className="pwhy">{p.activityReason}</div>}</div>
+                  <div className="pmain"><div className="pname">{p.name}{prTag(p) && <span className="tag">{prTag(p)}</span>}</div><div className="ptitle">{p.title}<TitleTag r={p} />{p.location ? ` · ${p.location}` : ''}</div>{p.activityReason && <div className="pwhy">{p.activityReason}</div>}</div>
                   <div className="pside"><Label value={p.activity} />{!p.activity && p.activityPending && <span className="hint" style={{ margin: 0 }}>checking…</span>}<div className="plinks"><Link href={p.profileUrl}>LinkedIn</Link>{p.activityProof && <> · <Link href={p.activityProof}>proof</Link></>}</div><PersonActions r={p} run={run} /></div>
                 </li>))}</ul>}
               {run.canEdit && c.needsRound > 0 && <button className="btn secondary sm" style={{ margin: '10px 14px 14px' }} onClick={() => run.nextRound(c.key, c.needsRound)}>▶ Next round ({c.needsRound}) for this company</button>}
@@ -74,7 +82,7 @@ export function SplitView({ run, job }) {
               <div className="pcard" key={p.name + p.title}>
                 <div className="pc-main">
                   <div className="pc-top"><span className="pname">{p.name}</span>{prTag(p) && <span className="tag">{prTag(p)}</span>}<Label value={p.activity} />{!p.activity && p.activityPending && <span className="hint" style={{ margin: 0 }}>checking…</span>}</div>
-                  <div className="ptitle">{p.title}{p.location ? ` · ${p.location}` : ''}</div>
+                  <div className="ptitle">{p.title}<TitleTag r={p} />{p.location ? ` · ${p.location}` : ''}</div>
                   {p.activityReason && <div className="pwhy">{p.activityReason}</div>}
                   <div className="pc-facts">{p.connections != null && p.connections !== '' && <span><b>{p.connections}</b> connections</span>}{p.followers != null && p.followers !== '' && <span><b>{p.followers}</b> followers</span>}{p.activityDate && <span>last activity <b>{p.activityDate}</b></span>}</div>
                   <div className="plinks"><Link href={p.profileUrl}>LinkedIn profile</Link>{p.activityProof && <> · <Link href={p.activityProof}>activity proof</Link></>}</div>

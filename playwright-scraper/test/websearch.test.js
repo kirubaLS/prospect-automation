@@ -31,6 +31,8 @@ assert.strictEqual(good.fullName, 'Priya Nathan');
 assert.strictEqual(good.location, 'Chennai, Tamil Nadu, India');
 assert.strictEqual(w.scoreResult({ title: 'Priya Sharma - IT Head - Kosmoderma | LinkedIn', url: 'https://linkedin.com/in/ps', snippet: '' }, person), null, 'surname must fit the mask');
 assert.strictEqual(w.scoreResult({ title: 'Priya Nathan - Dermatologist - Random Clinic | LinkedIn', url: 'https://linkedin.com/in/pn', snippet: '' }, person), null, 'neither company nor title matched');
+assert.strictEqual(w.scoreResult({ title: 'Priya Nathan - IT Head - Other Corp | LinkedIn', url: 'https://linkedin.com/in/pn', snippet: '' }, person), null, 'same title at another company is not this person');
+assert.strictEqual(good.titleSeen, 'IT Head'); assert.strictEqual(good.companySeen, 'Kosmoderma Healthcare');
 assert.strictEqual(w.scoreResult({ title: 'Priya Nathan - IT Head - Kosmoderma', url: 'https://www.linkedin.com/company/kosmoderma', snippet: '' }, person), null, 'not a profile URL');
 assert.strictEqual(w.scoreResult({ title: 'Kosmoderma Healthcare | LinkedIn', url: 'https://linkedin.com/in/x', snippet: '' }, person), null, 'first name must lead the title');
 assert.deepStrictEqual(w.providersFromEnv({ BRAVE_SEARCH_API_KEY: 'b', GOOGLE_CSE_API_KEY: 'g', GOOGLE_CSE_CX: 'c', SERPER_API_KEY: 's', TAVILY_API_KEY: 't' }).map((p) => p.name), ['serper', 'tavily', 'brave', 'google']);

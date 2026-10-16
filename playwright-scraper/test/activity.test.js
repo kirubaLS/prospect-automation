@@ -14,6 +14,11 @@ assert.strictEqual(a.connectionsOf({ basic_info: { fullname: 'Kiruba Karan', fol
 assert.strictEqual(a.connectionsOf({ basic_info: { connection_count: '500+' } }), 500);
 assert.strictEqual(a.connectionsOf({ experience: [] }), null);
 assert.strictEqual(a.followersOf({ basic_info: { follower_count: 1836, connection_count: 1839 } }), 1836);
+// current designation: first/current experience at this employer; headline never used
+assert.strictEqual(a.currentTitleOf({ basic_info: { headline: 'Driving growth | Speaker' }, experience: [{ title: 'Chief Financial Officer', company: 'Kosmoderma Healthcare Pvt Ltd', is_current: true }, { title: 'Finance Manager', company: 'Old Co' }] }, 'Kosmoderma Healthcare'), 'Chief Financial Officer');
+assert.strictEqual(a.currentTitleOf({ experience: [{ title: 'CFO', company: 'Somewhere Else' }] }, 'Kosmoderma Healthcare'), '', 'current job at another employer: no designation taken (the person moved)');
+assert.strictEqual(a.currentTitleOf({ basic_info: { headline: 'CFO at Kosmoderma' } }, 'Kosmoderma'), '', 'headline alone is not a designation');
+assert.strictEqual(a.currentTitleOf({ basic_info: { current_title: 'IT Head' } }, 'Kosmoderma'), 'IT Head');
 
 // posts actor
 const posts = a.summarizePosts([

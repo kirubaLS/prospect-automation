@@ -6,6 +6,8 @@ const llm = require('../src/llm');
 assert.strictEqual(llm.configFromEnv({}).configured, false);
 assert.deepStrictEqual(llm.configFromEnv({ GROQ_API_KEY: 'k' }), { apiKey: 'k', model: 'openai/gpt-oss-20b', configured: true });
 assert.deepStrictEqual(llm.clean(['IT Head', ' it head ', 'Head of IT', '- GM IT', '{bad}', 'x'.repeat(70), 7], ['Head of IT']), ['IT Head', 'GM IT']);
+assert.deepStrictEqual(llm.clean(['Assistant IT Manager', 'Deputy CIO', 'IT Analyst', 'VP - IT', 'Associate Director IT'], ['Head of IT']), ['VP - IT'], 'lower/assistant forms never widen the search');
+assert.deepStrictEqual(llm.clean(['Associate Director - Finance & Accounts'], ['Associate Director Finance']), ['Associate Director - Finance & Accounts'], 'unless the typed designation has the word');
 
 (async () => {
   const cfg = llm.configFromEnv({ GROQ_API_KEY: 'k' });

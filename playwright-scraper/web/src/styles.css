@@ -78,6 +78,9 @@ textarea { resize: vertical; min-height: 64px; }
 @keyframes pulse { 50% { opacity: .3; } }
 .lbl { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; }
 .lbl.high { background: var(--ok-soft); color: var(--ok); } .lbl.medium { background: var(--warn-soft); color: var(--warn); } .lbl.low { background: var(--surface-3); color: var(--ink-2); } .lbl.unknown { background: var(--surface-2); color: var(--ink-3); border: 1px dashed var(--line-2); }
+.tag.ok { background: var(--ok-soft); color: var(--ok); }
+.tag.muted { background: var(--surface-3); color: var(--ink-3); }
+.tag.bad { background: var(--bad-soft); color: var(--bad); }
 .tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin-left: 6px; vertical-align: 1px; }
 .chip { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line-2); margin: 2px 4px 2px 0; }
 .chip.btn-chip { cursor: pointer; } .chip.btn-chip:hover { border-color: var(--accent); color: var(--accent); }

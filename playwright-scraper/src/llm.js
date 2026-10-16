@@ -9,6 +9,9 @@ const logger = require('./logger');
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MAX_VARIANTS = 20;
+// A variant carrying one of these words is a different (lower) role unless
+// the typed designation itself has the word.
+const DOWNGRADE = /\b(assistant|asst|associate|deputy|vice|junior|jr|intern|trainee|executive assistant|secretary|coordinator|analyst|officer|specialist|support)\b/i;
 const cache = new Map();
 const CACHE_MAX = 500;
 
@@ -25,6 +28,8 @@ function clean(list, originals) {
     if (!t || t.length > 60 || t.length < 2 || /[{}[\]<>|;:]/.test(t)) continue;
     const k = t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     if (seen.has(k)) continue;
+    const dg = DOWNGRADE.exec(t);
+    if (dg && !originals.some((o) => new RegExp('\\b' + dg[1] + '\\b', 'i').test(o))) continue;
     seen.add(k); out.push(t);
     if (out.length >= MAX_VARIANTS) break;
   }
@@ -35,7 +40,7 @@ async function expandTitles({ company, industry = '', titles, priority = 1 }, cf
   if (!cfg || !cfg.apiKey || !titles || !titles.length) return { titles: titles || [], added: [] };
   const key = `${(company || '').toLowerCase()}|${industry.toLowerCase()}|${titles.join('|').toLowerCase()}`;
   if (cache.has(key)) return cache.get(key);
-  const system = 'You expand B2B prospecting job titles. Reply with JSON only: {"variants": ["..."]}. Each variant is a realistic job title that a person holding one of the given roles might carry at this company: synonyms, abbreviations, regional wording (India/US/UK), "Head -", "VP -", "AVP", "GM" forms, and department phrasings. Same seniority band and same function only. No junior roles, no assistants, no interns, no unrelated functions. 8 to 20 variants.';
+  const system = 'You expand B2B prospecting job titles for a search filter. Reply with JSON only: {"variants": ["..."]}. Each variant must be a real job title that a person holding one of the given roles could carry at this company: synonyms, abbreviations, regional wording (India/US/UK), "Head -", "VP -", "AVP", "GM" forms, and department phrasings. Rules: same function and same seniority band as the given roles only; never a junior, assistant, deputy, associate or support role; never a different department; never a person name or a description; nothing you are not confident is a real title. 8 to 20 variants, fewer if unsure.';
   const user = `Company: ${company || 'unknown'}${industry ? ` (industry: ${industry})` : ''}\nPriority ${priority} designations: ${titles.join(', ')}`;
   const body = { model: cfg.model, temperature: 0.2, max_tokens: 400, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
   let added = [];

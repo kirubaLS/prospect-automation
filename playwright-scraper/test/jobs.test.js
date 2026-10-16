@@ -89,7 +89,7 @@ const fetchImpl = async (url, init) => {
   assert.match(empty.note, /Industry "retail" not in ICP list/);
 
   const out = jobs.toCsv(rows);
-  assert.ok(out.startsWith('Company,Company Status,Name,Designation,Location,LinkedIn URL,Activity,Activity Proof,Activity Note,Last Activity,Connections,Followers,Note,Company Website,Company LinkedIn URL\r\n'), 'only the requested columns: ' + out.split('\r\n')[0]);
+  assert.ok(out.startsWith('Company,Company Status,Name,Designation,Designation Source,Apollo Designation,Location,LinkedIn URL,Activity,Activity Proof,Activity Note,Last Activity,Connections,Followers,Note,Company Website,Company LinkedIn URL\r\n'), 'only the requested columns: ' + out.split('\r\n')[0]);
   assert.ok(!/Seniority|Function|Match|Rank|Industry|Employees|HQ/.test(out.split('\r\n')[0]), 'no extra columns');
   assert.ok(!/secret@example|1234567890|email|phone|has_email/i.test(out), 'no contact details in the CSV');
 
@@ -268,6 +268,32 @@ const fetchImpl = async (url, init) => {
   assert.ok(next.every((n) => !kp.some((r) => jobs.personKey(r) === jobs.personKey(n))), 'reserve people differ from the listed ones');
   assert.strictEqual(prioCalls.length, callsBefore, 'no extra Apollo call when taking from the reserve');
   console.log('PASS: candidate reserve with AI-widened designations');
+
+  // designation guardrail: the LinkedIn-seen title is written out and must still be ICP
+  const vp = () => ({ name: 'Priya N', title: 'IT Head', searchTitles: ['Head of IT', 'IT Head', 'CIO'] });
+  let v = vp(); assert.strictEqual(jobs.verifyTitle(v, 'Head - Information Technology', 'LinkedIn (web search)'), false, 'a title outside the searched designations rejects the person');
+  assert.match(v.rejected, /shows "Head - Information Technology".*Apollo listed "IT Head"/);
+  v = vp(); assert.strictEqual(jobs.verifyTitle(v, 'Chief Information Officer (CIO)', 'LinkedIn (web search)'), true);
+  assert.deepStrictEqual([v.title, v.apolloTitle, v.titleSource], ['Chief Information Officer (CIO)', 'IT Head', 'LinkedIn (web search)'], 'LinkedIn wording replaces Apollo wording; Apollo kept in its own column');
+  v = vp(); assert.strictEqual(jobs.verifyTitle(v, 'Assistant to the CIO', 'LinkedIn profile'), false, 'exclusions apply to the verified title too');
+  v = vp(); assert.strictEqual(jobs.verifyTitle(v, '', 'LinkedIn profile'), true, 'nothing seen: Apollo title stays, nobody is rejected');
+  assert.strictEqual(v.title, 'IT Head');
+  v = { name: 'X', title: 'CEO', searchTitles: [] }; assert.strictEqual(jobs.verifyTitle(v, 'Managing Director', 'LinkedIn profile'), true, 'no designation filter (fallback tier): what LinkedIn shows is written');
+  assert.strictEqual(v.title, 'Managing Director');
+  // through resolvePeople: a person whose LinkedIn result shows a non-ICP title is not returned
+  const mismatchFetch = async (url, init) => {
+    const u = new URL(url);
+    if (u.hostname === 'api.search.brave.com') {
+      const q = u.searchParams.get('q');
+      const who = /"Dev"/.test(q) ? { t: 'Dev Sharma - Sales Executive - Kosmoderma | LinkedIn', l: 'https://www.linkedin.com/in/dev-s' } : { t: 'Priya Nathan - Head of IT - Kosmoderma | LinkedIn', l: 'https://www.linkedin.com/in/priya-n' };
+      return { ok: true, status: 200, json: async () => ({ web: { results: [{ title: who.t, url: who.l, description: 'Bengaluru, Karnataka, India · Kosmoderma' }] } }), text: async () => '' };
+    }
+    return fetchImpl(url, init);
+  };
+  const two = [{ apolloId: 'p1', firstName: 'Priya', lastMasked: 'N***n', name: 'Priya N***n', nameMasked: true, title: 'IT Head', profileUrl: '', searchTitles: ['Head of IT', 'IT Head'] }, { apolloId: 'd1', firstName: 'Dev', lastMasked: 'S***a', name: 'Dev S***a', nameMasked: true, title: 'Software Developer', profileUrl: '', searchTitles: ['Software Developer'] }];
+  const okOnly = await jobs.resolvePeople('k', org7, two, { ...prio, resolve: 'search', searchProviders: [{ name: 'brave', key: 'b' }] }, { fetchImpl: mismatchFetch });
+  assert.deepStrictEqual(okOnly.map((p) => [p.name, p.title, p.titleSource, p.apolloTitle]), [['Priya Nathan', 'Head of IT', 'LinkedIn (web search)', 'IT Head']], 'Dev (LinkedIn: Sales Executive) is dropped; Priya carries the LinkedIn wording');
+  console.log('PASS: designation guardrails');
 
   // resolve: 'none' -> preview only, no bulk_match, masked names kept as-is.
   const before = calls.enrich;

@@ -205,7 +205,7 @@ async function searchCandidates(apiKey, org, params, opts = {}) {
         for (const p of exact) {
           if (out.length >= limit) break;
           seen.add(keyOf(p));
-          out.push({ ...sanitize(p, org, tier, true), match: tier.label });
+          out.push({ ...sanitize(p, org, tier, true), match: tier.label, searchTitles: group });
         }
         for (const p of fresh) if (!seen.has(keyOf(p)) && !titleMatches(p.title, group)) seen.add(keyOf(p)); // unlisted titles are never used
       }
@@ -227,7 +227,7 @@ async function searchCandidates(apiKey, org, params, opts = {}) {
       for (const { p, icp } of ranked) {
         if (out.length >= limit) break;
         seen.add(keyOf(p));
-        out.push(sanitize(p, org, tier, icp));
+        out.push({ ...sanitize(p, org, tier, icp), searchTitles: titles });
       }
     }
   }
@@ -235,6 +235,27 @@ async function searchCandidates(apiKey, org, params, opts = {}) {
 }
 
 // ---- Resolution (LinkedIn URL / full name) for a batch of people ----
+// Anti-hallucination rule for designations: the output carries what LinkedIn
+// itself shows (the web-search result title, later the profile actor's
+// current position), never a title the app or the model made up. Apollo's
+// title is only the search key and stays in its own column. A LinkedIn title
+// that is not one of the designations searched (typed or AI-widened, same
+// exclusions) rejects the person instead of being written over.
+function verifyTitle(p, seen, source) {
+  const t = String(seen || '').replace(/\s+/g, ' ').trim();
+  if (p.apolloTitle == null) p.apolloTitle = p.title || '';
+  if (!t) return true;
+  const titles = p.searchTitles || [];
+  if (titles.length && (!titleMatches(t, titles) || excludedTitle(t, titles))) {
+    p.rejected = `${source} shows "${t}", which is not one of the designations searched (Apollo listed "${p.apolloTitle}")`;
+    return false;
+  }
+  p.title = t;
+  p.titleSource = source;
+  delete p.rejected;
+  return true;
+}
+
 async function resolvePeople(apiKey, org, out, params, opts = {}) {
   // Only the people being kept are resolved, and only those whose preview
   // lacked a LinkedIn URL or full name:
@@ -244,6 +265,7 @@ async function resolvePeople(apiKey, org, out, params, opts = {}) {
   //   none    - leave the preview as is
   //   apollo+search - Apollo first (exact), web search only for anyone
   //             Apollo left without a URL
+  for (const p of out) { if (p.apolloTitle == null) p.apolloTitle = p.title || ''; if (!p.titleSource) p.titleSource = 'Apollo (not verified on LinkedIn)'; }
   let need = out.filter((p) => !p.profileUrl || p.nameMasked);
   if (!need.length || params.resolve === 'none') return out;
   if (params.resolve === 'apollo' || params.resolve === 'apollo+search') {
@@ -275,6 +297,8 @@ async function resolvePeople(apiKey, org, out, params, opts = {}) {
         p.profileUrl = hit.profileUrl;
         if (hit.location) p.location = hit.location;
         p.resolvedBy = hit.provider;
+        if (!verifyTitle(p, hit.titleSeen, 'LinkedIn (web search)')) logger.warn(`    rejected ${p.name}: ${p.rejected}`);
+        else if (!hit.titleSeen) p.titleSource = 'Apollo (LinkedIn result showed no title)';
       } else {
         p.note = 'LinkedIn URL not found by web search';
       }
@@ -294,7 +318,9 @@ async function resolvePeople(apiKey, org, out, params, opts = {}) {
     }
   }
   logger.info(`    web search: ${found}/${need.length} profiles resolved`);
-  return out;
+  const kept = out.filter((p) => !p.rejected);
+  if (kept.length < out.length) logger.info(`    ${out.length - kept.length} dropped: LinkedIn shows a designation outside the ICP`);
+  return kept;
 }
 
 // Search up to the target and resolve them: the one-shot path used by
@@ -464,7 +490,7 @@ function sortRowsByActivity(rows) {
 // the profile (no data API has it). Company Status / Note explain rows
 // with nothing found. Nothing else, and never emails or phone numbers.
 const OUTPUT_COLUMNS = [
-  ['Company', 'company'], ['Company Status', 'companyStatus'], ['Name', 'name'], ['Designation', 'title'], ['Location', 'location'],
+  ['Company', 'company'], ['Company Status', 'companyStatus'], ['Name', 'name'], ['Designation', 'title'], ['Designation Source', 'titleSource'], ['Apollo Designation', 'apolloTitle'], ['Location', 'location'],
   ['LinkedIn URL', 'profileUrl'], ['Activity', 'activity'], ['Activity Proof', 'activityProof'], ['Activity Note', 'activityReason'], ['Last Activity', 'activityDate'], ['Connections', 'connections'], ['Followers', 'followers'],
   ['Note', 'note'], ['Company Website', 'companyWebsite'], ['Company LinkedIn URL', 'companyUrl']
 ];
@@ -510,4 +536,4 @@ function exportRows(rows, format) {
   return { buffer: Buffer.from(toCsv(rows), 'utf8'), contentType: 'text/csv; charset=utf-8', extension: 'csv' };
 }
 
-module.exports = { runJob, searchCandidates, resolvePeople, personKey, companyRow, sortRowsByActivity, toTsv, titleMatches, excludedTitle, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };
+module.exports = { runJob, searchCandidates, resolvePeople, verifyTitle, personKey, companyRow, sortRowsByActivity, toTsv, titleMatches, excludedTitle, toCsv, toXlsx, exportRows, industryMatches, parseGeography, parseIcp, expandKeywords, findPeople, GEO_ALIASES, OUTPUT_COLUMNS };
