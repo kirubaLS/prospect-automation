@@ -122,7 +122,7 @@ function titleMatches(title, patterns) {
   const t = String(title || '').replace(/&/g, 'and').replace(/[\u2013\u2014]/g, '-');
   return patterns.some((k) => {
     const k2 = k.replace(/&/g, 'and');
-    const body = k2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*[-/]?\\s*');
+    const body = k2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*[-/,]?\\s*');
     return new RegExp(`(^|[^a-z0-9])(?<!\\b${MODIFIERS}[\\s.-]*)${body}($|[^a-z0-9])`, 'i').test(t);
   });
 }
