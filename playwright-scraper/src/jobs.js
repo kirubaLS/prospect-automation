@@ -439,8 +439,18 @@ async function runJob({ apiKey, fileBuffer, filename, params, onProgress = () =>
         // By domain the company's own name comes back on each person.
         if (!org.id && people.length && people[0].apolloOrgName && !company['Company Name']) org.name = people[0].apolloOrgName;
         if (!people.length) {
-          rows.push({ ...companyRow(company, org.id ? 'No people found' : 'Company not found', [industryNote, org.id ? 'no one matched geography/ICP in Apollo' : `Apollo has no people for ${org.domain} matching the geography/ICP (or no such company)`].filter(Boolean).join('; '), org), name: org.id ? 'No people found' : 'Company not found' });
-          if (org.id) state.noPeople++; else state.notFound++;
+          // By domain, "nobody matched" and "Apollo has no such company" look the
+          // same. One more free call without title or location filters tells
+          // them apart, so the row says what actually happened.
+          let known = !!org.id, anyone = null;
+          if (!org.id) {
+            try { const probe = await apollo.searchPeople(apiKey, org, { titles: [], locations: [], perPage: 1 }, opts); anyone = probe.total; known = probe.total > 0 || probe.people.length > 0; if (known && probe.people[0] && probe.people[0].company) org.name = company['Company Name'] || probe.people[0].company; } catch (err) { logger.warn(`    probe for ${org.domain} failed: ${err.message}`); }
+          }
+          const why = known
+            ? `Apollo lists ${anyone != null ? anyone + ' people' : 'people'} for ${org.domain || org.name}, but none with the searched designations in the chosen geography`
+            : `Apollo has no people under the domain ${org.domain} - check the website domain Apollo shows for this company and paste that`;
+          rows.push({ ...companyRow(company, known ? 'No people found' : 'Company not found', [industryNote, why].filter(Boolean).join('; '), org), name: known ? 'No people found' : 'Company not found' });
+          if (known) state.noPeople++; else state.notFound++;
         } else {
           people.forEach((p, i) => rows.push({ ...companyRow(company, 'Found', industryNote, org), ...p, note: [p.note, industryNote].filter(Boolean).join('; '), rank: i + 1, ...(i === 0 && poolNote ? { poolNote } : {}) }));
           state.found++;
